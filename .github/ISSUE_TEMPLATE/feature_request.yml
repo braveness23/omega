@@ -1,0 +1,49 @@
+name: Feature Request
+description: Propose a new feature or design change
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Feature requests are welcome. The more concrete the use case, the better.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the use case. What are you trying to build that Omega can't currently support?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How should this work? API sketch, design ideas, or just a description.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What other approaches did you consider? Why didn't they work?
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Core engine / timing
+        - Timeline mode
+        - Pattern mode
+        - Performance mode
+        - C API
+        - MIDI I/O
+        - SMF import/export
+        - Testing utilities
+        - Documentation
+        - Build system
+        - Other
+    validations:
+      required: true

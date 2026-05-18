@@ -1,0 +1,68 @@
+---
+Language: Cpp
+BasedOnStyle: Google
+
+# Indentation
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ContinuationIndentWidth: 4
+IndentCaseLabels: true
+IndentPPDirectives: BeforeHash
+
+# Brace style — Allman (opening brace on its own line)
+BreakBeforeBraces: Allman
+
+# Line length
+ColumnLimit: 100
+
+# Alignment
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
+AlignTrailingComments: true
+AlignAfterOpenBracket: Align
+
+# Spacing
+SpaceBeforeParens: ControlStatements
+SpaceInEmptyParentheses: false
+SpacesInAngles: false
+SpaceAfterCStyleCast: false
+SpaceBeforeAssignmentOperators: true
+
+# Includes
+SortIncludes: CaseSensitive
+IncludeBlocks: Regroup
+IncludeCategories:
+  - Regex:    '^<omega/'    # Omega headers first
+    Priority: 1
+  - Regex:    '^<'          # System/third-party headers
+    Priority: 2
+  - Regex:    '.*'          # Everything else
+    Priority: 3
+
+# Function and class formatting
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortLambdasOnASingleLine: All
+BinPackParameters: false
+BinPackArguments: false
+
+# Template and pointer style
+PointerAlignment: Left
+DerivePointerAlignment: false
+SpaceAfterTemplateKeyword: true
+
+# Access modifiers
+AccessModifierOffset: -4
+
+# Constructor initializer lists
+BreakConstructorInitializers: BeforeColon
+ConstructorInitializerAllOnOneLineOrOnePerLine: true
+ConstructorInitializerIndentWidth: 4
+
+# Comments
+ReflowComments: true
+
+# C++ specific
+Standard: c++17

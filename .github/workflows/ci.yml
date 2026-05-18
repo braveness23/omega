@@ -1,0 +1,118 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.os }} / ${{ matrix.compiler }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            compiler: gcc
+            cc: gcc-12
+            cxx: g++-12
+
+          - os: ubuntu-latest
+            compiler: clang
+            cc: clang-15
+            cxx: clang++-15
+
+          - os: macos-latest
+            compiler: clang
+            cc: clang
+            cxx: clang++
+
+          - os: windows-latest
+            compiler: msvc
+            cc: cl
+            cxx: cl
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install dependencies (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev \
+            cmake ninja-build
+
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: brew install cmake ninja
+
+      - name: Configure
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DOMEGA_BUILD_TESTS=ON \
+            -DOMEGA_BUILD_EXAMPLES=OFF \
+            -DOMEGA_WITH_LINK=OFF \
+            -G Ninja
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure --parallel 4
+
+  sanitizers:
+    name: Sanitizers (Linux / Clang)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev cmake ninja-build clang-15
+
+      - name: Configure with sanitizers
+        env:
+          CC: clang-15
+          CXX: clang++-15
+        run: |
+          cmake -B build_san \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DOMEGA_BUILD_TESTS=ON \
+            -DOMEGA_WITH_SANITIZERS=ON \
+            -G Ninja
+
+      - name: Build
+        run: cmake --build build_san --parallel
+
+      - name: Test
+        env:
+          ASAN_OPTIONS: detect_leaks=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: ctest --test-dir build_san --output-on-failure
+
+  format-check:
+    name: clang-format
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install clang-format
+        run: sudo apt-get install -y clang-format-15
+
+      - name: Check formatting
+        run: |
+          find include src tests -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \
+            | xargs clang-format-15 --dry-run --Werror
