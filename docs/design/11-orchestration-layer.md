@@ -232,7 +232,7 @@ public:
     uint32_t register_channel(const char* name, float initial_value = 0.0f);
     uint32_t find_channel(const char* name) const;
 
-    // Timing-thread access — no locks, no atomics required (see note below)
+    // Timing-thread access — lock-free, relaxed atomic ordering
     float get(uint32_t channel_id) const;
     void  set(uint32_t channel_id, float value);
 
@@ -244,7 +244,9 @@ public:
 
 All channel values are `float`. The range semantics are per-channel by convention — [0.0, 1.0] is recommended for normalized parameters, but not enforced. Channel registration assigns the range meaning; document it alongside the channel name.
 
-**Thread safety note**: `ModulationBus` values are written by the timing thread (during modulator source `advance()`) and read by the mutation thread (via `snapshot()`). Reads and writes of naturally-aligned `float` are atomic at the hardware level on all target architectures (x86, ARM, RISC-V). The implementation uses `volatile float[]` storage and documents this constraint explicitly. No `std::atomic` is needed — the overhead is disproportionate for 256 scalar reads.
+**Thread safety note**: `ModulationBus` values are written by the timing thread (during modulator source `advance()`) and read by the mutation thread (via `snapshot()`). The implementation stores channels as `std::atomic<float>` with `memory_order_relaxed` for both `get()` and `set()`. Relaxed ordering is sufficient here: there is no dependent data guarded by these values that requires sequencing between threads — a slightly stale modulation value read by the UI is acceptable, and the timing thread only reads its own writes within a single `process()` cycle.
+
+`volatile float[]` is **not** a correct alternative. `volatile` provides no memory ordering or atomicity guarantees in the C++ memory model; it is defined for hardware register access, not inter-thread communication. On ARM in particular, a non-atomic float read can observe a torn write. `std::atomic<float>` with relaxed ordering compiles to a plain load/store on x86 and ARM (no memory barriers generated), so the runtime cost is identical to `volatile` while being correct.
 
 ### Modulator Sources
 
