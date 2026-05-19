@@ -110,7 +110,7 @@ public:
 ```cpp
 class InputBus {
 public:
-    static constexpr uint32_t MAX_EVENTS = 64;  // configurable at engine construction
+    explicit InputBus(uint32_t capacity);  // capacity set from omega_config_t
 
     uint32_t       count() const;
     const Event&   at(uint32_t index) const;
@@ -126,14 +126,14 @@ private:
     void clear();
     void push(const Event& e);  // called by InputDispatcher; drops if full
 
-    std::array<Event, MAX_EVENTS> events_;
+    std::pmr::vector<Event> events_;   // capacity reserved at construction; never reallocated
     uint32_t count_ = 0;
 };
 ```
 
-If more events arrive in a single cycle than `MAX_EVENTS`, excess events are dropped with a counter increment (queryable via `omega_input_overflow_count()`). This is a design-time tunable — 64 is generous for typical MIDI input rates at 1ms cycle times.
+If more events arrive in a single cycle than the configured capacity, excess events are dropped with a counter increment (queryable via `omega_input_overflow_count()`). The default capacity is 64, which is generous for typical MIDI input rates at 1ms cycle times. Embedded targets that constrain memory set a smaller value via `omega_config_t::input_bus_capacity`.
 
-Sources that need incoming events call `ctx.input_bus.first_of_type(OMEGA_EVENT_NOTE_ON)` or iterate the bus during `advance()`. No subscription model is needed — bus traversal over ≤ 64 events is faster than any lookup structure.
+Sources that need incoming events call `ctx.input_bus.first_of_type(OMEGA_EVENT_NOTE_ON)` or iterate the bus during `advance()`. No subscription model is needed — bus traversal over a small fixed set is faster than any lookup structure.
 
 ### Recording Integration
 
