@@ -45,6 +45,7 @@ Start here if you're new to the codebase:
 7. [Extensions](design/07-extensions.md) — sinks, clocks, custom payloads, Ableton Link
 8. [Testing Strategy](design/08-testing-strategy.md) — MockClock, CapturingSink, CI
 9. [Prior Art](design/09-prior-art.md) — libraries studied, what was borrowed, license compatibility
+10. [EventSource Abstraction](design/10-event-source-abstraction.md) — **proposal under review**: pluggable playback modes, new mode catalogue
 
 ## Key Decisions at a Glance
 
