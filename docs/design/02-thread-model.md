@@ -27,7 +27,7 @@ If the library owned its thread, all of these scenarios would require fighting t
 
 There are exactly two thread contexts in Omega:
 
-**The timing thread** calls `engine.process()`. This is the hot path. It must never block, never allocate, never lock. It drains the command queue, then calls `advance()` on every registered `EventSource` in registration order, dispatching all due events to registered `OutputSink` instances.
+**The timing thread** calls `engine.process()`. This is the hot path. It must never block, never allocate, never lock. On each call it: (1) drains the command queue, (2) builds a `ProcessContext` on the stack, (3) polls all registered `EventInput` instances to fill the `InputBus`, (4) calls `advance()` on every registered `EventSource` in registration order (MODULATOR → CONTEXT → PLAYBACK), dispatching all due events to registered `OutputSink` instances, and (5) calls `flush()` on all sinks.
 
 **The mutation thread** (typically the UI or API thread) adds events, changes tempo, edits patterns, registers sources. It enqueues commands and returns immediately.
 
@@ -142,11 +142,19 @@ engine.set_tempo(120)
   → enqueue SetTempoCmd
   → return immediately   process():
                            drain command queue
-                             apply SetTempoCmd
-                           for each EventSource:
-                             source.advance(to_tick, dispatcher)
+                             apply SetTempoCmd, SetScaleCmd, etc.
+                           build ProcessContext (stack-allocated)
+                             .mod_bus, .perf_ctx, .input_bus
+                           clear InputBus
+                           for each EventInput:
+                             input.poll(input_dispatcher)
+                               → input_bus.push(event)
+                           for each EventSource (in priority order):
+                             source.advance(to_tick, dispatcher, ctx)
                                → dispatcher.dispatch(event)
                                    → sink.send(event)
+                           for each OutputSink:
+                             sink.flush()
 ```
 
 ```
@@ -155,8 +163,11 @@ Thread safety matrix:
 engine.process()            ✓                ✗
 engine.enqueue_cmd()        ✗*               ✓
 source.advance()            ✓ (called by)    ✗
+input.poll()                ✓ (called by)    ✗
 sink.send()                 ✓ (called by)    ✗
 clock.now_ns()              ✓                ✗
+mod_bus.get/set()           ✓ (hot path)     ✗ (use snapshot() for UI reads)
+perf_ctx read/write         ✓                ✗ (use cmd queue for UI writes)
 
 * enqueue_cmd() is safe from any thread as long as only one thread
   is the producer at a time (SPSC invariant).
@@ -170,3 +181,5 @@ clock.now_ns()              ✓                ✗
 - **Real-time priority**: `OmegaTimer` does not automatically acquire real-time scheduling. Whether this matters depends on the host OS and workload. Document, don't decide.
 - **Logging from the timing thread**: Design the lock-free log ring buffer before implementing. Don't add fprintf to the hot path.
 - **Source registration from the timing thread**: `EventSourceRegistry::add()` and `remove()` must go through the command queue to avoid data races. The registry is read exclusively by the timing thread during `advance_all()`; writes from the mutation thread must be deferred.
+- **Chase thread safety**: `on_locate()` with a `chase_out` dispatcher runs in the context of `notify_locate()`, which is called by the mutation thread when a `TransportCmd` locate is processed. However, the active notes table and event vectors are owned by the timing thread. Proposed resolution: the locate command snapshots a chase-event list on the mutation thread (read-only scan of immutable event data is safe), then the timing thread applies the pre-built list atomically at the start of the next cycle. Design deferred to implementation.
+- **EventInput and `EventInputRegistry` registration**: `EventInputRegistry::add()` and `remove()` must also go through the command queue for the same reason as `EventSourceRegistry`.

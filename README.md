@@ -14,13 +14,19 @@ Omega is a library, not an application. It handles timing, event scheduling, mul
 
 ## What Makes Omega Different
 
-Every DAW solves sequencing for one use case: linear tracks, tape-deck model. Nothing in the open source ecosystem provides an embeddable sequencer engine that covers all three paradigms:
+Every DAW solves sequencing for one use case: linear tracks, tape-deck model. Nothing in the open source ecosystem provides an embeddable sequencer engine that covers all three classic paradigms — and then opens the door to virtually any sequencer ever conceived:
 
 - **Timeline** — linear multi-track recording, the classic model
 - **Pattern** — named loopable sequences, chainable into arrangements
 - **Performance** — live cuing with real-time transpose, velocity scaling, and probabilistic variation
 
-The third mode — Performance — is the least common in current software and the most important design goal of Omega.
+Beyond the three built-in modes, Omega's orchestration layer enables the full range of sequencer architectures:
+
+- **Reactive / generative** — incoming events (MIDI, OSC) become source material via `EventInput`; generative sources produce events procedurally with no stored data
+- **Modulated** — `ModulationBus` carries continuous parameter control (LFOs, envelopes, step modulators) readable by any source each cycle
+- **Scale/chord-aware** — `PerformanceContext` provides shared musical state (scale, chord, groove) that multiple sources read without being wired to each other
+- **Composable** — `TransformSource` composes sources into processing chains (quantize → humanize → chord-spread) without a separate patch graph
+- **Chasing** — transport locate correctly reconstructs note, CC, and program state for any source that supports it
 
 ---
 

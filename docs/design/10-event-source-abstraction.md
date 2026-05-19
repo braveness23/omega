@@ -1,6 +1,6 @@
 # Design Proposal: EventSource Abstraction
 
-**Status**: Accepted. This decision supersedes the implicit mode model described in [06-session-container.md](06-session-container.md) and [07-extensions.md](07-extensions.md). Those documents have been updated to reflect this design.
+**Status**: Accepted. This decision supersedes the implicit mode model described in [06-session-container.md](06-session-container.md) and [07-extensions.md](07-extensions.md). Those documents have been updated to reflect this design. The orchestration layer additions in [11-orchestration-layer.md](11-orchestration-layer.md) extend this interface further — see that document for the final `EventSource` signatures including `ProcessContext` and note/parameter chasing.
 
 ---
 
@@ -35,7 +35,8 @@ public:
     // Called from the timing thread at the top of each engine cycle.
     // Must not block, allocate, or lock.
     // Implementations emit all events due in the range (last_tick, to_tick].
-    virtual void advance(uint64_t to_tick, EventDispatcher& out) = 0;
+    // ctx provides read/write access to ModulationBus, PerformanceContext, and InputBus.
+    virtual void advance(uint64_t to_tick, EventDispatcher& out, ProcessContext& ctx) = 0;
 
     // Called when transport starts. Allows sources to initialize playback state.
     virtual void on_transport_start(uint64_t start_tick) {}
@@ -43,10 +44,16 @@ public:
     // Called when transport stops. Allows sources to silence active notes.
     virtual void on_transport_stop() {}
 
+    // Called when the transport locates to a new tick position.
+    // Stateful sources reset local playback position here.
+    // Sources that support chasing dispatch catch-up events via chase_out immediately.
+    // Default implementation resets playhead only; chasing is opt-in.
+    virtual void on_locate(uint64_t tick, EventDispatcher& chase_out, ProcessContext& ctx) {}
+
     virtual ~EventSource() = default;
 };
 
-// Passed to advance() — avoids std::function allocation in the hot path.
+// Passed to advance() and on_locate() — avoids std::function allocation in the hot path.
 class EventDispatcher {
 public:
     virtual void dispatch(const Event& e) = 0;
@@ -106,7 +113,7 @@ class EuclideanRhythmSource : public EventSource {
     uint32_t rotation_;    // offset
     // ...
 public:
-    void advance(uint64_t to_tick, EventDispatcher& out) override;
+    void advance(uint64_t to_tick, EventDispatcher& out, ProcessContext& ctx) override;
 };
 ```
 
@@ -121,7 +128,7 @@ class PolyrhythmicSource : public EventSource {
     double tempo_multiplier_ = 1.0;  // 2.0 = double speed, 0.5 = half speed
     uint64_t local_tick_ = 0;
 public:
-    void advance(uint64_t to_tick, EventDispatcher& out) override {
+    void advance(uint64_t to_tick, EventDispatcher& out, ProcessContext& ctx) override {
         uint64_t local_to = static_cast<uint64_t>(to_tick * tempo_multiplier_);
         // scan events from local_tick_ to local_to
         local_tick_ = local_to;
@@ -169,26 +176,16 @@ The reactive source may look ahead into future tick windows to schedule arpeggia
 
 ## C API Sketch
 
+The full C API for custom event sources, including the updated `omega_process_ctx_t` parameter passed to every `advance` and `on_locate` callback, is specified in [04-c-api-design.md](04-c-api-design.md) and [11-orchestration-layer.md](11-orchestration-layer.md).
+
 ```c
-/* Register a custom event source */
-typedef void (*omega_advance_fn_t)(uint64_t to_tick, omega_dispatcher_t dispatcher,
-                                    void* userdata);
-typedef void (*omega_transport_start_fn_t)(uint64_t start_tick, void* userdata);
-typedef void (*omega_transport_stop_fn_t)(void* userdata);
-
-typedef struct {
-    omega_advance_fn_t         advance;
-    omega_transport_start_fn_t on_start;   /* nullable */
-    omega_transport_stop_fn_t  on_stop;    /* nullable */
-    void*                      userdata;
-} omega_source_desc_t;
-
+/* Register a custom event source — advance_fn and locate_fn receive omega_process_ctx_t* */
 omega_source_t omega_source_create(const omega_source_desc_t* desc);
 void           omega_source_destroy(omega_source_t source);
 omega_status_t omega_engine_add_source(omega_engine_t engine, omega_source_t source);
 omega_status_t omega_engine_remove_source(omega_engine_t engine, omega_source_t source);
 
-/* Dispatch an event from within an advance callback */
+/* Dispatch an event from within an advance or on_locate callback */
 void omega_dispatch(omega_dispatcher_t dispatcher, const omega_event_t* event);
 ```
 
@@ -211,8 +208,8 @@ The abstraction is symmetric with `OutputSink` and `ClockSource`, which are alre
 
 ## Open Issues
 
-- **Source ordering**: When multiple sources emit events at the same tick, in what order are they dispatched? Registration order is deterministic but may not be musically correct. Consider a priority field on `EventSource`.
-- **Source-to-sink routing**: Currently all sources dispatch to all sinks (filtered by `sink_id` on the event). Should sources declare which sinks they target, or is per-event routing sufficient?
-- **Stateful sources and locate**: When `omega_transport_locate()` jumps to a new tick, stateful sources (step sequencer, polyrhythmic) must reset their local state. Add `on_locate(uint64_t tick)` to the interface.
-- **Built-in source access via C API**: The existing track/pattern/performance C API functions target the built-in sources. If a caller removes a built-in source, those functions become no-ops or errors. Document clearly; consider making built-in sources non-removable in v1.
-- **Session serialization**: Each source must be serializable to the `.omega` format. Custom sources cannot be serialized by the library. Define a serialization protocol or document that custom sources are session-ephemeral.
+- **Source ordering**: Sources run in registration order. The convention is MODULATOR → CONTEXT → PLAYBACK (see [11-orchestration-layer.md](11-orchestration-layer.md)). A formal `SourcePriority` enum is reserved for v2 if the convention proves insufficient.
+- **Source-to-sink routing**: All sources dispatch to all sinks, filtered by `sink_id` on the event. Per-event routing is sufficient for v1. Fan-out (one source's output to multiple downstream sources) is deferred — see doc 11.
+- **Stateful sources and locate**: Resolved. `on_locate(tick, chase_out, ctx)` is now part of the interface. Stateful sources reset local playback position in `on_locate()`. Sources that support chasing dispatch catch-up events via `chase_out`. See [11-orchestration-layer.md](11-orchestration-layer.md) for the full chasing design.
+- **Built-in source access via C API**: The existing track/pattern/performance C API functions target the built-in sources. If a caller removes a built-in source, those functions return `OMEGA_ERR_NOT_FOUND`. Document clearly; consider making built-in sources non-removable in v1.
+- **Session serialization**: Custom sources are session-ephemeral — they must be re-registered and re-configured by the application on each load. Only built-in source data is serialized to `.omega`. This is consistent with how `EventInput` instances are treated.

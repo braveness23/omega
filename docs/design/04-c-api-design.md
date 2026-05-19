@@ -57,21 +57,27 @@ const char* omega_status_str(omega_status_t status);
 
 /* ── Opaque handle types ─────────────────────────────────────────────── */
 
-typedef struct omega_engine_s*   omega_engine_t;
-typedef struct omega_sink_s*     omega_sink_t;
-typedef struct omega_clock_s*    omega_clock_t;
-typedef struct omega_track_s*    omega_track_t;
-typedef struct omega_pattern_s*  omega_pattern_t;
-typedef struct omega_session_s*  omega_session_t;
+typedef struct omega_engine_s*      omega_engine_t;
+typedef struct omega_sink_s*        omega_sink_t;
+typedef struct omega_clock_s*       omega_clock_t;
+typedef struct omega_track_s*       omega_track_t;
+typedef struct omega_pattern_s*     omega_pattern_t;
+typedef struct omega_session_s*     omega_session_t;
+typedef struct omega_source_s*      omega_source_t;
+typedef struct omega_input_s*       omega_input_t;
+typedef struct omega_dispatcher_s*  omega_dispatcher_t;
+typedef struct omega_input_disp_s*  omega_input_dispatcher_t;
 
 typedef uint32_t omega_track_id_t;
 typedef uint32_t omega_pattern_id_t;
 typedef uint32_t omega_sink_id_t;
 typedef uint32_t omega_slot_id_t;
+typedef uint32_t omega_mod_channel_t;
 typedef uint64_t omega_tick_t;
 
 #define OMEGA_INVALID_ID  UINT32_MAX
 #define OMEGA_PPQN        480u
+#define OMEGA_MOD_INVALID UINT32_MAX
 
 /* ── Events ──────────────────────────────────────────────────────────── */
 
@@ -217,33 +223,126 @@ typedef void (*omega_transport_cb_t)(omega_transport_state_t state, void* userda
 omega_status_t omega_set_transport_callback(omega_engine_t engine,
                                              omega_transport_cb_t cb, void* userdata);
 
+/* ── Performance Context types (defined here; setters follow source/input APIs) ── */
+
+typedef struct {
+    uint8_t root;   /* 0–11, C=0 */
+    uint8_t mask;   /* semitone bitmask; bit i set = semitone i active */
+} omega_scale_t;
+
+typedef struct {
+    uint8_t root;
+    uint8_t type;         /* OMEGA_CHORD_MAJ, _MIN, _DOM7, _MAJ7, _MIN7, _DIM, _AUG */
+    uint8_t voices[6];    /* absolute MIDI note numbers; 0xFF = unused voice */
+    uint8_t voice_count;
+} omega_chord_t;
+
+typedef struct {
+    omega_scale_t scale;
+    omega_chord_t chord;
+    int8_t        global_transpose;  /* -24 to +24 semitones */
+    uint8_t       global_velocity;   /* 0–200, 100=unity */
+    uint8_t       chaos;             /* 0–100 */
+    uint8_t       groove_id;         /* index into GrooveLibrary; 0 = straight */
+    float         swing;             /* 0.0–1.0 */
+    uint32_t      random_seed;
+} omega_perf_ctx_t;
+
+/* ── ProcessContext (passed to advance and on_locate callbacks) ───────── */
+
+/* omega_process_ctx_t is valid only for the duration of the advance/on_locate call.
+   Do not cache the pointer or any pointer inside it. */
+typedef struct {
+    /* ModulationBus access — timing thread only */
+    float  (*mod_get)(omega_mod_channel_t ch, void* mod_userdata);
+    void   (*mod_set)(omega_mod_channel_t ch, float value, void* mod_userdata);
+    void*    mod_userdata;
+
+    /* PerformanceContext snapshot for this cycle — read-only */
+    const omega_perf_ctx_t* perf_ctx;
+
+    /* InputBus — events delivered by EventInput::poll() this cycle */
+    const omega_event_t* input_events;
+    uint32_t             input_event_count;
+
+    /* Wall-clock duration of this process() cycle in nanoseconds */
+    uint64_t cycle_ns;
+} omega_process_ctx_t;
+
 /* ── Custom event sources ────────────────────────────────────────────── */
 
-/* advance_fn is called from the timing thread — must not block or allocate */
-typedef void (*omega_advance_fn_t)(uint64_t to_tick, omega_dispatcher_t dispatcher,
+/* advance_fn and locate_fn are called from the timing thread — must not block or allocate */
+typedef void (*omega_advance_fn_t)(uint64_t to_tick,
+                                    omega_dispatcher_t dispatcher,
+                                    const omega_process_ctx_t* ctx,
                                     void* userdata);
 typedef void (*omega_transport_start_fn_t)(uint64_t start_tick, void* userdata);
 typedef void (*omega_transport_stop_fn_t)(void* userdata);
-typedef void (*omega_locate_fn_t)(uint64_t tick, void* userdata);
+typedef void (*omega_locate_fn_t)(uint64_t tick,
+                                   omega_dispatcher_t chase_dispatcher,
+                                   const omega_process_ctx_t* ctx,
+                                   void* userdata);
 
 typedef struct {
     omega_advance_fn_t         advance;
-    omega_transport_start_fn_t on_start;   /* nullable */
-    omega_transport_stop_fn_t  on_stop;    /* nullable */
-    omega_locate_fn_t          on_locate;  /* nullable */
+    omega_transport_start_fn_t on_start;    /* nullable */
+    omega_transport_stop_fn_t  on_stop;     /* nullable */
+    omega_locate_fn_t          on_locate;   /* nullable */
     void*                      userdata;
 } omega_source_desc_t;
-
-typedef struct omega_source_s*     omega_source_t;
-typedef struct omega_dispatcher_s* omega_dispatcher_t;
 
 omega_source_t omega_source_create(const omega_source_desc_t* desc);
 void           omega_source_destroy(omega_source_t source);
 omega_status_t omega_engine_add_source(omega_engine_t engine, omega_source_t source);
 omega_status_t omega_engine_remove_source(omega_engine_t engine, omega_source_t source);
 
-/* Dispatch an event from within an advance callback — routes to registered sinks */
+/* Dispatch an event from within an advance or on_locate callback */
 void omega_dispatch(omega_dispatcher_t dispatcher, const omega_event_t* event);
+
+/* ── Event inputs ────────────────────────────────────────────────────── */
+
+/* poll_fn is called from the timing thread — must not block or allocate */
+typedef void (*omega_input_poll_fn_t)(omega_input_dispatcher_t dispatcher, void* userdata);
+
+typedef struct {
+    omega_input_poll_fn_t poll;
+    void*                 userdata;
+} omega_input_desc_t;
+
+omega_input_t  omega_input_create(const omega_input_desc_t* desc);
+void           omega_input_destroy(omega_input_t input);
+omega_status_t omega_engine_add_input(omega_engine_t engine, omega_input_t input);
+omega_status_t omega_engine_remove_input(omega_engine_t engine, omega_input_t input);
+
+/* Call from within poll callback to deliver an event into the InputBus */
+void omega_deliver(omega_input_dispatcher_t dispatcher, const omega_event_t* event);
+
+/* How many input events were dropped this cycle due to InputBus overflow */
+uint32_t omega_input_overflow_count(omega_engine_t engine);
+
+/* ── Modulation Bus ──────────────────────────────────────────────────── */
+
+omega_mod_channel_t omega_mod_register(omega_engine_t engine, const char* name, float initial);
+omega_mod_channel_t omega_mod_find(omega_engine_t engine, const char* name);
+float               omega_mod_get(omega_engine_t engine, omega_mod_channel_t ch);
+omega_status_t      omega_mod_set(omega_engine_t engine, omega_mod_channel_t ch, float value);
+
+/* Copy all channel values into caller-owned array — safe to call from the UI thread */
+omega_status_t omega_mod_snapshot(omega_engine_t engine, float* out, uint32_t count);
+
+/* ── Performance Context setters ─────────────────────────────────────── */
+
+/* Types (omega_scale_t, omega_chord_t, omega_perf_ctx_t) are declared above. */
+
+omega_status_t omega_ctx_set_scale(omega_engine_t engine, const omega_scale_t* scale);
+omega_status_t omega_ctx_set_chord(omega_engine_t engine, const omega_chord_t* chord);
+omega_status_t omega_ctx_set_transpose(omega_engine_t engine, int8_t semitones);
+omega_status_t omega_ctx_set_velocity(omega_engine_t engine, uint8_t scale_pct);
+omega_status_t omega_ctx_set_chaos(omega_engine_t engine, uint8_t chaos_pct);
+omega_status_t omega_ctx_set_groove(omega_engine_t engine, uint8_t groove_id, float swing);
+
+/* Read current context — for UI display; may read slightly stale values */
+omega_status_t omega_ctx_get(omega_engine_t engine, omega_perf_ctx_t* out);
 
 /* ── SMF import/export ───────────────────────────────────────────────── */
 
@@ -301,6 +400,8 @@ The opaque handle pattern means struct internals can change freely without break
 
 - **Iteration**: How does a UI enumerate tracks, patterns, and events? A callback-based iterator (`omega_track_foreach()`) is cleaner than returning arrays. Design in v2.
 - **Batch operations**: Adding 10,000 events one at a time via the queue is slow. A bulk-insert command that takes an array of events is needed for SMF import. Add `omega_track_add_events_bulk()`.
-- **Thread-safe query**: Querying `omega_transport_position()` from the UI thread may read stale data. Document this; do not add a lock.
+- **Thread-safe query**: Querying `omega_transport_position()` from the UI thread may read stale data. Document this; do not add a lock. Similarly, `omega_mod_get()` from the UI thread should use `omega_mod_snapshot()` instead.
 - **Built-in source access**: The existing `omega_track_*`, `omega_pattern_*`, and `omega_perf_*` functions target the built-in `TimelineSource`, `SongArrangementSource`, and `PerformanceSource` respectively. If a caller removes a built-in source via `omega_engine_remove_source()`, those functions return `OMEGA_ERR_NOT_FOUND`. Document clearly; consider making built-in sources non-removable in v1.
-- **Custom source serialization**: Custom `EventSource` implementations cannot be serialized by the library. The `.omega` session file preserves built-in source data only. Custom sources are session-ephemeral — they must be re-registered and re-configured by the application on each load.
+- **Custom source serialization**: Custom `EventSource` and `EventInput` implementations cannot be serialized by the library. The `.omega` session file preserves built-in source data only. Custom sources and inputs are session-ephemeral — they must be re-registered and re-configured by the application on each load.
+- **ProcessContext pointer lifetime**: The `omega_process_ctx_t*` passed to `advance_fn_t` and `locate_fn_t` is valid only for the duration of that call. The `input_events` array inside it is stack-lifetime. Document explicitly — callers must not cache either pointer.
+- **PerformanceContext forward declaration**: `omega_perf_ctx_t` is referenced in `omega_process_ctx_t` but defined later in the same header. Reorder or use a forward declaration so the header compiles as C99 top-to-bottom.

@@ -58,39 +58,51 @@ Omega is a **C++ sequencer engine** with three public layers:
 
 ### Engine / Session separation
 
-`Engine` is the playback machine. `Session` is the data. They are separate objects. The engine holds a reference to the active session and can swap sessions without reinitializing. Session owns shared data: `PatternLibrary`, `SinkRegistry`, `TempoMap`, and the `EventSourceRegistry`.
+`Engine` is the playback machine. `Session` is the data. They are separate objects. The engine holds a reference to the active session and can swap sessions without reinitializing. Session owns shared data: `PatternLibrary`, `SinkRegistry`, `TempoMap`, `ModulationBus`, `PerformanceContext`, `GrooveLibrary`, `EventSourceRegistry`, and `EventInputRegistry`.
 
-### Five extension points
+### Six extension points
 
 | Extension | Interface | Thread that calls it |
 |---|---|---|
 | Output destination | `OutputSink::send()` | Timing |
 | Clock | `ClockSource::now_ns()` | Timing |
 | Playback mode | `EventSource::advance()` | Timing |
+| Event input | `EventInput::poll()` | Timing |
 | Custom event types | `PayloadRegistry` | N/A (registration only) |
 | Edit operations | `Command::execute()` / `undo()` | Mutation |
 
 ### EventSource — the core abstraction for playback modes
 
-`engine.process()` iterates all registered `EventSource` instances in registration order, calling `advance(to_tick, dispatcher)` on each. Each source emits events by calling `dispatcher.dispatch(event)`. Sources are independent and all run every cycle.
+`engine.process()` polls all `EventInput` instances first (filling the `InputBus`), then iterates all registered `EventSource` instances in registration order, calling `advance(to_tick, dispatcher, ctx)` on each. `ProcessContext` carries read/write access to `ModulationBus`, `PerformanceContext`, and the `InputBus` for this cycle.
 
-The three built-in sources are registered automatically:
-- **`TimelineSource`** — owns the `Timeline` (tracks + event vectors). Linear multi-track playback.
+Source registration order convention: **MODULATOR → CONTEXT → PLAYBACK**. Modulator sources (`LfoSource`, etc.) write to `ModulationBus`. Context sources (`ChordDetectorSource`, etc.) write to `PerformanceContext`. Playback sources read from both and dispatch events.
+
+The three built-in playback sources are registered automatically:
+- **`TimelineSource`** — owns the `Timeline` (tracks + event vectors). Linear multi-track playback. Supports note/CC/program chasing on locate.
 - **`SongArrangementSource`** — owns the `SongArrangement`. Chains patterns with repeat counts.
-- **`PerformanceSource`** — owns 64 performance slots. State machine: EMPTY → IDLE → QUEUED → PLAYING → STOPPING. Per-slot: transpose (±24 semitones), velocity scale (0–200%), random bias (0–100%).
+- **`PerformanceSource`** — owns 64 performance slots. State machine: EMPTY → IDLE → QUEUED → PLAYING → STOPPING. Per-slot: transpose (±24 semitones), velocity scale (0–200%), random bias (0–100%). Supports phase-resume chasing on locate.
 
-Custom sources implement `EventSource` and are added via `omega_engine_add_source()`. See `docs/design/10-event-source-abstraction.md` for the full catalogue of planned extension sources (step sequencer, generative, polyrhythmic, reactive).
+Custom sources implement `EventSource` and are added via `omega_engine_add_source()`. Custom inputs implement `EventInput` and are added via `omega_engine_add_input()`. `TransformSource` is a provided base class for composition-based routing (wraps an upstream source to transform its output).
 
-`EventSource::on_locate(tick)` is called on transport locate — stateful sources must reset local playback position there.
+`EventSource::on_locate(tick, chase_out, ctx)` is called on transport locate. Stateful sources reset local playback position; sources with chasing support dispatch catch-up events via `chase_out`.
+
+### Orchestration layer
+
+Four session-level additions enable the engine to orchestrate virtually any sequencer architecture (see `docs/design/11-orchestration-layer.md`):
+
+- **`EventInput` / `InputBus`** — incoming events (MIDI, OSC, CV) are polled each cycle and broadcast to all sources via `ProcessContext`.
+- **`TransformSource`** — composition-based routing; wraps any source to transform its output before it reaches sinks.
+- **`ModulationBus`** — 256 named `float` channels; updated by modulator sources, read by any source to drive continuous parameters.
+- **`PerformanceContext`** — shared musical state (scale, chord, groove template, chaos, global transpose/velocity) readable and writable by any source each cycle.
 
 ### Thread model
 
 Two threads only:
 
-- **Timing thread**: calls `engine.process()`. Must never allocate, block, or lock. Drains the SPSC command queue, then calls `advance()` on every registered source, dispatching due events to sinks.
-- **Mutation thread**: enqueues `Command` variants (`AddEventCmd`, `SetTempoCmd`, `AddSourceCmd`, etc.) via a lock-free SPSC ring buffer (default capacity: 4096). Returns immediately.
+- **Timing thread**: calls `engine.process()`. Must never allocate, block, or lock. Drains the SPSC command queue, polls all `EventInput` instances, then calls `advance(to_tick, dispatcher, ctx)` on every registered source in priority order, dispatching due events to sinks.
+- **Mutation thread**: enqueues `Command` variants (`AddEventCmd`, `SetTempoCmd`, `SetScaleCmd`, `AddSourceCmd`, etc.) via a lock-free SPSC ring buffer (default capacity: 4096). Returns immediately.
 
-The SPSC queue is single-producer. Multiple mutation threads must serialize externally. `OutputSink::send()` fires from the timing thread — sinks are responsible for their own thread safety.
+The SPSC queue is single-producer. Multiple mutation threads must serialize externally. `OutputSink::send()` and `EventInput::poll()` fire from the timing thread — implementations must not block or allocate.
 
 ### Timing
 
@@ -129,11 +141,12 @@ Note-offs are tracked in a separate active-notes table (128 entries per sink/cha
 
 ## Testing
 
-Tests use **Catch2** (BSL-1.0, fetched via FetchContent). Three test utilities are **part of the public library** (`include/omega/test/`), available to application authors:
+Tests use **Catch2** (BSL-1.0, fetched via FetchContent). Four test utilities are **part of the public library** (`include/omega/test/`), available to application authors:
 
 - `MockClock` — manually-advanced clock; use `advance_ticks()`, `advance_beats()`, or `set_ns()`. All time-dependent behavior must be testable without a real clock.
 - `CapturingSink` — records all dispatched events; provides `count()`, `has_note_on()`, `has_note_off()`, `first()` queries.
 - `MockEventSource` — primed with events at specific ticks; injects them into the engine pipeline during `advance()`. Use alongside `CapturingSink` to test source→sink paths in isolation.
+- `MockEventInput` — primed with events to deliver during `poll()`; simulates incoming MIDI/OSC without hardware. Use to test reactive and input-driven sources.
 
 Test files go in `tests/unit/` and `tests/integration/`. Add new `.cpp` files to `tests/CMakeLists.txt` (currently all commented out pending implementation). Benchmarks (`tests/benchmarks/`) use Catch2's `BENCHMARK` macro and are not run in CI.
 

@@ -18,7 +18,7 @@ Catch2 is fetched via CMake `FetchContent` so contributors don't need to install
 
 ## The Three Test Utilities
 
-These live in `include/omega/test/` and are compiled into a separate `omega_test` target. They are part of the public library — not hidden in the test directory — because application authors may want to use them to test their own sinks, clocks, and sources.
+These live in `include/omega/test/` and are compiled into a separate `omega_test` target. They are part of the public library — not hidden in the test directory — because application authors may want to use them to test their own sinks, clocks, sources, and inputs.
 
 ### MockClock
 
@@ -48,10 +48,12 @@ public:
     void add_event(const Event& e);
     void clear();
 
-    void advance(uint64_t to_tick, EventDispatcher& out) override;
+    void advance(uint64_t to_tick, EventDispatcher& out, ProcessContext& ctx) override;
     void on_transport_start(uint64_t start_tick) override { playhead_ = start_tick; }
     void on_transport_stop() override {}
-    void on_locate(uint64_t tick) override { playhead_ = tick; }
+    void on_locate(uint64_t tick, EventDispatcher& chase_out, ProcessContext& ctx) override {
+        playhead_ = tick;
+    }
 
     // Number of advance() calls received — useful for verifying call cadence.
     uint32_t advance_count() const;
@@ -64,6 +66,30 @@ private:
 ```
 
 `MockEventSource` complements `CapturingSink`: the mock source injects events at the input side; the capturing sink verifies events at the output side.
+
+### MockEventInput
+
+An `EventInput` that can be primed with events to deliver during `poll()`. Allows tests to simulate incoming MIDI or OSC events without needing a real hardware port.
+
+```cpp
+class MockEventInput : public EventInput {
+public:
+    // Pre-load an event to be delivered on the next poll() call.
+    void push(const Event& e);
+    void clear();
+
+    void poll(InputDispatcher& dispatcher) override;
+
+    // Number of poll() calls received — useful for verifying call cadence.
+    uint32_t poll_count() const;
+
+private:
+    std::queue<Event> pending_;
+    uint32_t poll_count_ = 0;
+};
+```
+
+Use `MockEventInput` alongside `MockEventSource` and `CapturingSink` to test full input→source→sink pipelines deterministically.
 
 ### CapturingSink
 
@@ -94,29 +120,43 @@ public:
 ```
 tests/
 ├── unit/
-│   ├── test_timing_model.cpp       # tick↔ns conversions, tempo map
-│   ├── test_spsc_queue.cpp         # queue push/pop, full/empty conditions
-│   ├── test_event_dispatch.cpp     # engine fires events at correct ticks
-│   ├── test_note_off_tracking.cpp  # duration-based note-off
-│   ├── test_pattern_state.cpp      # all slot state machine transitions
-│   ├── test_performance_params.cpp # transpose, velocity scale, random bias
-│   ├── test_tempo_change.cpp       # mid-playback tempo change
-│   ├── test_loop_region.cpp        # loop start/end, loop boundary behavior
-│   ├── test_record_staging.cpp     # record, commit, merge into track
-│   ├── test_smf_import.cpp         # roundtrip SMF type 0 and type 1
-│   ├── test_session_save_load.cpp  # roundtrip native JSON format
-│   └── test_event_source.cpp       # MockEventSource, source registration,
-│                                   # multi-source ordering, locate/stop callbacks
+│   ├── test_timing_model.cpp        # tick↔ns conversions, tempo map
+│   ├── test_spsc_queue.cpp          # queue push/pop, full/empty conditions
+│   ├── test_event_dispatch.cpp      # engine fires events at correct ticks
+│   ├── test_note_off_tracking.cpp   # duration-based note-off
+│   ├── test_pattern_state.cpp       # all slot state machine transitions
+│   ├── test_performance_params.cpp  # transpose, velocity scale, random bias
+│   ├── test_tempo_change.cpp        # mid-playback tempo change
+│   ├── test_loop_region.cpp         # loop start/end, loop boundary behavior
+│   ├── test_record_staging.cpp      # record, commit, merge into track
+│   ├── test_smf_import.cpp          # roundtrip SMF type 0 and type 1
+│   ├── test_session_save_load.cpp   # roundtrip native JSON format (incl. ModBus,
+│   │                                # PerfCtx, GrooveLibrary keys)
+│   ├── test_event_source.cpp        # MockEventSource, source registration,
+│   │                                # multi-source ordering, locate/stop callbacks
+│   ├── test_event_input.cpp         # MockEventInput, InputBus fill/overflow,
+│   │                                # recording integration
+│   ├── test_modulation_bus.cpp      # register, get/set, snapshot, ordering with
+│   │                                # LfoSource writing and source reading
+│   ├── test_performance_context.cpp # scale/chord/groove/chaos field writes,
+│   │                                # ChordDetectorSource, random_seed advance
+│   ├── test_transform_source.cpp    # ScaleQuantizerSource, HumanizerSource,
+│   │                                # multi-wrap composition chain
+│   └── test_chasing.cpp             # note/CC/program chasing on locate;
+│                                    # PerformanceSource phase resume
 ├── integration/
-│   ├── test_timeline_playback.cpp  # multi-track playback end-to-end
-│   ├── test_pattern_playback.cpp   # song arrangement end-to-end
-│   ├── test_performance_live.cpp   # cue/stop/transpose in sequence
-│   ├── test_multi_source.cpp       # multiple sources active simultaneously;
-│   │                               # verify ordering and note-off isolation
-│   └── test_c_api.cpp             # exercise the full C API surface incl. sources
+│   ├── test_timeline_playback.cpp   # multi-track playback end-to-end
+│   ├── test_pattern_playback.cpp    # song arrangement end-to-end
+│   ├── test_performance_live.cpp    # cue/stop/transpose in sequence
+│   ├── test_multi_source.cpp        # multiple sources active simultaneously;
+│   │                                # verify ordering and note-off isolation
+│   ├── test_orchestration.cpp       # MockEventInput → ProcessContext → CapturingSink;
+│   │                                # LfoSource writes ModBus; TransposeSource reads it
+│   └── test_c_api.cpp              # exercise the full C API surface incl. sources,
+│                                    # inputs, ModBus, PerfCtx
 └── benchmarks/
-    ├── bench_process_loop.cpp      # throughput of engine.process() with N sources
-    └── bench_event_insert.cpp      # cost of adding events to a large track
+    ├── bench_process_loop.cpp       # throughput of engine.process() with N sources
+    └── bench_event_insert.cpp       # cost of adding events to a large track
 ```
 
 ---
@@ -146,7 +186,7 @@ TEST_CASE("accumulated timing does not drift over 10 minutes") {
 
 ```cpp
 SCENARIO("engine fires note-on at correct tick") {
-    GIVEN("an engine with a mock clock and capturing sink") {
+    GIVEN("an engine with a mock clock, capturing sink, and no event inputs") {
         MockClock clock;
         CapturingSink sink;
         Engine engine(clock, sink);

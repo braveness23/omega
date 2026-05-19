@@ -26,11 +26,19 @@ Session
 ├── TimeSignature            (numerator, denominator — display/grid only, not timing)
 ├── LoopRegion               {start_tick, end_tick, enabled}
 ├── Metadata                 {name, author, created_at, modified_at}
-└── EventSourceRegistry      (ordered list of registered EventSource instances)
-    ├── TimelineSource        (owns Timeline: tracks and their event vectors)
-    ├── SongArrangementSource (owns SongArrangement: ordered PatternRef list)
-    ├── PerformanceSource     (owns PerformanceConfig: 64 slots with state machine)
-    └── [application sources] (custom sources added via omega_engine_add_source)
+├── ModulationBus            (256 float channels; written by modulator sources, read by any source)
+├── PerformanceContext        (shared musical state: scale, chord, groove_id, chaos, transpose, etc.)
+├── GrooveLibrary             (named GrooveTemplate entries; pre-loaded with 6 built-in templates)
+├── EventSourceRegistry      (ordered list of registered EventSource instances)
+│   ├── [MODULATOR priority]  LfoSource, EnvelopeSource, etc. (write ModulationBus)
+│   ├── [CONTEXT priority]    ChordDetectorSource, etc. (write PerformanceContext)
+│   ├── TimelineSource        (owns Timeline: tracks and their event vectors)
+│   ├── SongArrangementSource (owns SongArrangement: ordered PatternRef list)
+│   ├── PerformanceSource     (owns PerformanceConfig: 64 slots with state machine)
+│   └── [application sources] (custom sources added via omega_engine_add_source)
+└── EventInputRegistry       (ordered list of registered EventInput instances)
+    ├── MidiInputSource       (drains incoming MIDI from a libremidi port)
+    └── [application inputs]  (custom inputs added via omega_engine_add_input)
 ```
 
 ---
@@ -42,16 +50,18 @@ class EventSourceRegistry {
 public:
     void   add(std::shared_ptr<EventSource> source);
     void   remove(EventSource* source);
-    void   advance_all(uint64_t to_tick, EventDispatcher& out);
+    void   advance_all(uint64_t to_tick, EventDispatcher& out, ProcessContext& ctx);
     void   notify_transport_start(uint64_t start_tick);
     void   notify_transport_stop();
-    void   notify_locate(uint64_t tick);
+    void   notify_locate(uint64_t tick, EventDispatcher& chase_out, ProcessContext& ctx);
 private:
     std::vector<std::shared_ptr<EventSource>> sources_;
 };
 ```
 
-`advance_all()` is called by the engine's `process()` each cycle. It iterates sources in registration order, calling `advance()` on each. The registry itself is not modified during `advance_all()` — source addition and removal go through the command queue and take effect at the start of the next cycle.
+`advance_all()` is called by the engine's `process()` each cycle. It iterates sources in registration order, calling `advance(to_tick, out, ctx)` on each. The `ProcessContext` carries the `ModulationBus`, `PerformanceContext`, and `InputBus` for this cycle. The registry itself is not modified during `advance_all()` — source addition and removal go through the command queue and take effect at the start of the next cycle.
+
+`notify_locate()` calls `on_locate(tick, chase_out, ctx)` on every registered source. Sources that support chasing dispatch catch-up events via `chase_out`. See [11-orchestration-layer.md](11-orchestration-layer.md) for the full chasing design.
 
 ---
 
@@ -87,10 +97,10 @@ public:
     Track*   get_track(TrackId id);
     uint32_t track_count() const;
 
-    void advance(uint64_t to_tick, EventDispatcher& out) override;
+    void advance(uint64_t to_tick, EventDispatcher& out, ProcessContext& ctx) override;
     void on_transport_start(uint64_t start_tick) override;
     void on_transport_stop() override;
-    void on_locate(uint64_t tick) override;
+    void on_locate(uint64_t tick, EventDispatcher& chase_out, ProcessContext& ctx) override;
 };
 
 class Track {
@@ -125,10 +135,10 @@ public:
     void remove(size_t index);
     Ticks total_length() const;
 
-    void advance(uint64_t to_tick, EventDispatcher& out) override;
+    void advance(uint64_t to_tick, EventDispatcher& out, ProcessContext& ctx) override;
     void on_transport_start(uint64_t start_tick) override;
     void on_transport_stop() override;
-    void on_locate(uint64_t tick) override;
+    void on_locate(uint64_t tick, EventDispatcher& chase_out, ProcessContext& ctx) override;
 
 private:
     std::pmr::vector<PatternRef> refs_;
@@ -161,10 +171,10 @@ struct Slot {
 
 class PerformanceSource : public EventSource {
 public:
-    void advance(uint64_t to_tick, EventDispatcher& out) override;
+    void advance(uint64_t to_tick, EventDispatcher& out, ProcessContext& ctx) override;
     void on_transport_start(uint64_t start_tick) override;
     void on_transport_stop() override;
-    void on_locate(uint64_t tick) override;
+    void on_locate(uint64_t tick, EventDispatcher& chase_out, ProcessContext& ctx) override;
 
 private:
     std::array<Slot, OMEGA_MAX_SLOTS> slots_;
@@ -173,6 +183,82 @@ private:
 ```
 
 `OMEGA_MAX_SLOTS = 64` for v1. Exposed as a constant in the C API so UIs can size their grids accordingly. `PerformanceSource` also holds a non-owning reference to the `PatternLibrary`.
+
+---
+
+## ModulationBus
+
+`ModulationBus` is a flat array of 256 named `float` channels owned by `Session`. Modulator sources write to it during `advance()`; playback sources read from it. The bus is made available to all sources via `ProcessContext`.
+
+```cpp
+class ModulationBus {
+public:
+    static constexpr uint32_t MAX_CHANNELS = 256;
+
+    uint32_t register_channel(const char* name, float initial_value = 0.0f);
+    uint32_t find_channel(const char* name) const;
+    float    get(uint32_t channel_id) const;
+    void     set(uint32_t channel_id, float value);
+    void     snapshot(float* out, uint32_t count) const;  // safe from UI thread
+};
+```
+
+Channel registration happens from the mutation thread before playback. Read/write from the timing thread uses no locks — naturally-aligned `float` reads and writes are hardware-atomic on all target architectures. See [11-orchestration-layer.md](11-orchestration-layer.md) for the full design.
+
+---
+
+## PerformanceContext and GrooveLibrary
+
+`PerformanceContext` is a small POD struct owned by `Session` holding shared musical state read by multiple sources each cycle. It is passed by reference through `ProcessContext`.
+
+```cpp
+struct PerformanceContext {
+    Scale    scale;              // musical key/scale (root + semitone bitmask)
+    Chord    chord;              // current chord (root, type, voices)
+    int8_t   global_transpose;  // applied globally to all note-ons, -24 to +24
+    uint8_t  global_velocity;   // 0–200, 100=unity; applied globally
+    uint8_t  chaos;             // 0–100; global randomness influence
+    uint8_t  groove_id;         // index into GrooveLibrary; 0 = straight timing
+    float    swing;             // 0.0–1.0; applied to the active groove template
+    uint32_t random_seed;       // advances deterministically each process() cycle
+};
+```
+
+`GrooveLibrary` holds named timing/velocity templates applied by groove-aware sources. It is also owned by `Session`.
+
+```cpp
+struct GrooveTemplate {
+    static constexpr uint32_t STEPS = 16;  // sixteenth-note resolution
+    int8_t  tick_offset[STEPS];             // timing nudge per step, in ticks
+    int8_t  velocity_offset[STEPS];         // velocity adjustment per step, signed
+};
+
+class GrooveLibrary {
+public:
+    uint8_t              add(std::string_view name, const GrooveTemplate& tmpl);
+    const GrooveTemplate* get(uint8_t id) const;
+    uint8_t              find_by_name(std::string_view name) const;
+};
+```
+
+Pre-loaded templates: `STRAIGHT` (id=0), `MPC_SWING_54`, `MPC_SWING_58`, `808_SHUFFLE`, `BOSSA`, `JAZZ_SHUFFLE`. Mutations to `PerformanceContext` fields go through the command queue (`SetScaleCmd`, `SetChordCmd`, `SetGrooveCmd`, `SetChaosCmd`, etc.).
+
+---
+
+## EventInputRegistry
+
+`EventInputRegistry` holds all registered `EventInput` instances. The engine's `process()` calls `poll()` on each registered input before calling `advance_all()`, filling the `InputBus` for that cycle.
+
+```cpp
+class EventInputRegistry {
+public:
+    void add(std::shared_ptr<EventInput> input);
+    void remove(EventInput* input);
+    void poll_all(InputDispatcher& dispatcher);  // called at top of process()
+};
+```
+
+`EventInput` instances are session-ephemeral — they are not serialized to the `.omega` file. Hardware connections are re-established by the application on each load.
 
 ---
 
@@ -251,9 +337,29 @@ Top-level structure:
   "pattern_library": [ { "id": 1, "name": "Groove A", "length_ticks": 1920, "events": [...] } ],
   "timeline": { "tracks": [...] },
   "song_arrangement": [ { "pattern_id": 1, "repeat_count": 4 } ],
-  "performance": { "slots": [...] }
+  "performance": { "slots": [...] },
+  "modulation_bus": {
+    "channels": [
+      { "id": 0, "name": "lfo_speed", "value": 0.5 }
+    ]
+  },
+  "performance_context": {
+    "scale": { "root": 0, "mask": 2741 },
+    "chord": { "root": 0, "type": "MAJ", "voices": [60, 64, 67] },
+    "global_transpose": 0,
+    "global_velocity": 100,
+    "chaos": 0,
+    "groove_id": 0,
+    "swing": 0.5,
+    "random_seed": 42
+  },
+  "groove_library": [
+    { "id": 1, "name": "MPC_SWING_54", "tick_offsets": [...], "velocity_offsets": [...] }
+  ]
 }
 ```
+
+`EventInput` instances are not serialized — they are session-ephemeral (hardware connections re-established on each load). Custom `EventSource` implementations are also session-ephemeral.
 
 Events are encoded as arrays for compactness: `[tick, type, channel, data...]`.
 

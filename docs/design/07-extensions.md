@@ -2,13 +2,14 @@
 
 ## Extension Philosophy
 
-Omega has five designed extension points. Everything else is internal. Adding more extension points later is easy; removing them after they're published is not. We start conservative.
+Omega has six designed extension points. Everything else is internal. Adding more extension points later is easy; removing them after they're published is not. We start conservative.
 
 | Extension Point | How | Who Implements |
 |---|---|---|
 | Output sink | Subclass `OutputSink` | Application / plugin author |
 | Clock source | Subclass `ClockSource` | Application / platform integrator |
 | Event source | Subclass `EventSource` | Application / mode author |
+| Event input | Subclass `EventInput` | Application / hardware integrator |
 | Event payload types | Register with `PayloadRegistry` | Application / third-party library |
 | Edit operations | Add `Command` subclass | Internal or application extension |
 
@@ -59,7 +60,8 @@ public:
     // Called from the timing thread at the top of each engine cycle.
     // Must not block, allocate, or lock.
     // Emit all events due in the range (last_to_tick, to_tick].
-    virtual void advance(uint64_t to_tick, EventDispatcher& out) = 0;
+    // ctx provides read/write access to ModulationBus, PerformanceContext, and InputBus.
+    virtual void advance(uint64_t to_tick, EventDispatcher& out, ProcessContext& ctx) = 0;
 
     // Called when transport starts. Sources initialize playback state here.
     virtual void on_transport_start(uint64_t start_tick) {}
@@ -68,13 +70,14 @@ public:
     virtual void on_transport_stop() {}
 
     // Called when the transport locates to a new tick position.
-    // Stateful sources (step sequencer, polyrhythmic) reset local state here.
-    virtual void on_locate(uint64_t tick) {}
+    // Stateful sources reset local playback position here.
+    // Sources that support chasing dispatch catch-up events via chase_out.
+    virtual void on_locate(uint64_t tick, EventDispatcher& chase_out, ProcessContext& ctx) {}
 
     virtual ~EventSource() = default;
 };
 
-// Passed to advance() — the source calls out.dispatch() for each due event.
+// Passed to advance() and on_locate() — the source calls out.dispatch() for each due event.
 // Implemented by the engine; routes events to registered OutputSink instances.
 class EventDispatcher {
 public:
@@ -105,33 +108,71 @@ All three are registered automatically on engine creation. They can be removed v
 
 ### C API
 
+The `advance` and `on_locate` callbacks receive a `const omega_process_ctx_t*` providing access to `ModulationBus`, `PerformanceContext`, and the `InputBus`. Full type definitions are in [04-c-api-design.md](04-c-api-design.md).
+
 ```c
-typedef void (*omega_advance_fn_t)(uint64_t to_tick, omega_dispatcher_t dispatcher,
-                                    void* userdata);
-typedef void (*omega_transport_start_fn_t)(uint64_t start_tick, void* userdata);
-typedef void (*omega_transport_stop_fn_t)(void* userdata);
-typedef void (*omega_locate_fn_t)(uint64_t tick, void* userdata);
-
-typedef struct {
-    omega_advance_fn_t         advance;
-    omega_transport_start_fn_t on_start;   /* nullable */
-    omega_transport_stop_fn_t  on_stop;    /* nullable */
-    omega_locate_fn_t          on_locate;  /* nullable */
-    void*                      userdata;
-} omega_source_desc_t;
-
 omega_source_t omega_source_create(const omega_source_desc_t* desc);
 void           omega_source_destroy(omega_source_t source);
 omega_status_t omega_engine_add_source(omega_engine_t engine, omega_source_t source);
 omega_status_t omega_engine_remove_source(omega_engine_t engine, omega_source_t source);
 
-/* Dispatch an event from within an advance callback */
+/* Dispatch an event from within an advance or on_locate callback */
 void omega_dispatch(omega_dispatcher_t dispatcher, const omega_event_t* event);
 ```
 
-### Source Ordering
+### Source Priority Convention
 
-Sources are called in registration order within each engine cycle. Built-in sources are registered first (timeline → pattern → performance), then application sources in the order `omega_engine_add_source()` was called. When multiple sources emit events at the same tick, dispatch order follows source registration order. This is deterministic but may not always be musically correct — a future `priority` field is reserved for v2.
+Sources are called in registration order within each engine cycle. The convention for registration order is:
+
+1. **MODULATOR** — `LfoSource`, `EnvelopeSource`, `StepModSource`, `ExpressionSource`. These write to the `ModulationBus` and must run before any source that reads from it.
+2. **CONTEXT** — `ChordDetectorSource`, `KeyDetectorSource`. These write to `PerformanceContext` and must run before playback sources that read it.
+3. **PLAYBACK** — `TimelineSource`, `SongArrangementSource`, `PerformanceSource`, custom playback sources and transform chains. These read from `ModulationBus` and `PerformanceContext` and dispatch events.
+
+This ordering is documented convention, not code-enforced. A `SourcePriority` enum (`MODULATOR=0`, `CONTEXT=1`, `PLAYBACK=2`) is reserved for v2 if the convention proves insufficient.
+
+When multiple sources emit events at the same tick, dispatch order follows source registration order within the same priority tier. This is deterministic.
+
+### TransformSource — Composition-Based Routing
+
+`TransformSource` is a provided base class for composing `EventSource` instances in a pipeline. A `TransformSource` wraps an upstream source, intercepts its output, and re-dispatches transformed events.
+
+```cpp
+class TransformSource : public EventSource {
+public:
+    explicit TransformSource(std::shared_ptr<EventSource> upstream);
+
+    void advance(uint64_t to_tick, EventDispatcher& out, ProcessContext& ctx) override;
+    void on_locate(uint64_t tick, EventDispatcher& chase_out, ProcessContext& ctx) override;
+    void on_transport_start(uint64_t start_tick) override;
+    void on_transport_stop() override;
+
+protected:
+    // Subclass implements transformation logic here.
+    // May emit zero, one, or many output events per input event.
+    virtual void transform(const Event& in, EventDispatcher& out, ProcessContext& ctx) = 0;
+
+    std::shared_ptr<EventSource> upstream_;
+};
+```
+
+Composition chains are built by passing one source to another's constructor. The engine's source registry contains only the outermost (root) source. No separate graph registry is needed.
+
+```cpp
+auto step_seq  = std::make_shared<StepSequencerSource>(pattern);
+auto quantized = std::make_shared<ScaleQuantizerSource>(step_seq);
+auto humanized = std::make_shared<HumanizerSource>(quantized, /*jitter_ticks=*/10);
+engine.add_source(humanized);  // only the root is registered
+```
+
+| Transform | Description |
+|---|---|
+| `ScaleQuantizerSource` | Snaps note numbers to the active scale in `PerformanceContext` |
+| `TransposeSource` | Shifts pitch by a fixed offset or a `ModulationBus` channel value |
+| `VelocityCurveSource` | Applies a velocity curve (linear, exponential, S-curve, fixed table) |
+| `HumanizerSource` | Adds bounded timing jitter and velocity scatter |
+| `ChordSpreadSource` | Expands single notes into chords per a voicing table |
+| `FilterSource` | Gates events matching a predicate (note range, CC range, type mask) |
+| `DelaySource` | Delays all events by a fixed tick offset |
 
 ---
 
@@ -156,6 +197,69 @@ public:
 | `HostClock` | Driven by DAW sample position | None (host provides values) |
 
 The C API clock extension point: `omega_clock_create_custom(fn, userdata)` where `fn` returns `uint64_t` nanoseconds. Any timing source that can produce a monotonically increasing nanosecond count can drive Omega.
+
+---
+
+## Event Inputs
+
+`EventInput` is the symmetric counterpart to `OutputSink`. Where `OutputSink` receives events from the engine and delivers them to the outside world, `EventInput` accepts events from the outside world and delivers them into the engine each cycle.
+
+```cpp
+class EventInput {
+public:
+    // Called from the timing thread during engine.process(), before any advance() calls.
+    // Drain all pending incoming events and deliver them via dispatcher.
+    // Must not block or allocate.
+    virtual void poll(InputDispatcher& dispatcher) = 0;
+    virtual ~EventInput() = default;
+};
+
+class InputDispatcher {
+public:
+    // Deliver an event into the InputBus for this cycle.
+    // If the engine is in record mode, also copies to the per-track staging buffer.
+    virtual void deliver(const Event& e) = 0;
+};
+```
+
+Delivered events are accumulated in the `InputBus` and made available to all `EventSource::advance()` calls this cycle via `ProcessContext::input_bus`. The `InputBus` is cleared at the start of each `process()` call.
+
+### Provided EventInput Implementations
+
+| Input | Description | Dependency |
+|---|---|---|
+| `MidiInputSource` | Drains incoming MIDI events from a libremidi port | libremidi (MIT) |
+| `OscInputSource` | Receives OSC messages over UDP | optional |
+| `MockEventInput` | Primed with events for testing; drains one at a time | None (test utility) |
+
+### Recording Integration
+
+`EventInput` supersedes the ad-hoc MIDI-input-to-recording-buffer path. When the engine is in record mode, `InputDispatcher::deliver()` copies events to the per-track staging ring buffer as described in [03-memory-storage.md](03-memory-storage.md). The staging-and-commit model is unchanged.
+
+### C API
+
+```c
+typedef struct omega_input_s*     omega_input_t;
+typedef struct omega_input_disp_s* omega_input_dispatcher_t;
+
+typedef void (*omega_input_poll_fn_t)(omega_input_dispatcher_t dispatcher, void* userdata);
+
+typedef struct {
+    omega_input_poll_fn_t poll;
+    void*                 userdata;
+} omega_input_desc_t;
+
+omega_input_t  omega_input_create(const omega_input_desc_t* desc);
+void           omega_input_destroy(omega_input_t input);
+omega_status_t omega_engine_add_input(omega_engine_t engine, omega_input_t input);
+omega_status_t omega_engine_remove_input(omega_engine_t engine, omega_input_t input);
+
+/* Call from within poll callback to deliver an event into the InputBus */
+void omega_deliver(omega_input_dispatcher_t dispatcher, const omega_event_t* event);
+
+/* Query how many input events were dropped this cycle (InputBus overflow) */
+uint32_t omega_input_overflow_count(omega_engine_t engine);
+```
 
 ---
 
@@ -266,3 +370,5 @@ Recommendation: implement basic OSC (bundle + message) natively (it's a simple b
 - **Custom payload C API**: The `PayloadRegistry` is a C++ interface. How does a Python binding register a custom payload type with a serializer? Design a C wrapper for `PayloadSerializer`.
 - **Sink thread affinity**: Should sinks be able to declare which thread they're safe to call from? Add `sink_thread_affinity()` returning `TIMING_THREAD_ONLY | ANY_THREAD` as a future hint.
 - **Plugin format**: Should Omega support VST/AU/CLAP plugin loading to discover sinks? Out of scope for v1, but don't design against it.
+- **EventInput and ModulationBus channel count**: Both `InputBus::MAX_EVENTS` (64) and `ModulationBus::MAX_CHANNELS` (256) are compile-time constants. Make them construction-time parameters (like command queue capacity) before v1 ships, so embedded targets can tune them.
+- **TransformSource fan-out**: Composition handles fan-in (multiple sources feeding one transform) but not fan-out (one source feeding multiple transforms). If needed, a shared `EventBuffer` pattern is the mechanism. Deferred — no planned source requires it.
