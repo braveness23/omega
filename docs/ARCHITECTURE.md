@@ -50,6 +50,7 @@ Start here if you're new to the codebase:
 8. [Testing Strategy](design/08-testing-strategy.md) — MockClock, CapturingSink, CI
 9. [Prior Art](design/09-prior-art.md) — libraries studied, what was borrowed, license compatibility
 10. [EventSource Abstraction](design/10-event-source-abstraction.md) — pluggable playback modes via EventSource; new mode catalogue
+11. [Orchestration Layer](design/11-orchestration-layer.md) — EventInput, TransformSource routing, ModulationBus, PerformanceContext, chasing
 
 ## Key Decisions at a Glance
 
@@ -65,6 +66,10 @@ Start here if you're new to the codebase:
 | Error handling | Error codes (no exceptions in API) | [04](design/04-c-api-design.md) |
 | Playback modes | Pluggable EventSource abstraction | [10](design/10-event-source-abstraction.md) |
 | Built-in modes | Timeline · Pattern · Performance (all simultaneous) | [06](design/06-session-container.md) |
+| Event input | Pluggable EventInput abstraction | [11](design/11-orchestration-layer.md) |
+| Source routing | TransformSource composition (no graph registry) | [11](design/11-orchestration-layer.md) |
+| Param modulation | ModulationBus (float channels, updated each cycle) | [11](design/11-orchestration-layer.md) |
+| Shared context | PerformanceContext (scale, chord, groove, chaos) | [11](design/11-orchestration-layer.md) |
 | MIDI I/O | libremidi (MIT) | [09](design/09-prior-art.md) |
 | SMF parsing | midifile/Stanford (BSD) | [09](design/09-prior-art.md) |
 | Native format | JSON (v1) | [06](design/06-session-container.md) |
