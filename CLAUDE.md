@@ -37,11 +37,11 @@ Linux requires `libasound2-dev` (ALSA) for MIDI I/O. macOS uses CoreMIDI (no ext
 ```bash
 # Check (CI does this on every PR)
 find include src tests -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \
-  | xargs clang-format-15 --dry-run --Werror
+  | xargs clang-format-18 --dry-run --Werror
 
 # Apply
 find include src tests -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \
-  | xargs clang-format-15 -i
+  | xargs clang-format-18 -i
 ```
 
 Style is Google-based with Allman braces, 4-space indent, 100-column limit. See `.clang-format` for full config.
