@@ -27,9 +27,9 @@ If the library owned its thread, all of these scenarios would require fighting t
 
 There are exactly two thread contexts in Omega:
 
-**The timing thread** calls `engine.process()`. This is the hot path. It must never block, never allocate, never lock. It reads the event queue, fires events, advances playback state.
+**The timing thread** calls `engine.process()`. This is the hot path. It must never block, never allocate, never lock. It drains the command queue, then calls `advance()` on every registered `EventSource` in registration order, dispatching all due events to registered `OutputSink` instances.
 
-**The mutation thread** (typically the UI or API thread) adds events, changes tempo, edits patterns, switches modes. It enqueues commands and returns immediately.
+**The mutation thread** (typically the UI or API thread) adds events, changes tempo, edits patterns, registers sources. It enqueues commands and returns immediately.
 
 These two threads communicate through a **lock-free SPSC queue** (single producer, single consumer). The timing thread is always the consumer. The mutation thread is always the producer.
 
@@ -143,18 +143,20 @@ engine.set_tempo(120)
   → return immediately   process():
                            drain command queue
                              apply SetTempoCmd
-                           advance playback
-                           fire due events
-                             → sink.send(event)
+                           for each EventSource:
+                             source.advance(to_tick, dispatcher)
+                               → dispatcher.dispatch(event)
+                                   → sink.send(event)
 ```
 
 ```
 Thread safety matrix:
-                    Timing Thread    Mutation Thread
-engine.process()        ✓                ✗
-engine.enqueue_cmd()    ✗*               ✓
-sink.send()             ✓ (called by)    ✗
-clock.now_ns()          ✓                ✗
+                        Timing Thread    Mutation Thread
+engine.process()            ✓                ✗
+engine.enqueue_cmd()        ✗*               ✓
+source.advance()            ✓ (called by)    ✗
+sink.send()                 ✓ (called by)    ✗
+clock.now_ns()              ✓                ✗
 
 * enqueue_cmd() is safe from any thread as long as only one thread
   is the producer at a time (SPSC invariant).
@@ -167,3 +169,4 @@ clock.now_ns()          ✓                ✗
 - **Multiple mutation threads**: The SPSC queue is single-producer. If multiple threads need to mutate (e.g., a UI thread and a network sync thread), they must serialize through a mutex on the producer side, or use a MPSC queue. Defer to v2 — document the single-producer requirement clearly.
 - **Real-time priority**: `OmegaTimer` does not automatically acquire real-time scheduling. Whether this matters depends on the host OS and workload. Document, don't decide.
 - **Logging from the timing thread**: Design the lock-free log ring buffer before implementing. Don't add fprintf to the hot path.
+- **Source registration from the timing thread**: `EventSourceRegistry::add()` and `remove()` must go through the command queue to avoid data races. The registry is read exclusively by the timing thread during `advance_all()`; writes from the mutation thread must be deferred.

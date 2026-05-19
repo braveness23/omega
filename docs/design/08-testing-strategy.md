@@ -16,9 +16,9 @@ Catch2 is fetched via CMake `FetchContent` so contributors don't need to install
 
 ---
 
-## The Two Test Utilities
+## The Three Test Utilities
 
-These live in `include/omega/test/` and are compiled into a separate `omega_test` target. They are part of the public library — not hidden in the test directory — because application authors may want to use them to test their own sinks and clocks.
+These live in `include/omega/test/` and are compiled into a separate `omega_test` target. They are part of the public library — not hidden in the test directory — because application authors may want to use them to test their own sinks, clocks, and sources.
 
 ### MockClock
 
@@ -36,6 +36,34 @@ public:
 ```
 
 `advance_beats(1.0)` at 120 BPM advances by 500,000,000 ns (0.5 seconds). Internally uses the same integer arithmetic as the engine's timing model.
+
+### MockEventSource
+
+An `EventSource` that can be primed with events to emit at specific ticks. Allows tests to inject events into the engine pipeline without needing a full `TimelineSource` or `PerformanceSource` setup.
+
+```cpp
+class MockEventSource : public EventSource {
+public:
+    // Pre-load an event to be emitted when advance() reaches its tick.
+    void add_event(const Event& e);
+    void clear();
+
+    void advance(uint64_t to_tick, EventDispatcher& out) override;
+    void on_transport_start(uint64_t start_tick) override { playhead_ = start_tick; }
+    void on_transport_stop() override {}
+    void on_locate(uint64_t tick) override { playhead_ = tick; }
+
+    // Number of advance() calls received — useful for verifying call cadence.
+    uint32_t advance_count() const;
+
+private:
+    std::vector<Event> events_;   // sorted by tick; emitted once
+    uint64_t playhead_ = 0;
+    uint32_t advance_count_ = 0;
+};
+```
+
+`MockEventSource` complements `CapturingSink`: the mock source injects events at the input side; the capturing sink verifies events at the output side.
 
 ### CapturingSink
 
@@ -66,24 +94,28 @@ public:
 ```
 tests/
 ├── unit/
-│   ├── test_timing_model.cpp      # tick↔ns conversions, tempo map
-│   ├── test_spsc_queue.cpp        # queue push/pop, full/empty conditions
-│   ├── test_event_dispatch.cpp    # engine fires events at correct ticks
-│   ├── test_note_off_tracking.cpp # duration-based note-off
-│   ├── test_pattern_state.cpp     # all slot state machine transitions
+│   ├── test_timing_model.cpp       # tick↔ns conversions, tempo map
+│   ├── test_spsc_queue.cpp         # queue push/pop, full/empty conditions
+│   ├── test_event_dispatch.cpp     # engine fires events at correct ticks
+│   ├── test_note_off_tracking.cpp  # duration-based note-off
+│   ├── test_pattern_state.cpp      # all slot state machine transitions
 │   ├── test_performance_params.cpp # transpose, velocity scale, random bias
-│   ├── test_tempo_change.cpp      # mid-playback tempo change
-│   ├── test_loop_region.cpp       # loop start/end, loop boundary behavior
-│   ├── test_record_staging.cpp    # record, commit, merge into track
-│   ├── test_smf_import.cpp        # roundtrip SMF type 0 and type 1
-│   └── test_session_save_load.cpp # roundtrip native JSON format
+│   ├── test_tempo_change.cpp       # mid-playback tempo change
+│   ├── test_loop_region.cpp        # loop start/end, loop boundary behavior
+│   ├── test_record_staging.cpp     # record, commit, merge into track
+│   ├── test_smf_import.cpp         # roundtrip SMF type 0 and type 1
+│   ├── test_session_save_load.cpp  # roundtrip native JSON format
+│   └── test_event_source.cpp       # MockEventSource, source registration,
+│                                   # multi-source ordering, locate/stop callbacks
 ├── integration/
 │   ├── test_timeline_playback.cpp  # multi-track playback end-to-end
 │   ├── test_pattern_playback.cpp   # song arrangement end-to-end
 │   ├── test_performance_live.cpp   # cue/stop/transpose in sequence
-│   └── test_c_api.cpp             # exercise the full C API surface
+│   ├── test_multi_source.cpp       # multiple sources active simultaneously;
+│   │                               # verify ordering and note-off isolation
+│   └── test_c_api.cpp             # exercise the full C API surface incl. sources
 └── benchmarks/
-    ├── bench_process_loop.cpp      # throughput of engine.process() with N tracks
+    ├── bench_process_loop.cpp      # throughput of engine.process() with N sources
     └── bench_event_insert.cpp      # cost of adding events to a large track
 ```
 

@@ -58,16 +58,39 @@ Omega is a **C++ sequencer engine** with three public layers:
 
 ### Engine / Session separation
 
-`Engine` is the playback machine. `Session` is the data. They are separate objects. The engine holds a reference to the active session and can swap sessions without reinitializing. Session owns: `PatternLibrary`, `Timeline`, `SongArrangement`, `PerformanceConfig`, `SinkRegistry`, `TempoMap`.
+`Engine` is the playback machine. `Session` is the data. They are separate objects. The engine holds a reference to the active session and can swap sessions without reinitializing. Session owns shared data: `PatternLibrary`, `SinkRegistry`, `TempoMap`, and the `EventSourceRegistry`.
+
+### Five extension points
+
+| Extension | Interface | Thread that calls it |
+|---|---|---|
+| Output destination | `OutputSink::send()` | Timing |
+| Clock | `ClockSource::now_ns()` | Timing |
+| Playback mode | `EventSource::advance()` | Timing |
+| Custom event types | `PayloadRegistry` | N/A (registration only) |
+| Edit operations | `Command::execute()` / `undo()` | Mutation |
+
+### EventSource — the core abstraction for playback modes
+
+`engine.process()` iterates all registered `EventSource` instances in registration order, calling `advance(to_tick, dispatcher)` on each. Each source emits events by calling `dispatcher.dispatch(event)`. Sources are independent and all run every cycle.
+
+The three built-in sources are registered automatically:
+- **`TimelineSource`** — owns the `Timeline` (tracks + event vectors). Linear multi-track playback.
+- **`SongArrangementSource`** — owns the `SongArrangement`. Chains patterns with repeat counts.
+- **`PerformanceSource`** — owns 64 performance slots. State machine: EMPTY → IDLE → QUEUED → PLAYING → STOPPING. Per-slot: transpose (±24 semitones), velocity scale (0–200%), random bias (0–100%).
+
+Custom sources implement `EventSource` and are added via `omega_engine_add_source()`. See `docs/design/10-event-source-abstraction.md` for the full catalogue of planned extension sources (step sequencer, generative, polyrhythmic, reactive).
+
+`EventSource::on_locate(tick)` is called on transport locate — stateful sources must reset local playback position there.
 
 ### Thread model
 
 Two threads only:
 
-- **Timing thread**: calls `engine.process()`. The hot path. Must never allocate, block, or lock.
-- **Mutation thread**: enqueues `Command` variants (`AddEventCmd`, `SetTempoCmd`, etc.) via a lock-free SPSC ring buffer (default capacity: 4096). `engine.process()` drains the queue first, then fires events.
+- **Timing thread**: calls `engine.process()`. Must never allocate, block, or lock. Drains the SPSC command queue, then calls `advance()` on every registered source, dispatching due events to sinks.
+- **Mutation thread**: enqueues `Command` variants (`AddEventCmd`, `SetTempoCmd`, `AddSourceCmd`, etc.) via a lock-free SPSC ring buffer (default capacity: 4096). Returns immediately.
 
-The SPSC queue is single-producer. Multiple mutation threads must serialize externally. `OutputSink::send()` and recording callbacks fire from the timing thread — sinks are responsible for their own thread safety.
+The SPSC queue is single-producer. Multiple mutation threads must serialize externally. `OutputSink::send()` fires from the timing thread — sinks are responsible for their own thread safety.
 
 ### Timing
 
@@ -75,14 +98,6 @@ The SPSC queue is single-producer. Multiple mutation threads must serialize exte
 - All internal time is `uint64_t` nanoseconds from session start. All musical time is `uint64_t` ticks. No floating point in the hot path.
 - The `TempoMap` is a sorted list of `TempoPoint{tick, bpm_milli, ns_at_tick}`. `ns_at_tick` is precomputed on insert. BPM is stored as milli-BPM (`uint32_t`): 120 BPM = `120000`.
 - The catch-up loop fires all overdue events in order — events are never skipped when cycles run late.
-
-### Three sequencing modes (non-exclusive)
-
-- **Timeline**: linear multi-track playback, scans `session.timeline.tracks[*].events`.
-- **Pattern**: song arrangement mode, chains patterns by `PatternId` with repeat counts.
-- **Performance**: live cuing with a 64-slot state machine (EMPTY → IDLE → QUEUED → PLAYING → STOPPING). Per-slot real-time params: transpose (±24 semitones), velocity scale (0–200%), random bias (0–100%).
-
-All three modes can run simultaneously. See `docs/design/05-pattern-state-machine.md` for full slot state transitions and cue mode semantics.
 
 ### Memory
 
@@ -95,8 +110,8 @@ Note-offs are tracked in a separate active-notes table (128 entries per sink/cha
 ### C API ownership rules
 
 - Every `omega_*_create()` returns a caller-owned handle; caller must call the matching `omega_*_destroy()` before `omega_engine_destroy()`.
-- The engine holds non-owning references to clocks and sinks.
-- Exception: `SinkRegistry` (internal) owns sinks via `unique_ptr` after `omega_engine_add_sink()` — the C-level `omega_sink_t` handle is still the caller's responsibility to destroy.
+- The engine holds non-owning references to clocks. `SinkRegistry` owns sinks; `EventSourceRegistry` holds shared_ptr to sources.
+- `omega_track_*`, `omega_pattern_*`, and `omega_perf_*` functions target the built-in sources. Removing a built-in source via `omega_engine_remove_source()` makes those functions return `OMEGA_ERR_NOT_FOUND`.
 
 ---
 
@@ -114,10 +129,11 @@ Note-offs are tracked in a separate active-notes table (128 entries per sink/cha
 
 ## Testing
 
-Tests use **Catch2** (BSL-1.0, fetched via FetchContent). Two test utilities are **part of the public library** (`include/omega/test/`), available to application authors:
+Tests use **Catch2** (BSL-1.0, fetched via FetchContent). Three test utilities are **part of the public library** (`include/omega/test/`), available to application authors:
 
 - `MockClock` — manually-advanced clock; use `advance_ticks()`, `advance_beats()`, or `set_ns()`. All time-dependent behavior must be testable without a real clock.
 - `CapturingSink` — records all dispatched events; provides `count()`, `has_note_on()`, `has_note_off()`, `first()` queries.
+- `MockEventSource` — primed with events at specific ticks; injects them into the engine pipeline during `advance()`. Use alongside `CapturingSink` to test source→sink paths in isolation.
 
 Test files go in `tests/unit/` and `tests/integration/`. Add new `.cpp` files to `tests/CMakeLists.txt` (currently all commented out pending implementation). Benchmarks (`tests/benchmarks/`) use Catch2's `BENCHMARK` macro and are not run in CI.
 

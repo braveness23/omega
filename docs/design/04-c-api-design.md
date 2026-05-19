@@ -217,6 +217,34 @@ typedef void (*omega_transport_cb_t)(omega_transport_state_t state, void* userda
 omega_status_t omega_set_transport_callback(omega_engine_t engine,
                                              omega_transport_cb_t cb, void* userdata);
 
+/* ── Custom event sources ────────────────────────────────────────────── */
+
+/* advance_fn is called from the timing thread — must not block or allocate */
+typedef void (*omega_advance_fn_t)(uint64_t to_tick, omega_dispatcher_t dispatcher,
+                                    void* userdata);
+typedef void (*omega_transport_start_fn_t)(uint64_t start_tick, void* userdata);
+typedef void (*omega_transport_stop_fn_t)(void* userdata);
+typedef void (*omega_locate_fn_t)(uint64_t tick, void* userdata);
+
+typedef struct {
+    omega_advance_fn_t         advance;
+    omega_transport_start_fn_t on_start;   /* nullable */
+    omega_transport_stop_fn_t  on_stop;    /* nullable */
+    omega_locate_fn_t          on_locate;  /* nullable */
+    void*                      userdata;
+} omega_source_desc_t;
+
+typedef struct omega_source_s*     omega_source_t;
+typedef struct omega_dispatcher_s* omega_dispatcher_t;
+
+omega_source_t omega_source_create(const omega_source_desc_t* desc);
+void           omega_source_destroy(omega_source_t source);
+omega_status_t omega_engine_add_source(omega_engine_t engine, omega_source_t source);
+omega_status_t omega_engine_remove_source(omega_engine_t engine, omega_source_t source);
+
+/* Dispatch an event from within an advance callback — routes to registered sinks */
+void omega_dispatch(omega_dispatcher_t dispatcher, const omega_event_t* event);
+
 /* ── SMF import/export ───────────────────────────────────────────────── */
 
 omega_status_t omega_smf_import(omega_engine_t engine, const char* path);
@@ -274,3 +302,5 @@ The opaque handle pattern means struct internals can change freely without break
 - **Iteration**: How does a UI enumerate tracks, patterns, and events? A callback-based iterator (`omega_track_foreach()`) is cleaner than returning arrays. Design in v2.
 - **Batch operations**: Adding 10,000 events one at a time via the queue is slow. A bulk-insert command that takes an array of events is needed for SMF import. Add `omega_track_add_events_bulk()`.
 - **Thread-safe query**: Querying `omega_transport_position()` from the UI thread may read stale data. Document this; do not add a lock.
+- **Built-in source access**: The existing `omega_track_*`, `omega_pattern_*`, and `omega_perf_*` functions target the built-in `TimelineSource`, `SongArrangementSource`, and `PerformanceSource` respectively. If a caller removes a built-in source via `omega_engine_remove_source()`, those functions return `OMEGA_ERR_NOT_FOUND`. Document clearly; consider making built-in sources non-removable in v1.
+- **Custom source serialization**: Custom `EventSource` implementations cannot be serialized by the library. The `.omega` session file preserves built-in source data only. Custom sources are session-ephemeral — they must be re-registered and re-configured by the application on each load.

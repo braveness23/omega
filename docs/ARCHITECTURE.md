@@ -18,18 +18,22 @@ Omega is organized in three layers: a C++ core, a stable C API, and optional pla
 │       │            │                                 │
 │  ┌────▼────────────▼────────────────────────────┐   │
 │  │              Session Data                    │   │
-│  │  PatternLibrary · Timeline · PerformanceConfig│   │
-│  │  TempoMap · SinkRegistry · SongArrangement   │   │
+│  │  PatternLibrary · TempoMap · SinkRegistry    │   │
+│  │  EventSourceRegistry                         │   │
 │  └──────────────────────────────────────────────┘   │
 │                                                      │
-│  ┌──────────────┐  ┌────────────┐  ┌─────────────┐  │
-│  │ ClockSource  │  │ OutputSink │  │  SpscQueue  │  │
-│  │  (abstract)  │  │ (abstract) │  │  (internal) │  │
-│  └──────────────┘  └────────────┘  └─────────────┘  │
-├───────────────────┬──────────────────────────────────┤
-│   MIDI (libremidi)│  OSC · CV · custom sinks ...     │
-│   SMF (midifile)  │  Link (optional, GPL)            │
-└───────────────────┴──────────────────────────────────┘
+│  ┌─────────────┐  ┌────────────┐  ┌─────────────┐   │
+│  │ EventSource │  │ OutputSink │  │ ClockSource │   │
+│  │  (abstract) │  │ (abstract) │  │ (abstract)  │   │
+│  └──────┬──────┘  └─────┬──────┘  └─────────────┘   │
+│         │               │          ┌─────────────┐   │
+│  Timeline · Pattern     │          │  SpscQueue  │   │
+│  Performance · custom   │          │  (internal) │   │
+│                         │          └─────────────┘   │
+├─────────────────────────┴────────────────────────────┤
+│   MIDI (libremidi)  ·  OSC · CV · custom sinks ...   │
+│   SMF (midifile)    ·  Link (optional, GPL)          │
+└──────────────────────────────────────────────────────┘
 ```
 
 ## Design Documents
@@ -45,7 +49,7 @@ Start here if you're new to the codebase:
 7. [Extensions](design/07-extensions.md) — sinks, clocks, custom payloads, Ableton Link
 8. [Testing Strategy](design/08-testing-strategy.md) — MockClock, CapturingSink, CI
 9. [Prior Art](design/09-prior-art.md) — libraries studied, what was borrowed, license compatibility
-10. [EventSource Abstraction](design/10-event-source-abstraction.md) — **proposal under review**: pluggable playback modes, new mode catalogue
+10. [EventSource Abstraction](design/10-event-source-abstraction.md) — pluggable playback modes via EventSource; new mode catalogue
 
 ## Key Decisions at a Glance
 
@@ -59,6 +63,8 @@ Start here if you're new to the codebase:
 | Event size | 24 bytes | [03](design/03-memory-storage.md) |
 | Public API | C (extern "C") | [04](design/04-c-api-design.md) |
 | Error handling | Error codes (no exceptions in API) | [04](design/04-c-api-design.md) |
+| Playback modes | Pluggable EventSource abstraction | [10](design/10-event-source-abstraction.md) |
+| Built-in modes | Timeline · Pattern · Performance (all simultaneous) | [06](design/06-session-container.md) |
 | MIDI I/O | libremidi (MIT) | [09](design/09-prior-art.md) |
 | SMF parsing | midifile/Stanford (BSD) | [09](design/09-prior-art.md) |
 | Native format | JSON (v1) | [06](design/06-session-container.md) |

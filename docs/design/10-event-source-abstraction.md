@@ -1,6 +1,6 @@
 # Design Proposal: EventSource Abstraction
 
-**Status**: Under architectural review. This document proposes an addition to the design before implementation begins. It supersedes the implicit mode model described in [06-session-container.md](06-session-container.md) and [07-extensions.md](07-extensions.md).
+**Status**: Accepted. This decision supersedes the implicit mode model described in [06-session-container.md](06-session-container.md) and [07-extensions.md](07-extensions.md). Those documents have been updated to reflect this design.
 
 ---
 

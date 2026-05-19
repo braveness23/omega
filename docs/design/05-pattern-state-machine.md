@@ -1,6 +1,8 @@
 # Design: Pattern State Machine
 
-This document covers the cuing and loop logic for Pattern and Performance modes. This is the most stateful part of the engine and the part most likely to have subtle bugs if not designed carefully.
+This document covers the cuing and loop logic implemented inside `PerformanceSource`. This is the most stateful part of the engine and the part most likely to have subtle bugs if not designed carefully.
+
+`PerformanceSource` is an `EventSource` (see [07-extensions.md](07-extensions.md)). Its `advance()` method implements the slot state machine described here. Its `on_transport_stop()` immediately silences all active notes across all playing slots.
 
 ---
 
@@ -168,11 +170,11 @@ These parameters are set via the command queue (mutation thread) and read during
 
 ---
 
-## Pattern Mode vs. Performance Mode
+## SongArrangementSource vs. PerformanceSource
 
-**Pattern mode** is a simplified view: patterns arranged on a linear timeline with repeat counts, chained by index. There is no slot state machine; instead, each timeline position has a `(pattern_id, start_tick, repeat_count)` tuple. The engine plays the song arrangement linearly.
+`SongArrangementSource` (Pattern mode) is a simplified linear player: patterns chained by index with repeat counts. There is no slot state machine; instead, each arrangement position has a `(pattern_id, repeat_count)` tuple played linearly. It is implemented as a separate `EventSource` from `PerformanceSource`.
 
-**Performance mode** uses the full slot state machine described here. Pattern mode and Performance mode can coexist in a session — a song arrangement in Pattern mode can be playing while Performance slots are live.
+`PerformanceSource` uses the full slot state machine described here. Both sources are registered by default and run simultaneously — a song arrangement can be playing while Performance slots are live.
 
 ---
 

@@ -2,12 +2,13 @@
 
 ## Extension Philosophy
 
-Omega has four designed extension points. Everything else is internal. Adding more extension points later is easy; removing them after they're published is not. We start conservative.
+Omega has five designed extension points. Everything else is internal. Adding more extension points later is easy; removing them after they're published is not. We start conservative.
 
 | Extension Point | How | Who Implements |
 |---|---|---|
 | Output sink | Subclass `OutputSink` | Application / plugin author |
 | Clock source | Subclass `ClockSource` | Application / platform integrator |
+| Event source | Subclass `EventSource` | Application / mode author |
 | Event payload types | Register with `PayloadRegistry` | Application / third-party library |
 | Edit operations | Add `Command` subclass | Internal or application extension |
 
@@ -45,6 +46,92 @@ public:
 ### Third-Party Sinks
 
 The C API exposes sinks as `omega_sink_create(callback_fn, userdata)`. Any language that can call C can implement a sink by providing a callback function. No subclassing required across the C boundary.
+
+---
+
+## Event Sources
+
+The event source is the input-side complement to the output sink. An `EventSource` produces events into the engine's dispatch pipeline each engine cycle. The three built-in sequencing modes (Timeline, Pattern, Performance) are implemented as `EventSource` subclasses. Applications can add custom sources for new sequencing paradigms.
+
+```cpp
+class EventSource {
+public:
+    // Called from the timing thread at the top of each engine cycle.
+    // Must not block, allocate, or lock.
+    // Emit all events due in the range (last_to_tick, to_tick].
+    virtual void advance(uint64_t to_tick, EventDispatcher& out) = 0;
+
+    // Called when transport starts. Sources initialize playback state here.
+    virtual void on_transport_start(uint64_t start_tick) {}
+
+    // Called when transport stops. Sources silence active notes here.
+    virtual void on_transport_stop() {}
+
+    // Called when the transport locates to a new tick position.
+    // Stateful sources (step sequencer, polyrhythmic) reset local state here.
+    virtual void on_locate(uint64_t tick) {}
+
+    virtual ~EventSource() = default;
+};
+
+// Passed to advance() — the source calls out.dispatch() for each due event.
+// Implemented by the engine; routes events to registered OutputSink instances.
+class EventDispatcher {
+public:
+    virtual void dispatch(const Event& e) = 0;
+};
+```
+
+`advance()` is called from the timing thread. All hot-path rules apply: no allocation, no blocking, no locking.
+
+### Built-in Sources
+
+| Source | Description |
+|---|---|
+| `TimelineSource` | Scans `Timeline` tracks, respects mute/solo |
+| `SongArrangementSource` | Walks the song arrangement, resolves `PatternId` references |
+| `PerformanceSource` | Manages the 64-slot state machine; applies transpose, velocity scale, and random bias |
+
+All three are registered automatically on engine creation. They can be removed via `omega_engine_remove_source()` if a caller wants a custom-only engine, but this is not expected in normal use.
+
+### Provided Extension Sources
+
+| Source | Description |
+|---|---|
+| `StepSequencerSource` | Fixed-grid step sequencer; generates tick-position events from a step grid |
+| `EuclideanRhythmSource` | Generative Euclidean rhythm patterns (Bjorklund algorithm) |
+| `PolyrhythmicSource` | Wraps any source with a per-source tempo multiplier |
+| `ReactiveSource` | Transforms incoming MIDI into outgoing events (arpeggiator, chord map) |
+
+### C API
+
+```c
+typedef void (*omega_advance_fn_t)(uint64_t to_tick, omega_dispatcher_t dispatcher,
+                                    void* userdata);
+typedef void (*omega_transport_start_fn_t)(uint64_t start_tick, void* userdata);
+typedef void (*omega_transport_stop_fn_t)(void* userdata);
+typedef void (*omega_locate_fn_t)(uint64_t tick, void* userdata);
+
+typedef struct {
+    omega_advance_fn_t         advance;
+    omega_transport_start_fn_t on_start;   /* nullable */
+    omega_transport_stop_fn_t  on_stop;    /* nullable */
+    omega_locate_fn_t          on_locate;  /* nullable */
+    void*                      userdata;
+} omega_source_desc_t;
+
+omega_source_t omega_source_create(const omega_source_desc_t* desc);
+void           omega_source_destroy(omega_source_t source);
+omega_status_t omega_engine_add_source(omega_engine_t engine, omega_source_t source);
+omega_status_t omega_engine_remove_source(omega_engine_t engine, omega_source_t source);
+
+/* Dispatch an event from within an advance callback */
+void omega_dispatch(omega_dispatcher_t dispatcher, const omega_event_t* event);
+```
+
+### Source Ordering
+
+Sources are called in registration order within each engine cycle. Built-in sources are registered first (timeline → pattern → performance), then application sources in the order `omega_engine_add_source()` was called. When multiple sources emit events at the same tick, dispatch order follows source registration order. This is deterministic but may not always be musically correct — a future `priority` field is reserved for v2.
 
 ---
 
@@ -135,7 +222,6 @@ This is the extension point for DAW-style features that are out of scope for the
 
 ## What Is Not an Extension Point
 
-- The engine's playback loop: not virtual, not overridable
 - The SPSC queue implementation: internal detail
 - The TempoMap: not replaceable (its semantics are fundamental)
 - The session file format reader/writer: internal (expose via `omega_smf_import`/`export`)
