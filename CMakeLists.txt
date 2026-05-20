@@ -12,11 +12,25 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# ── ABI versioning ───────────────────────────────────────────────────────────
+# SOVERSION increments only on ABI-breaking changes; never automatically.
+# Starts at 0 and is bumped manually as part of the release process.
+set(OMEGA_SOVERSION 0)
+
 # ── Build options ────────────────────────────────────────────────────────────
-option(OMEGA_BUILD_TESTS    "Build the test suite"                         ON)
-option(OMEGA_BUILD_EXAMPLES "Build example applications"                   OFF)
-option(OMEGA_WITH_LINK      "Enable Ableton Link sync (requires GPL v2+)"  OFF)
-option(OMEGA_WITH_SANITIZERS "Build with AddressSanitizer and UBSanitizer" OFF)
+option(OMEGA_BUILD_TESTS       "Build the test suite"                         ON)
+option(OMEGA_BUILD_BENCHMARKS  "Build benchmark targets (requires test suite)" OFF)
+option(OMEGA_BUILD_EXAMPLES    "Build example applications"                   OFF)
+option(OMEGA_WITH_LINK         "Enable Ableton Link sync (requires GPL v2+)"  OFF)
+option(OMEGA_WITH_SANITIZERS   "Build with AddressSanitizer and UBSanitizer"  OFF)
+option(OMEGA_WITH_TSAN         "Build with ThreadSanitizer"                   OFF)
+
+if(OMEGA_WITH_SANITIZERS AND OMEGA_WITH_TSAN)
+    message(FATAL_ERROR
+        "OMEGA_WITH_SANITIZERS (ASan/UBSan) and OMEGA_WITH_TSAN (TSan) are "
+        "mutually exclusive. Enable only one at a time."
+    )
+endif()
 
 # ── Ableton Link license warning ─────────────────────────────────────────────
 if(OMEGA_WITH_LINK)
@@ -29,19 +43,23 @@ if(OMEGA_WITH_LINK)
 endif()
 
 # ── Dependencies (FetchContent) ───────────────────────────────────────────────
+# All GIT_TAG values are pinned to specific tags or commit hashes.
+# Never use branch names (master, main). Update deliberately via PR.
+# See THIRD_PARTY_LICENSES.md for the full inventory.
 include(FetchContent)
 
 # libremidi — MIDI I/O (MIT)
 FetchContent_Declare(libremidi
     GIT_REPOSITORY https://github.com/celtera/libremidi.git
-    GIT_TAG        master
+    GIT_TAG        v5.1.0          # pinned — see THIRD_PARTY_LICENSES.md
     GIT_SHALLOW    TRUE
 )
 
 # midifile — SMF import/export (BSD 2-Clause)
+# midifile has no version tags; pinned to a specific commit hash.
 FetchContent_Declare(midifile
     GIT_REPOSITORY https://github.com/craigsapp/midifile.git
-    GIT_TAG        master
+    GIT_TAG        98917df5b1bf0d6e8d4c0e5fff86d6b05343e793
     GIT_SHALLOW    TRUE
 )
 
@@ -49,7 +67,7 @@ FetchContent_Declare(midifile
 if(OMEGA_BUILD_TESTS)
     FetchContent_Declare(Catch2
         GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-        GIT_TAG        v3.5.2
+        GIT_TAG        v3.5.2      # pinned — see THIRD_PARTY_LICENSES.md
         GIT_SHALLOW    TRUE
     )
     FetchContent_MakeAvailable(Catch2)
@@ -61,13 +79,14 @@ FetchContent_MakeAvailable(libremidi midifile)
 if(OMEGA_WITH_LINK)
     FetchContent_Declare(ableton_link
         GIT_REPOSITORY https://github.com/Ableton/link.git
-        GIT_TAG        master
+        GIT_TAG        Link-3.1.5  # pinned — see THIRD_PARTY_LICENSES.md
         GIT_SHALLOW    TRUE
     )
     FetchContent_MakeAvailable(ableton_link)
 endif()
 
 # ── Sanitizers ───────────────────────────────────────────────────────────────
+# ASan+UBSan (dev preset) and TSan (tsan preset) are mutually exclusive.
 if(OMEGA_WITH_SANITIZERS)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
@@ -75,9 +94,27 @@ if(OMEGA_WITH_SANITIZERS)
     endif()
 endif()
 
+if(OMEGA_WITH_TSAN)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        add_compile_options(-fsanitize=thread -fno-omit-frame-pointer)
+        add_link_options(-fsanitize=thread)
+    endif()
+endif()
+
 # ── Core library target ───────────────────────────────────────────────────────
 # Placeholder until source files exist.
-# Replace INTERFACE with STATIC when src/ is populated.
+# When src/ is populated, replace INTERFACE with STATIC (or SHARED) and add:
+#   set_target_properties(omega_core PROPERTIES
+#       CXX_VISIBILITY_PRESET     hidden
+#       VISIBILITY_INLINES_HIDDEN ON
+#       VERSION                   ${PROJECT_VERSION}
+#       SOVERSION                 ${OMEGA_SOVERSION}
+#   )
+#   include(GenerateExportHeader)
+#   generate_export_header(omega_core
+#       BASE_NAME        OMEGA
+#       EXPORT_FILE_NAME include/omega/export.h
+#   )
 add_library(omega_core INTERFACE)
 add_library(omega::core ALIAS omega_core)
 
@@ -110,6 +147,10 @@ target_link_libraries(omega INTERFACE omega::core)
 if(OMEGA_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
+endif()
+
+if(OMEGA_BUILD_BENCHMARKS AND NOT OMEGA_BUILD_TESTS)
+    message(FATAL_ERROR "OMEGA_BUILD_BENCHMARKS requires OMEGA_BUILD_TESTS=ON (benchmarks use Catch2).")
 endif()
 
 # ── Examples ──────────────────────────────────────────────────────────────────
@@ -154,4 +195,10 @@ install(FILES
     "${CMAKE_CURRENT_BINARY_DIR}/OmegaConfig.cmake"
     "${CMAKE_CURRENT_BINARY_DIR}/OmegaConfigVersion.cmake"
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/omega
+)
+
+# ── pkg-config ────────────────────────────────────────────────────────────────
+configure_file(cmake/omega.pc.in ${CMAKE_CURRENT_BINARY_DIR}/omega.pc @ONLY)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/omega.pc
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
 )

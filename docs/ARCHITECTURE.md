@@ -51,6 +51,7 @@ Start here if you're new to the codebase:
 9. [Prior Art](design/09-prior-art.md) — libraries studied, what was borrowed, license compatibility
 10. [EventSource Abstraction](design/10-event-source-abstraction.md) — pluggable playback modes via EventSource; new mode catalogue
 11. [Orchestration Layer](design/11-orchestration-layer.md) — EventInput, TransformSource routing, ModulationBus, PerformanceContext, chasing
+12. [Library Foundation](design/12-library-foundation.md) — build system, versioning, ABI policy, CI quality gates, release process, header conventions
 
 ## Key Decisions at a Glance
 

@@ -7,33 +7,64 @@ on:
     branches: [main]
 
 jobs:
+  # ── Compiler matrix ──────────────────────────────────────────────────────────
+  # Officially supported matrix per docs/design/12-library-foundation.md §4.1.
+  # C++20 jobs are informational (continue-on-error) until C++20 is formally declared.
   build-and-test:
-    name: ${{ matrix.os }} / ${{ matrix.compiler }}
+    name: ${{ matrix.os }} / ${{ matrix.compiler }} / C++${{ matrix.std }}
     runs-on: ${{ matrix.os }}
 
     strategy:
       fail-fast: false
       matrix:
         include:
+          # GCC (minimum: 10) — tested with 12 on Ubuntu 24.04
           - os: ubuntu-latest
             compiler: gcc
             cc: gcc-12
             cxx: g++-12
+            std: "17"
+            informational: false
 
           - os: ubuntu-latest
-            compiler: clang
+            compiler: gcc
+            cc: gcc-12
+            cxx: g++-12
+            std: "20"
+            informational: true
+
+          # Clang (minimum: 14) — tested with 18 on Ubuntu 24.04
+          - os: ubuntu-latest
+            compiler: clang-18
             cc: clang-18
             cxx: clang++-18
+            std: "17"
+            informational: false
 
+          - os: ubuntu-latest
+            compiler: clang-18
+            cc: clang-18
+            cxx: clang++-18
+            std: "20"
+            informational: true
+
+          # Apple Clang (minimum: 14) — macos-latest provides a recent version
           - os: macos-latest
-            compiler: clang
+            compiler: apple-clang
             cc: clang
             cxx: clang++
+            std: "17"
+            informational: false
 
+          # MSVC 19.30+ (VS 2022) — C++17 only
           - os: windows-latest
             compiler: msvc
             cc: cl
             cxx: cl
+            std: "17"
+            informational: false
+
+    continue-on-error: ${{ matrix.informational }}
 
     steps:
       - uses: actions/checkout@v4
@@ -64,6 +95,7 @@ jobs:
         run: |
           cmake -B build \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_CXX_STANDARD=${{ matrix.std }} \
             -DOMEGA_BUILD_TESTS=ON \
             -DOMEGA_BUILD_EXAMPLES=OFF \
             -DOMEGA_WITH_LINK=OFF \
@@ -76,8 +108,9 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure --parallel 4
 
+  # ── ASan + UBSan ─────────────────────────────────────────────────────────────
   sanitizers:
-    name: Sanitizers (Linux / Clang)
+    name: ASan/UBSan (Linux / Clang 18)
     runs-on: ubuntu-latest
 
     steps:
@@ -88,7 +121,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libasound2-dev cmake ninja-build clang-18
 
-      - name: Configure with sanitizers
+      - name: Configure
         env:
           CC: clang-18
           CXX: clang++-18
@@ -97,6 +130,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Debug \
             -DOMEGA_BUILD_TESTS=ON \
             -DOMEGA_WITH_SANITIZERS=ON \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
             -G Ninja
 
       - name: Build
@@ -108,6 +142,40 @@ jobs:
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
         run: ctest --test-dir build_san --output-on-failure
 
+  # ── ThreadSanitizer ───────────────────────────────────────────────────────────
+  tsan:
+    name: TSan (Linux / Clang 18)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev cmake ninja-build clang-18
+
+      - name: Configure
+        env:
+          CC: clang-18
+          CXX: clang++-18
+        run: |
+          cmake -B build_tsan \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DOMEGA_BUILD_TESTS=ON \
+            -DOMEGA_WITH_TSAN=ON \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+            -G Ninja
+
+      - name: Build
+        run: cmake --build build_tsan --parallel
+
+      - name: Test
+        env:
+          TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
+        run: ctest --test-dir build_tsan --output-on-failure
+
+  # ── clang-format ─────────────────────────────────────────────────────────────
   format-check:
     name: clang-format
     runs-on: ubuntu-latest
@@ -122,3 +190,220 @@ jobs:
         run: |
           find include src tests -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \
             | xargs clang-format-18 --dry-run --Werror
+
+  # ── clang-tidy ───────────────────────────────────────────────────────────────
+  clang-tidy:
+    name: clang-tidy
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev cmake ninja-build clang-18 clang-tidy-18
+
+      - name: Configure (generate compile_commands.json)
+        env:
+          CC: clang-18
+          CXX: clang++-18
+        run: |
+          cmake -B build_tidy \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DOMEGA_BUILD_TESTS=ON \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+            -G Ninja
+
+      - name: Run clang-tidy on changed files
+        run: |
+          CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD \
+            | grep -E '\.(cpp|h|hpp)$' || true)
+          if [ -z "$CHANGED" ]; then
+            echo "No C++ files changed."
+            exit 0
+          fi
+          echo "$CHANGED" | xargs clang-tidy-18 \
+            -p build_tidy \
+            --warnings-as-errors='*'
+
+  # ── CHANGELOG lint ────────────────────────────────────────────────────────────
+  changelog-lint:
+    name: CHANGELOG lint
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check CHANGELOG updated
+        run: |
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          if echo "$PR_TITLE" | grep -qE "^(ci|chore|docs):"; then
+            echo "Skipping CHANGELOG check for: $PR_TITLE"
+            exit 0
+          fi
+          CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+          if echo "$CHANGED" | grep -q "CHANGELOG.md"; then
+            echo "CHANGELOG.md updated."
+          else
+            echo "Error: CHANGELOG.md not updated for this PR."
+            echo "Add an entry under the [Unreleased] section."
+            echo "Skip by prefixing your PR title with: ci:, chore:, or docs:"
+            exit 1
+          fi
+
+  # ── ABI compliance (stub) ─────────────────────────────────────────────────────
+  # No-op until the first .dump file is committed to abi/ at v0.1.0.
+  # See abi/PLACEHOLDER and docs/design/12-library-foundation.md §2.3.
+  abi-check:
+    name: ABI compliance (stub)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for ABI baseline
+        run: |
+          if ls abi/*.dump 2>/dev/null | head -1 | grep -q '\.dump'; then
+            echo "ABI baseline found. Install libabigail and run:"
+            echo "  abidiff abi/<last-tag>.dump <build>/libomega.so"
+          else
+            echo "No ABI dump in abi/ yet — stub job. See abi/PLACEHOLDER."
+            echo "Baseline is generated when v0.1.0 is tagged."
+          fi
+
+  # ── Install smoke test ────────────────────────────────────────────────────────
+  install-smoke-test:
+    name: Install smoke test (Linux)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev cmake ninja-build
+
+      - name: Build and install Omega
+        run: |
+          cmake -B build_install \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DOMEGA_BUILD_TESTS=OFF \
+            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+            -G Ninja
+          cmake --build build_install --parallel
+          cmake --install build_install
+
+      - name: Build consumer project
+        run: |
+          cmake -B build_consumer cmake/smoke_test \
+            -DCMAKE_PREFIX_PATH=${{ github.workspace }}/install \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+            -G Ninja
+          cmake --build build_consumer --parallel
+
+      - name: Run consumer
+        run: ./build_consumer/omega_smoke_test
+
+  # ── Coverage ──────────────────────────────────────────────────────────────────
+  # Runs on main pushes only; uploads LCOV report to Codecov.
+  # Coverage regressions are flagged as warnings on PRs (not hard failures).
+  coverage:
+    name: Coverage (Linux / GCC)
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev cmake ninja-build gcovr
+
+      - name: Configure with coverage
+        env:
+          CC: gcc-12
+          CXX: g++-12
+        run: |
+          cmake -B build_cov \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DOMEGA_BUILD_TESTS=ON \
+            -DCMAKE_CXX_FLAGS="--coverage" \
+            -DCMAKE_EXE_LINKER_FLAGS="--coverage" \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+            -G Ninja
+
+      - name: Build
+        run: cmake --build build_cov --parallel
+
+      - name: Test
+        run: ctest --test-dir build_cov --output-on-failure
+
+      - name: Generate coverage report (XML)
+        run: |
+          gcovr \
+            --root . \
+            --object-directory build_cov \
+            --exclude '_deps/' \
+            --xml coverage.xml
+
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.xml
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  # ── Benchmarks ────────────────────────────────────────────────────────────────
+  # Runs on main pushes only. Results stored as CI artifacts for regression tracking.
+  # See docs/design/12-library-foundation.md §4.5 for required benchmarks.
+  benchmarks:
+    name: Benchmarks (Linux / GCC)
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev cmake ninja-build
+
+      - name: Configure
+        run: |
+          cmake -B build_bench \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DOMEGA_BUILD_TESTS=ON \
+            -DOMEGA_BUILD_BENCHMARKS=ON \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+            -G Ninja
+
+      - name: Build
+        run: cmake --build build_bench --parallel
+
+      - name: Run benchmarks
+        run: |
+          ctest --test-dir build_bench \
+            -R "^bench\." \
+            --output-on-failure \
+            --no-compress-output \
+            -T Test
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-${{ github.sha }}
+          path: build_bench/Testing/

@@ -6,11 +6,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-Omega is in **design phase** — no implementation exists yet. The `src/` directory is empty, `include/omega/` is a placeholder, and all CMake library targets are `INTERFACE` stubs. The design documents in `docs/design/` are the authoritative source of truth.
+Omega is in **design phase** — no implementation exists yet. The `src/` directory is empty, `include/omega/` has stub headers (`omega.h`, `export.h`) with documentation conventions but no implementations, and all CMake library targets are `INTERFACE` stubs. The design documents in `docs/design/` are the authoritative source of truth.
 
 ---
 
 ## Build and Test
+
+Preferred: use CMake presets (defined in `CMakePresets.json`).
+
+```bash
+# Development build with ASan + UBSan
+cmake --preset dev && cmake --build --preset dev
+ctest --preset dev
+
+# ThreadSanitizer (separate preset — TSan and ASan are mutually exclusive)
+cmake --preset tsan && cmake --build --preset tsan
+ctest --preset tsan
+
+# Release build
+cmake --preset release && cmake --build --preset release
+```
+
+Manual (without presets):
 
 ```bash
 # Standard build with tests
@@ -25,6 +42,11 @@ ctest --test-dir build -R test_timing_model
 cmake -B build_san -DOMEGA_BUILD_TESTS=ON -DOMEGA_WITH_SANITIZERS=ON -DCMAKE_BUILD_TYPE=Debug
 cmake --build build_san
 ctest --test-dir build_san
+
+# With ThreadSanitizer (separate from ASan — mutually exclusive)
+cmake -B build_tsan -DOMEGA_BUILD_TESTS=ON -DOMEGA_WITH_TSAN=ON -DCMAKE_BUILD_TYPE=Debug
+cmake --build build_tsan
+ctest --test-dir build_tsan
 
 # Ableton Link support (changes combined license to GPL v2+)
 cmake -B build -DOMEGA_BUILD_TESTS=ON -DOMEGA_WITH_LINK=ON
@@ -148,7 +170,7 @@ Tests use **Catch2** (BSL-1.0, fetched via FetchContent). Four test utilities ar
 - `MockEventSource` — primed with events at specific ticks; injects them into the engine pipeline during `advance()`. Use alongside `CapturingSink` to test source→sink paths in isolation.
 - `MockEventInput` — primed with events to deliver during `poll()`; simulates incoming MIDI/OSC without hardware. Use to test reactive and input-driven sources.
 
-Test files go in `tests/unit/` and `tests/integration/`. Add new `.cpp` files to `tests/CMakeLists.txt` (currently all commented out pending implementation). Benchmarks (`tests/benchmarks/`) use Catch2's `BENCHMARK` macro and are not run in CI.
+Test files go in `tests/unit/` and `tests/integration/`. Add new `.cpp` files to `tests/CMakeLists.txt` (currently all commented out pending implementation). Benchmarks (`tests/benchmarks/`) use Catch2's `BENCHMARK` macro; they run in CI on `main` pushes only (not on PR builds).
 
 ---
 

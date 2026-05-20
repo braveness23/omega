@@ -10,6 +10,25 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Library foundation** (design 12): non-implementation infrastructure required before first code commit:
+  - `CMakePresets.json` with `dev` (ASan/UBSan), `tsan` (TSan), `release`, and CI presets
+  - `OMEGA_WITH_TSAN` CMake option; TSan and ASan+UBSan are now mutually exclusive with a hard error
+  - `OMEGA_BUILD_BENCHMARKS` CMake option; benchmark scaffold in `tests/benchmarks/`
+  - `OMEGA_SOVERSION` variable (starts at 0); version and SOVERSION wired to install targets
+  - `include/omega/export.h` with `OMEGA_API` visibility macro and `OMEGA_DEPRECATED(msg)` macro
+  - `include/omega/omega.h` stub with ABI stability guarantee, thread-safety annotation conventions, error contract conventions, and ownership conventions — ready for function declarations
+  - `cmake/OmegaConfig.cmake.in` updated with `find_dependency(libremidi)` for installed consumers
+  - `cmake/omega.pc.in` pkg-config template; installed to `lib/pkgconfig/` on `cmake --install`
+  - `cmake/smoke_test/` minimal consumer project; validated by new CI install smoke test job
+  - `THIRD_PARTY_LICENSES.md` inventorying all dependencies (libremidi, midifile, Catch2, Ableton Link)
+  - `.editorconfig` enforcing UTF-8, LF endings, consistent indent before clang-format runs
+  - `.pre-commit-config.yaml` for local pre-commit hooks (end-of-file, trailing whitespace, clang-format, clang-tidy)
+  - `.clang-tidy` baseline config checked in; treated as code
+  - `abi/PLACEHOLDER` stub for the ABI baseline dump to be generated at v0.1.0
+  - `docs/release-checklist.md` full release checklist
+  - `docs/migration/v0-to-v1.md` migration guide template
+  - CI jobs added: TSan, clang-tidy (PR-only), CHANGELOG lint (PR-only), ABI compliance stub (PR-only), install smoke test, coverage (main-only), benchmarks (main-only)
+  - All `FetchContent` dependencies pinned to specific tags or commit hashes (libremidi v5.1.0, midifile `98917df`, Catch2 v3.5.2, Ableton Link Link-3.1.5)
 - Initial design proposal covering architecture, event model, and three sequencing modes
 - Design documents: timing model, thread model, memory/storage, C API, pattern state machine, session container, extensions, testing strategy, prior art
 - Project infrastructure: license, contributing guide, CI, issue templates
