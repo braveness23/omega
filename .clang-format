@@ -66,3 +66,6 @@ ReflowComments: true
 
 # C++ specific
 Standard: c++17
+
+# extern "C" blocks — do not indent their content
+IndentExternBlock: NoIndent

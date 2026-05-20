@@ -354,9 +354,10 @@ jobs:
         run: |
           gcovr \
             --root . \
-            --object-directory build_cov \
-            --exclude '_deps/' \
-            --xml coverage.xml
+            --search-path build_cov \
+            --exclude-directories '.*_deps.*' \
+            --xml coverage.xml \
+            --print-summary
 
       - name: Upload to Codecov
         uses: codecov/codecov-action@v4

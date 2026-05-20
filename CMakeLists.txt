@@ -162,6 +162,12 @@ endif()
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
+# CMake package config files must go in a path that find_package() actually
+# searches. On multiarch Ubuntu, CMAKE_INSTALL_LIBDIR is 'lib/x86_64-linux-gnu'
+# which cmake does NOT search. Use a non-multiarch path explicitly.
+set(OMEGA_INSTALL_CMAKEDIR "lib/cmake/omega"
+    CACHE PATH "Installation directory for CMake package config files")
+
 install(TARGETS omega_core omega
     EXPORT OmegaTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -176,25 +182,25 @@ install(DIRECTORY include/omega
 install(EXPORT OmegaTargets
     FILE        OmegaTargets.cmake
     NAMESPACE   omega::
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/omega
+    DESTINATION ${OMEGA_INSTALL_CMAKEDIR}
 )
 
 write_basic_package_version_file(
-    "${CMAKE_CURRENT_BINARY_DIR}/OmegaConfigVersion.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/omegaConfigVersion.cmake"
     VERSION       ${PROJECT_VERSION}
     COMPATIBILITY SameMajorVersion
 )
 
 configure_package_config_file(
-    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/OmegaConfig.cmake.in"
-    "${CMAKE_CURRENT_BINARY_DIR}/OmegaConfig.cmake"
-    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/omega
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/omegaConfig.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/omegaConfig.cmake"
+    INSTALL_DESTINATION ${OMEGA_INSTALL_CMAKEDIR}
 )
 
 install(FILES
-    "${CMAKE_CURRENT_BINARY_DIR}/OmegaConfig.cmake"
-    "${CMAKE_CURRENT_BINARY_DIR}/OmegaConfigVersion.cmake"
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/omega
+    "${CMAKE_CURRENT_BINARY_DIR}/omegaConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/omegaConfigVersion.cmake"
+    DESTINATION ${OMEGA_INSTALL_CMAKEDIR}
 )
 
 # ── pkg-config ────────────────────────────────────────────────────────────────

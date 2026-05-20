@@ -24,19 +24,19 @@
  * Every public C++ symbol and every C API function must be annotated.
  */
 #if defined(omega_core_EXPORTS)
-#    if defined(_WIN32) || defined(__CYGWIN__)
-#        define OMEGA_API __declspec(dllexport)
-#    elif defined(__GNUC__) || defined(__clang__)
-#        define OMEGA_API __attribute__((visibility("default")))
-#    else
-#        define OMEGA_API
-#    endif
+    #if defined(_WIN32) || defined(__CYGWIN__)
+        #define OMEGA_API __declspec(dllexport)
+    #elif defined(__GNUC__) || defined(__clang__)
+        #define OMEGA_API __attribute__((visibility("default")))
+    #else
+        #define OMEGA_API
+    #endif
 #else
-#    if defined(_WIN32) || defined(__CYGWIN__)
-#        define OMEGA_API __declspec(dllimport)
-#    else
-#        define OMEGA_API
-#    endif
+    #if defined(_WIN32) || defined(__CYGWIN__)
+        #define OMEGA_API __declspec(dllimport)
+    #else
+        #define OMEGA_API
+    #endif
 #endif
 
 /* ── OMEGA_DEPRECATED ───────────────────────────────────────────────────────
@@ -54,9 +54,9 @@
  * The target removal version must appear in the annotation for grep-ability.
  */
 #if defined(__GNUC__) || defined(__clang__)
-#    define OMEGA_DEPRECATED(msg) __attribute__((deprecated(msg)))
+    #define OMEGA_DEPRECATED(msg) __attribute__((deprecated(msg)))
 #elif defined(_MSC_VER)
-#    define OMEGA_DEPRECATED(msg) __declspec(deprecated(msg))
+    #define OMEGA_DEPRECATED(msg) __declspec(deprecated(msg))
 #else
-#    define OMEGA_DEPRECATED(msg)
+    #define OMEGA_DEPRECATED(msg)
 #endif
