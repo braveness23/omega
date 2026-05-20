@@ -10,8 +10,27 @@ ContinuationIndentWidth: 4
 IndentCaseLabels: true
 IndentPPDirectives: BeforeHash
 
-# Brace style — Allman (opening brace on its own line)
-BreakBeforeBraces: Allman
+# Brace style — Allman everywhere except extern "C" blocks.
+# extern "C" { is kept on one line so that IndentExternBlock is consistent
+# across clang-format versions (14 and 18 disagree on extern block indentation
+# when using pure Allman mode).
+BreakBeforeBraces: Custom
+BraceWrapping:
+    AfterCaseLabel:       true
+    AfterClass:           true
+    AfterControlStatement: Always
+    AfterEnum:            true
+    AfterExternBlock:     false
+    AfterFunction:        true
+    AfterNamespace:       true
+    AfterStruct:          true
+    AfterUnion:           true
+    BeforeElse:           true
+    BeforeCatch:          true
+    IndentBraces:         false
+    SplitEmptyFunction:   false
+    SplitEmptyRecord:     false
+    SplitEmptyNamespace:  false
 
 # Line length
 ColumnLimit: 100
@@ -67,5 +86,7 @@ ReflowComments: true
 # C++ specific
 Standard: c++17
 
-# extern "C" blocks — do not indent their content
+# extern "C" blocks — do not indent their content.
+# AfterExternBlock: false above keeps { on the same line, so this is
+# belt-and-suspenders for any version that still tries to indent.
 IndentExternBlock: NoIndent
