@@ -10,6 +10,16 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **M1 — Core engine** (sprints 1.1–1.5): first real implementation code:
+  - `include/omega/omega.h`: `omega_event_t` (24-byte Event struct), `OMEGA_PPQN` constant, payload-tag constants (`OMEGA_NOTE_ON` etc.), `omega_make_note_on()`, `omega_make_cc()`, `omega_make_program()` helpers
+  - `include/omega/types.h`: C++ types — `omega::Event` alias, `PayloadTag`, `CueMode`, `TransportAction`, `TransportState` enums, `TrackId`/`SlotId`/`PatternId` typedefs
+  - `include/omega/detail/spsc_queue.h`: lock-free SPSC ring buffer (`omega::detail::SpscQueue<T,Capacity>`), header-only, cache-line-separated atomics, power-of-two static_assert
+  - `include/omega/commands.h`: all six `Command` variant types; `static_assert(sizeof(Command) <= 64)`
+  - `include/omega/tempo_map.h` + `src/tempo_map.cpp`: integer-only tick↔ns conversion, precomputed `ns_at_tick`, multi-point insert with recomputation of subsequent points
+  - `include/omega/engine.h` + `src/engine.cpp`: `Engine` skeleton — SPSC queue drain loop in `process()`, atomic `TransportState` and position, `SetTempoCmd`/`TransportCmd` handling
+  - `omega_core` converted from `INTERFACE` to `STATIC` library
+  - 36 unit tests covering all five sprints (ASan + UBSan clean)
+
 - **Library foundation** (design 12): non-implementation infrastructure required before first code commit:
   - `CMakePresets.json` with `dev` (ASan/UBSan), `tsan` (TSan), `release`, and CI presets
   - `OMEGA_WITH_TSAN` CMake option; TSan and ASan+UBSan are now mutually exclusive with a hard error

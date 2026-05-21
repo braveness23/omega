@@ -11,7 +11,7 @@ Sprint breakdowns are sized for 1–3 focused coding sessions each.
 | Milestone | Tag | Description |
 |---|---|---|
 | M0 | — | Infrastructure complete (done) |
-| M1 | — | Core engine builds and passes first tests |
+| M1 | — | Core engine builds and passes first tests (done) |
 | M2 | `v0.1.0-alpha` | Single-track playback through C API |
 | M3 | `v0.2.0-alpha` | All three built-in sources working |
 | M4 | `v0.3.0-alpha` | Orchestration layer (inputs, modulation, perf context) |
@@ -39,10 +39,10 @@ Everything needed to write code without CI friction. Completed 2026-05-20.
 
 ---
 
-## M1 — Core Engine (First Real Code)
+## M1 — Core Engine (DONE)
 
 Build the lock-free infrastructure and data types. No playback yet — just the skeleton that
-`engine.process()` will run on.
+`engine.process()` will run on. Completed 2026-05-20.
 
 ### Sprint 1.1 — Data Types and Constants
 
