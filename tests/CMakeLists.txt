@@ -6,6 +6,7 @@ add_executable(omega_tests
     unit/test_engine.cpp
     unit/test_clock.cpp
     unit/test_sink.cpp
+    unit/test_timeline.cpp
 )
 
 target_link_libraries(omega_tests
