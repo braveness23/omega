@@ -133,7 +133,7 @@ jobs:
             -DOMEGA_BUILD_TESTS=ON \
             -DOMEGA_BUILD_EXAMPLES=OFF \
             -DOMEGA_WITH_LINK=OFF \
-            -DFETCHCONTENT_BASE_DIR=${{ github.workspace }}/.cache/fetchcontent \
+            "-DFETCHCONTENT_BASE_DIR=$GITHUB_WORKSPACE/.cache/fetchcontent" \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
             -G Ninja
 
