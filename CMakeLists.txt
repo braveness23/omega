@@ -106,6 +106,7 @@ add_library(omega_core STATIC
     src/types.cpp
     src/tempo_map.cpp
     src/clock.cpp
+    src/sink.cpp
     src/engine.cpp
 )
 add_library(omega::core ALIAS omega_core)
