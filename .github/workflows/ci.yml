@@ -7,12 +7,39 @@ on:
     branches: [main]
 
 jobs:
+  # ── Path filter ───────────────────────────────────────────────────────────────
+  # Detects whether any build-relevant files changed.
+  # Expensive build jobs depend on this output and skip on docs-only changes.
+  # On push-to-main the build always runs regardless (|| github.event_name == 'push').
+  filter:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.f.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: dorny/paths-filter@v3
+        id: f
+        with:
+          filters: |
+            code:
+              - 'src/**'
+              - 'include/**'
+              - 'tests/**'
+              - 'CMakeLists.txt'
+              - 'CMakePresets.json'
+              - 'cmake/**'
+              - '.github/workflows/ci.yml'
+
   # ── Compiler matrix ──────────────────────────────────────────────────────────
   # Officially supported matrix per docs/design/12-library-foundation.md §4.1.
   # C++20 jobs are informational (continue-on-error) until C++20 is formally declared.
   build-and-test:
     name: ${{ matrix.os }} / ${{ matrix.compiler }} / C++${{ matrix.std }}
     runs-on: ${{ matrix.os }}
+    needs: [filter]
+    if: needs.filter.outputs.code == 'true' || github.event_name == 'push'
 
     strategy:
       fail-fast: false
@@ -87,6 +114,13 @@ jobs:
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
 
+      - name: Cache FetchContent dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.cache/fetchcontent
+          key: fetchcontent-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: fetchcontent-${{ runner.os }}-
+
       - name: Configure
         shell: bash
         env:
@@ -99,6 +133,7 @@ jobs:
             -DOMEGA_BUILD_TESTS=ON \
             -DOMEGA_BUILD_EXAMPLES=OFF \
             -DOMEGA_WITH_LINK=OFF \
+            -DFETCHCONTENT_BASE_DIR=${{ github.workspace }}/.cache/fetchcontent \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
             -G Ninja
 
@@ -112,6 +147,8 @@ jobs:
   sanitizers:
     name: ASan/UBSan (Linux / Clang 18)
     runs-on: ubuntu-latest
+    needs: [filter]
+    if: needs.filter.outputs.code == 'true' || github.event_name == 'push'
 
     steps:
       - uses: actions/checkout@v4
@@ -120,6 +157,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libasound2-dev cmake ninja-build clang-18
+
+      - name: Cache FetchContent dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.cache/fetchcontent
+          key: fetchcontent-Linux-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: fetchcontent-Linux-
 
       - name: Configure
         env:
@@ -130,6 +174,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Debug \
             -DOMEGA_BUILD_TESTS=ON \
             -DOMEGA_WITH_SANITIZERS=ON \
+            -DFETCHCONTENT_BASE_DIR=${{ github.workspace }}/.cache/fetchcontent \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
             -G Ninja
 
@@ -146,6 +191,8 @@ jobs:
   tsan:
     name: TSan (Linux / Clang 18)
     runs-on: ubuntu-latest
+    needs: [filter]
+    if: needs.filter.outputs.code == 'true' || github.event_name == 'push'
 
     steps:
       - uses: actions/checkout@v4
@@ -154,6 +201,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libasound2-dev cmake ninja-build clang-18
+
+      - name: Cache FetchContent dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.cache/fetchcontent
+          key: fetchcontent-Linux-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: fetchcontent-Linux-
 
       - name: Configure
         env:
@@ -164,6 +218,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Debug \
             -DOMEGA_BUILD_TESTS=ON \
             -DOMEGA_WITH_TSAN=ON \
+            -DFETCHCONTENT_BASE_DIR=${{ github.workspace }}/.cache/fetchcontent \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
             -G Ninja
 
@@ -207,6 +262,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libasound2-dev cmake ninja-build clang-18 clang-tidy-18
 
+      - name: Cache FetchContent dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.cache/fetchcontent
+          key: fetchcontent-Linux-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: fetchcontent-Linux-
+
       - name: Configure (generate compile_commands.json)
         env:
           CC: clang-18
@@ -216,6 +278,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Debug \
             -DOMEGA_BUILD_TESTS=ON \
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -DFETCHCONTENT_BASE_DIR=${{ github.workspace }}/.cache/fetchcontent \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
             -G Ninja
 
@@ -284,6 +347,8 @@ jobs:
   install-smoke-test:
     name: Install smoke test (Linux)
     runs-on: ubuntu-latest
+    needs: [filter]
+    if: needs.filter.outputs.code == 'true' || github.event_name == 'push'
 
     steps:
       - uses: actions/checkout@v4
@@ -293,12 +358,20 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libasound2-dev cmake ninja-build
 
+      - name: Cache FetchContent dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.cache/fetchcontent
+          key: fetchcontent-Linux-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: fetchcontent-Linux-
+
       - name: Build and install Omega
         run: |
           cmake -B build_install \
             -DCMAKE_BUILD_TYPE=Release \
             -DOMEGA_BUILD_TESTS=OFF \
             -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install \
+            -DFETCHCONTENT_BASE_DIR=${{ github.workspace }}/.cache/fetchcontent \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
             -G Ninja
           cmake --build build_install --parallel
@@ -331,6 +404,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libasound2-dev cmake ninja-build gcovr
 
+      - name: Cache FetchContent dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.cache/fetchcontent
+          key: fetchcontent-Linux-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: fetchcontent-Linux-
+
       - name: Configure with coverage
         env:
           CC: gcc-12
@@ -341,6 +421,7 @@ jobs:
             -DOMEGA_BUILD_TESTS=ON \
             -DCMAKE_CXX_FLAGS="--coverage" \
             -DCMAKE_EXE_LINKER_FLAGS="--coverage" \
+            -DFETCHCONTENT_BASE_DIR=${{ github.workspace }}/.cache/fetchcontent \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
             -G Ninja
 
@@ -384,12 +465,20 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libasound2-dev cmake ninja-build
 
+      - name: Cache FetchContent dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.cache/fetchcontent
+          key: fetchcontent-Linux-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: fetchcontent-Linux-
+
       - name: Configure
         run: |
           cmake -B build_bench \
             -DCMAKE_BUILD_TYPE=Release \
             -DOMEGA_BUILD_TESTS=ON \
             -DOMEGA_BUILD_BENCHMARKS=ON \
+            -DFETCHCONTENT_BASE_DIR=${{ github.workspace }}/.cache/fetchcontent \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
             -G Ninja
 
