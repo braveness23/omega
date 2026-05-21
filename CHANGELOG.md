@@ -9,6 +9,9 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- Reduced `SpscQueue` default capacity from 65536 to 4096 to avoid stack overflow on Windows (default stack is 1 MB; 65536-slot queue consumed ~4 MB)
+
 ### Added
 - **M1 — Core engine** (sprints 1.1–1.5): first real implementation code:
   - `include/omega/omega.h`: `omega_event_t` (24-byte Event struct), `OMEGA_PPQN` constant, payload-tag constants (`OMEGA_NOTE_ON` etc.), `omega_make_note_on()`, `omega_make_cc()`, `omega_make_program()` helpers
