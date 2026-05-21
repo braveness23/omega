@@ -1,5 +1,6 @@
 #pragma once
 
+#include <omega/clock.h>
 #include <omega/commands.h>
 #include <omega/detail/spsc_queue.h>
 #include <omega/omega.h>
@@ -30,14 +31,19 @@ public:
     /*
      * Constructs the engine.
      *
+     * clock           — clock source; NULL uses a built-in InternalClock.
+     *                   The engine holds a non-owning reference; the clock
+     *                   must outlive the engine.
      * mr              — optional PMR allocator; NULL uses the heap default.
-     *                   Reserved for future use in M1.
+     *                   Reserved for future use.
      * queue_capacity  — reserved; current implementation uses a compile-time
      *                   capacity of 4096.
      *
      * Thread: any thread, before first use.
      */
-    explicit Engine(std::pmr::memory_resource* mr = nullptr, uint32_t queue_capacity = 4096);
+    explicit Engine(ClockSource* clock = nullptr,
+                    std::pmr::memory_resource* mr = nullptr,
+                    uint32_t queue_capacity = 4096);
 
     ~Engine();
 
@@ -83,6 +89,9 @@ public:
 private:
     void apply(const SetTempoCmd& cmd);
     void apply(const TransportCmd& cmd);
+
+    InternalClock internal_clock_;
+    ClockSource* clock_;
 
     detail::SpscQueue<Command, 4096> queue_;
     TempoMap tempo_map_;

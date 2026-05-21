@@ -1,23 +1,14 @@
 #include <omega/engine.h>
 
-#include <chrono>
 #include <type_traits>
 
 namespace omega
 {
 
-namespace
+Engine::Engine(ClockSource* clock, std::pmr::memory_resource* /*mr*/, uint32_t /*queue_capacity*/)
+    : clock_{clock ? clock : &internal_clock_}
 {
-
-uint64_t wall_ns()
-{
-    using namespace std::chrono;
-    return static_cast<uint64_t>(steady_clock::now().time_since_epoch().count());
 }
-
-}  // namespace
-
-Engine::Engine(std::pmr::memory_resource* /*mr*/, uint32_t /*queue_capacity*/) {}
 
 Engine::~Engine() = default;
 
@@ -42,7 +33,7 @@ void Engine::apply(const TransportCmd& cmd)
         case TransportAction::PLAY:
         {
             uint64_t pos = last_position_ns_.load(std::memory_order_relaxed);
-            session_start_ns_ = wall_ns() - pos;
+            session_start_ns_ = clock_->now_ns() - pos;
             state_.store(static_cast<uint8_t>(TransportState::PLAYING), std::memory_order_release);
             break;
         }
@@ -56,7 +47,7 @@ void Engine::apply(const TransportCmd& cmd)
             if (state_.load(std::memory_order_relaxed) ==
                 static_cast<uint8_t>(TransportState::PLAYING))
             {
-                session_start_ns_ = wall_ns() - pos;
+                session_start_ns_ = clock_->now_ns() - pos;
             }
             break;
         }
@@ -86,7 +77,7 @@ void Engine::process()
         return;
     }
 
-    uint64_t now = wall_ns();
+    uint64_t now = clock_->now_ns();
     uint64_t position = now - session_start_ns_;
 
     // Advance to current tick (sources will be wired in M2+).

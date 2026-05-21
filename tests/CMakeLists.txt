@@ -4,6 +4,7 @@ add_executable(omega_tests
     unit/test_commands.cpp
     unit/test_tempo_map.cpp
     unit/test_engine.cpp
+    unit/test_clock.cpp
 )
 
 target_link_libraries(omega_tests
