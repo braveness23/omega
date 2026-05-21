@@ -22,8 +22,16 @@
 /* ── OMEGA_API ──────────────────────────────────────────────────────────────
  * Marks a symbol as part of the public ABI.
  * Every public C++ symbol and every C API function must be annotated.
+ *
+ * OMEGA_STATIC_LIBRARY is defined (PUBLIC) by CMake when omega_core is built
+ * as a static library. Both the library and its consumers see the same
+ * definition, so OMEGA_API correctly expands to nothing on all platforms
+ * (no dllimport/dllexport decoration needed for static linkage).
  */
-#if defined(omega_core_EXPORTS)
+#if defined(OMEGA_STATIC_LIBRARY)
+    #define OMEGA_API
+#elif defined(omega_core_EXPORTS)
+    /* Building the shared library — export symbols. */
     #if defined(_WIN32) || defined(__CYGWIN__)
         #define OMEGA_API __declspec(dllexport)
     #elif defined(__GNUC__) || defined(__clang__)
@@ -32,6 +40,7 @@
         #define OMEGA_API
     #endif
 #else
+    /* Consuming the shared library — import symbols. */
     #if defined(_WIN32) || defined(__CYGWIN__)
         #define OMEGA_API __declspec(dllimport)
     #else

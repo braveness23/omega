@@ -124,6 +124,10 @@ target_include_directories(omega_core
 
 target_compile_features(omega_core PUBLIC cxx_std_17)
 
+# Static builds need no dllimport/dllexport decoration on Windows.
+# Propagates to consumers so export.h resolves OMEGA_API correctly.
+target_compile_definitions(omega_core PUBLIC OMEGA_STATIC_LIBRARY)
+
 target_link_libraries(omega_core
     PRIVATE
         libremidi
