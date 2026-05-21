@@ -49,7 +49,7 @@ TEST_CASE("SpscQueue<Command> preserves all variant types")
 TEST_CASE("SpscQueue<Command> two-thread stress test", "[tsan]")
 {
     constexpr uint32_t N = 1'000'000u;
-    detail::SpscQueue<Command, 65536> q;
+    detail::SpscQueue<Command, 4096> q;
 
     uint64_t sum_produced = 0;
     uint64_t sum_consumed = 0;
