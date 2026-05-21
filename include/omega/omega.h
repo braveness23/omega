@@ -25,9 +25,16 @@
 
 #include <omega/export.h>
 
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* ── Constants ────────────────────────────────────────────────────────────── */
+
+/* Ticks per quarter note. Query at runtime via this macro; do not hardcode 480. */
+#define OMEGA_PPQN 480u
 
 /* ── Version ──────────────────────────────────────────────────────────────── */
 
@@ -67,6 +74,60 @@ typedef enum
  * Returns: a static string — always succeeds. Never NULL.
  */
 OMEGA_API const char* omega_status_string(omega_status_t status);
+
+/* ── Events ───────────────────────────────────────────────────────────────── */
+
+/* payload_tag discriminants */
+#define OMEGA_NOTE_ON 0x00u  /* data[0]=note, data[1]=vel, data[2-5]=duration_ticks */
+#define OMEGA_NOTE_OFF 0x01u /* data[0]=note, data[1]=vel */
+#define OMEGA_CC 0x02u       /* data[0]=controller, data[1]=value */
+#define OMEGA_PROGRAM 0x03u  /* data[0]=program */
+
+typedef struct
+{
+    uint64_t tick;       /* absolute musical position from session start */
+    uint32_t sink_id;    /* target OutputSink */
+    uint8_t payload_tag; /* discriminant — see OMEGA_NOTE_ON etc. */
+    uint8_t channel;     /* MIDI channel 0-15, or 0 for non-MIDI */
+    uint8_t reserved[2]; /* padding, must be zero */
+    uint8_t data[8];     /* inline payload */
+} omega_event_t;
+
+/*
+ * Creates a note-on event with inline duration.
+ *
+ * Thread: Any thread.
+ *
+ * Returns: the filled event struct — always succeeds.
+ */
+OMEGA_API omega_event_t omega_make_note_on(uint64_t tick,
+                                           uint32_t sink_id,
+                                           uint8_t channel,
+                                           uint8_t note,
+                                           uint8_t velocity,
+                                           uint32_t duration_ticks);
+
+/*
+ * Creates a MIDI CC event.
+ *
+ * Thread: Any thread.
+ *
+ * Returns: the filled event struct — always succeeds.
+ */
+OMEGA_API omega_event_t
+omega_make_cc(uint64_t tick, uint32_t sink_id, uint8_t channel, uint8_t controller, uint8_t value);
+
+/*
+ * Creates a MIDI program-change event.
+ *
+ * Thread: Any thread.
+ *
+ * Returns: the filled event struct — always succeeds.
+ */
+OMEGA_API omega_event_t omega_make_program(uint64_t tick,
+                                           uint32_t sink_id,
+                                           uint8_t channel,
+                                           uint8_t program);
 
 /* ── (Further API sections added here as implementation begins) ─────────────
  *

@@ -1,0 +1,86 @@
+#include <omega/omega.h>
+
+#include <cstring>
+
+namespace
+{
+
+const char* const k_status_strings[] = {
+    "ok",            /* OMEGA_OK = 0            */
+    "invalid",       /* OMEGA_ERR_INVALID = -1  */
+    "out of memory", /* OMEGA_ERR_NOMEM = -2    */
+    "not found",     /* OMEGA_ERR_NOT_FOUND = -3 */
+    "queue full",    /* OMEGA_ERR_QUEUE_FULL = -4 */
+    "unsupported",   /* OMEGA_ERR_UNSUPPORTED = -5 */
+};
+
+constexpr int k_status_count =
+    static_cast<int>(sizeof(k_status_strings) / sizeof(k_status_strings[0]));
+
+}  // namespace
+
+extern "C" {
+
+omega_version_t omega_version(void)
+{
+    omega_version_t v;
+    v.major = 0;
+    v.minor = 1;
+    v.patch = 0;
+    return v;
+}
+
+const char* omega_status_string(omega_status_t status)
+{
+    int idx = -(int)status;
+    if (idx < 0 || idx >= k_status_count)
+        return "unknown";
+    return k_status_strings[idx];
+}
+
+omega_event_t omega_make_note_on(uint64_t tick,
+                                 uint32_t sink_id,
+                                 uint8_t channel,
+                                 uint8_t note,
+                                 uint8_t velocity,
+                                 uint32_t duration_ticks)
+{
+    omega_event_t e;
+    memset(&e, 0, sizeof(e));
+    e.tick = tick;
+    e.sink_id = sink_id;
+    e.payload_tag = OMEGA_NOTE_ON;
+    e.channel = channel;
+    e.data[0] = note;
+    e.data[1] = velocity;
+    memcpy(&e.data[2], &duration_ticks, sizeof(duration_ticks));
+    return e;
+}
+
+omega_event_t omega_make_cc(
+    uint64_t tick, uint32_t sink_id, uint8_t channel, uint8_t controller, uint8_t value)
+{
+    omega_event_t e;
+    memset(&e, 0, sizeof(e));
+    e.tick = tick;
+    e.sink_id = sink_id;
+    e.payload_tag = OMEGA_CC;
+    e.channel = channel;
+    e.data[0] = controller;
+    e.data[1] = value;
+    return e;
+}
+
+omega_event_t omega_make_program(uint64_t tick, uint32_t sink_id, uint8_t channel, uint8_t program)
+{
+    omega_event_t e;
+    memset(&e, 0, sizeof(e));
+    e.tick = tick;
+    e.sink_id = sink_id;
+    e.payload_tag = OMEGA_PROGRAM;
+    e.channel = channel;
+    e.data[0] = program;
+    return e;
+}
+
+}  // extern "C"

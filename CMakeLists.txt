@@ -102,38 +102,36 @@ if(OMEGA_WITH_TSAN)
 endif()
 
 # ── Core library target ───────────────────────────────────────────────────────
-# Placeholder until source files exist.
-# When src/ is populated, replace INTERFACE with STATIC (or SHARED) and add:
-#   set_target_properties(omega_core PROPERTIES
-#       CXX_VISIBILITY_PRESET     hidden
-#       VISIBILITY_INLINES_HIDDEN ON
-#       VERSION                   ${PROJECT_VERSION}
-#       SOVERSION                 ${OMEGA_SOVERSION}
-#   )
-#   include(GenerateExportHeader)
-#   generate_export_header(omega_core
-#       BASE_NAME        OMEGA
-#       EXPORT_FILE_NAME include/omega/export.h
-#   )
-add_library(omega_core INTERFACE)
+add_library(omega_core STATIC
+    src/types.cpp
+    src/tempo_map.cpp
+    src/engine.cpp
+)
 add_library(omega::core ALIAS omega_core)
 
+set_target_properties(omega_core PROPERTIES
+    CXX_VISIBILITY_PRESET     hidden
+    VISIBILITY_INLINES_HIDDEN ON
+    VERSION                   ${PROJECT_VERSION}
+    SOVERSION                 ${OMEGA_SOVERSION}
+)
+
 target_include_directories(omega_core
-    INTERFACE
+    PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
 )
 
-target_compile_features(omega_core INTERFACE cxx_std_17)
+target_compile_features(omega_core PUBLIC cxx_std_17)
 
 target_link_libraries(omega_core
-    INTERFACE
+    PRIVATE
         libremidi
 )
 
 if(OMEGA_WITH_LINK)
-    target_link_libraries(omega_core INTERFACE Ableton::Link)
-    target_compile_definitions(omega_core INTERFACE OMEGA_WITH_LINK=1)
+    target_link_libraries(omega_core PRIVATE Ableton::Link)
+    target_compile_definitions(omega_core PUBLIC OMEGA_WITH_LINK=1)
 endif()
 
 # ── C API target ──────────────────────────────────────────────────────────────

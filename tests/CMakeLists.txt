@@ -1,10 +1,9 @@
 add_executable(omega_tests
-    # Unit tests — add files here as they're written
-    # unit/test_timing_model.cpp
-    # unit/test_spsc_queue.cpp
-    # unit/test_event_dispatch.cpp
-    # ...
-    placeholder.cpp
+    unit/test_types.cpp
+    unit/test_spsc_queue.cpp
+    unit/test_commands.cpp
+    unit/test_tempo_map.cpp
+    unit/test_engine.cpp
 )
 
 target_link_libraries(omega_tests
