@@ -5,6 +5,7 @@ Checks: >
   readability-*,
   modernize-*,
   -modernize-use-trailing-return-type,
-  -cppcoreguidelines-pro-bounds-pointer-arithmetic
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-avoid-do-while
 WarningsAsErrors: "*"
 HeaderFilterRegex: "include/omega/.*"
