@@ -9,6 +9,10 @@ Checks: >
   -cppcoreguidelines-avoid-do-while,
   -cppcoreguidelines-avoid-magic-numbers,
   -readability-magic-numbers,
-  -cppcoreguidelines-pro-bounds-constant-array-index
+  -cppcoreguidelines-pro-bounds-constant-array-index,
+  -cppcoreguidelines-macro-usage,
+  -modernize-use-using,
+  -performance-enum-size,
+  -readability-function-cognitive-complexity
 WarningsAsErrors: "*"
 HeaderFilterRegex: "include/omega/.*"
