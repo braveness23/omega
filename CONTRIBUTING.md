@@ -106,6 +106,17 @@ Comments only where the *why* is non-obvious. No function-header docblocks that 
 
 ---
 
+## Branching
+
+All changes land on `main` via pull request — no direct pushes. Branch naming follows the
+commit type prefix: `feat/<scope>`, `fix/<scope>`, `ci/<scope>`, `docs/<scope>`,
+`chore/<scope>`. One concern per branch; split mixed branches before opening a PR.
+
+See **[docs/branching.md](docs/branching.md)** for the full branching model and version
+lifecycle, including the milestone → tag mapping and SOVERSION policy.
+
+---
+
 ## Pull Request Checklist
 
 Before opening a PR:
