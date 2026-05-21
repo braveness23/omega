@@ -36,11 +36,10 @@ jobs:
   # ── Compiler matrix ──────────────────────────────────────────────────────────
   # Officially supported matrix per docs/design/12-library-foundation.md §4.1.
   # C++20 jobs are informational (continue-on-error) until C++20 is formally declared.
-  # Linux jobs run on a self-hosted runner; macOS and Windows use GitHub-hosted.
-  # The Linux runner label is stored in the RUNNER_LINUX repository variable.
+  # All jobs use GitHub-hosted runners.
   build-and-test:
     name: ${{ matrix.os }} / ${{ matrix.compiler }} / C++${{ matrix.std }}
-    runs-on: ${{ matrix.os == 'ubuntu-latest' && vars.RUNNER_LINUX || matrix.os }}
+    runs-on: ${{ matrix.os }}
     needs: [filter]
     if: needs.filter.outputs.code == 'true' || github.event_name == 'push'
 
@@ -149,7 +148,7 @@ jobs:
   # ── ASan + UBSan ─────────────────────────────────────────────────────────────
   sanitizers:
     name: ASan/UBSan (Linux / Clang 18)
-    runs-on: ${{ vars.RUNNER_LINUX }}
+    runs-on: ubuntu-latest
     needs: [filter]
     if: needs.filter.outputs.code == 'true' || github.event_name == 'push'
 
@@ -193,7 +192,7 @@ jobs:
   # ── ThreadSanitizer ───────────────────────────────────────────────────────────
   tsan:
     name: TSan (Linux / Clang 18)
-    runs-on: ${{ vars.RUNNER_LINUX }}
+    runs-on: ubuntu-latest
     needs: [filter]
     if: needs.filter.outputs.code == 'true' || github.event_name == 'push'
 
@@ -252,7 +251,7 @@ jobs:
   # ── clang-tidy ───────────────────────────────────────────────────────────────
   clang-tidy:
     name: clang-tidy
-    runs-on: ${{ vars.RUNNER_LINUX }}
+    runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
 
     steps:
@@ -349,7 +348,7 @@ jobs:
   # ── Install smoke test ────────────────────────────────────────────────────────
   install-smoke-test:
     name: Install smoke test (Linux)
-    runs-on: ${{ vars.RUNNER_LINUX }}
+    runs-on: ubuntu-latest
     needs: [filter]
     if: needs.filter.outputs.code == 'true' || github.event_name == 'push'
 
@@ -416,7 +415,7 @@ jobs:
   # Coverage regressions are flagged as warnings on PRs (not hard failures).
   coverage:
     name: Coverage (Linux / GCC)
-    runs-on: ${{ vars.RUNNER_LINUX }}
+    runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     steps:
@@ -477,7 +476,7 @@ jobs:
   # See docs/design/12-library-foundation.md §4.5 for required benchmarks.
   benchmarks:
     name: Benchmarks (Linux / GCC)
-    runs-on: ${{ vars.RUNNER_LINUX }}
+    runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     steps:
