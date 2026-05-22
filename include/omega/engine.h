@@ -5,6 +5,7 @@
 #include <omega/detail/spsc_queue.h>
 #include <omega/event_source.h>
 #include <omega/omega.h>
+#include <omega/pattern_library.h>
 #include <omega/tempo_map.h>
 #include <omega/timeline.h>
 #include <omega/types.h>
@@ -84,6 +85,47 @@ public:
      */
     omega_status_t add_sink(OutputSink* sink);
 
+    /* ── Patterns ────────────────────────────────────────────────────────── */
+
+    /*
+     * Creates a new pattern in the built-in pattern library.
+     * Call before playback starts.
+     *
+     * Thread: Mutation thread only, before playback starts.
+     *
+     * Returns the assigned PatternId (always >= 1).
+     */
+    PatternId create_pattern(std::string name, uint64_t length_ticks);
+
+    /*
+     * Removes a pattern from the library. Its ID is never reused.
+     * Thread: Mutation thread only, before playback starts.
+     */
+    void destroy_pattern(PatternId id);
+
+    /*
+     * Inserts an event into a pattern in tick-sorted order.
+     * Thread: Mutation thread only, before playback starts.
+     *
+     * Returns OMEGA_ERR_NOT_FOUND if id is not a valid pattern.
+     */
+    omega_status_t pattern_add_event(PatternId id, Event event);
+
+    /*
+     * Updates the length of a pattern.
+     * Thread: Mutation thread only, before playback starts.
+     *
+     * Returns OMEGA_ERR_NOT_FOUND if id is not a valid pattern.
+     */
+    omega_status_t pattern_set_length(PatternId id, uint64_t length_ticks);
+
+    /*
+     * Returns a non-owning reference to the pattern library.
+     * Thread: Mutation thread for writes; Timing thread for reads.
+     */
+    [[nodiscard]] PatternLibrary& pattern_library() noexcept;
+    [[nodiscard]] const PatternLibrary& pattern_library() const noexcept;
+
     /* ── Tracks ───────────────────────────────────────────────────────────── */
 
     /*
@@ -154,6 +196,8 @@ private:
 
     InternalClock internal_clock_;
     ClockSource* clock_;
+
+    PatternLibrary patterns_;
 
     EventDispatcher::SinkList sinks_;  // sorted by sink_id, non-owning
 

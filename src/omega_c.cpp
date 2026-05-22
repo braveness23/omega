@@ -117,4 +117,47 @@ uint64_t omega_engine_position_ns(const omega_engine_t* eng)
     return eng->engine.transport_position_ns();
 }
 
+omega_pattern_id_t omega_pattern_create(omega_engine_t* eng,
+                                        const char* name,
+                                        omega_tick_t length_ticks)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_PATTERN_INVALID;
+    }
+    return eng->engine.create_pattern(name != nullptr ? name : "", length_ticks);
+}
+
+omega_status_t omega_pattern_destroy(omega_engine_t* eng, omega_pattern_id_t id)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    eng->engine.destroy_pattern(id);
+    return OMEGA_OK;
+}
+
+omega_status_t omega_pattern_add_event(omega_engine_t* eng,
+                                       omega_pattern_id_t id,
+                                       const omega_event_t* ev)
+{
+    if (eng == nullptr || ev == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.pattern_add_event(id, *ev);
+}
+
+omega_status_t omega_pattern_set_length(omega_engine_t* eng,
+                                        omega_pattern_id_t id,
+                                        omega_tick_t length_ticks)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.pattern_set_length(id, length_ticks);
+}
+
 }  // extern "C"

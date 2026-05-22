@@ -34,6 +34,36 @@ omega_status_t Engine::add_sink(OutputSink* sink)
     return OMEGA_OK;
 }
 
+PatternId Engine::create_pattern(std::string name, uint64_t length_ticks)
+{
+    return patterns_.create(std::move(name), length_ticks);
+}
+
+void Engine::destroy_pattern(PatternId id)
+{
+    patterns_.destroy(id);
+}
+
+omega_status_t Engine::pattern_add_event(PatternId id, Event event)
+{
+    return patterns_.add_event(id, event);
+}
+
+omega_status_t Engine::pattern_set_length(PatternId id, uint64_t length_ticks)
+{
+    return patterns_.set_length(id, length_ticks);
+}
+
+PatternLibrary& Engine::pattern_library() noexcept
+{
+    return patterns_;
+}
+
+const PatternLibrary& Engine::pattern_library() const noexcept
+{
+    return patterns_;
+}
+
 TrackId Engine::add_track(std::string name)
 {
     return timeline_.add_track(std::move(name));
