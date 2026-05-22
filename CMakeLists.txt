@@ -143,10 +143,9 @@ endif()
 
 # ── C API target ──────────────────────────────────────────────────────────────
 # Wraps omega_core with a stable C ABI.
-# Placeholder until src/omega_c.cpp exists.
-add_library(omega INTERFACE)
+add_library(omega STATIC src/omega_c.cpp)
 add_library(omega::omega ALIAS omega)
-target_link_libraries(omega INTERFACE omega::core)
+target_link_libraries(omega PUBLIC omega::core)
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 if(OMEGA_BUILD_TESTS)

@@ -10,7 +10,7 @@ via a `CapturingSink`. No real MIDI output.
 | M2.1 | ✅ Done | ClockSource + InternalClock + MockClock |
 | M2.2 | ✅ Done | OutputSink + CapturingSink |
 | M2.3 | ✅ Done | TimelineSource + TrackData |
-| M2.4 | 🔄 In progress | C API wiring |
+| M2.4 | ✅ Done | C API wiring |
 
 ---
 

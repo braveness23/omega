@@ -28,10 +28,10 @@ public:
     void insert(uint64_t tick, uint32_t bpm_milli);
 
     /* Convert absolute ticks to nanoseconds from session start. */
-    uint64_t ticks_to_ns(uint64_t ticks) const;
+    [[nodiscard]] uint64_t ticks_to_ns(uint64_t ticks) const;
 
     /* Convert nanoseconds from session start to absolute ticks. */
-    uint64_t ns_to_ticks(uint64_t ns) const;
+    [[nodiscard]] uint64_t ns_to_ticks(uint64_t ns) const;
 
 private:
     struct TempoPoint

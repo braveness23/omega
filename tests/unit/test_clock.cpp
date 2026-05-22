@@ -62,7 +62,9 @@ TEST_CASE("MockClock does not drift over 10000 beat-sized advance_ticks calls")
 {
     MockClock clock;
     for (int i = 0; i < 10'000; ++i)
+    {
         clock.advance_ticks(OMEGA_PPQN);
+    }
     // 10,000 beats * 500,000,000 ns/beat = 5,000,000,000,000 ns
     REQUIRE(clock.now_ns() == 5'000'000'000'000ULL);
 }

@@ -19,7 +19,13 @@ namespace omega
 class OMEGA_API ClockSource
 {
 public:
+    ClockSource() = default;
     virtual ~ClockSource() = default;
+
+    ClockSource(const ClockSource&) = delete;
+    ClockSource& operator=(const ClockSource&) = delete;
+    ClockSource(ClockSource&&) = delete;
+    ClockSource& operator=(ClockSource&&) = delete;
 
     /*
      * Returns the current time in nanoseconds. Must be monotonically
@@ -27,7 +33,7 @@ public:
      *
      * Thread: Timing thread only.
      */
-    virtual uint64_t now_ns() const = 0;
+    [[nodiscard]] virtual uint64_t now_ns() const = 0;
 };
 
 /*
@@ -39,7 +45,7 @@ public:
 class OMEGA_API InternalClock final : public ClockSource
 {
 public:
-    uint64_t now_ns() const override;
+    [[nodiscard]] uint64_t now_ns() const override;
 };
 
 }  // namespace omega

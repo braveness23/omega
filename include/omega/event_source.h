@@ -26,19 +26,23 @@ class EventDispatcher
 public:
     using SinkList = std::vector<std::pair<uint32_t, OutputSink*>>;
 
-    explicit EventDispatcher(const SinkList& sinks) noexcept : sinks_{sinks} {}
+    explicit EventDispatcher(const SinkList& sinks) noexcept : sinks_{&sinks} {}
 
     void dispatch(const Event& event) noexcept
     {
-        auto it = std::lower_bound(sinks_.begin(), sinks_.end(), event.sink_id,
-                                   [](const std::pair<uint32_t, OutputSink*>& p, uint32_t id)
-                                   { return p.first < id; });
-        if (it != sinks_.end() && it->first == event.sink_id)
+        auto it = std::lower_bound(
+            sinks_->begin(),
+            sinks_->end(),
+            event.sink_id,
+            [](const std::pair<uint32_t, OutputSink*>& p, uint32_t id) { return p.first < id; });
+        if (it != sinks_->end() && it->first == event.sink_id)
+        {
             it->second->send(event);
+        }
     }
 
 private:
-    const SinkList& sinks_;
+    const SinkList* sinks_;
 };
 
 /*
@@ -52,14 +56,18 @@ class EventSource
 public:
     virtual ~EventSource() = default;
 
+    EventSource(const EventSource&) = delete;
+    EventSource& operator=(const EventSource&) = delete;
+    EventSource(EventSource&&) = delete;
+    EventSource& operator=(EventSource&&) = delete;
+
     /*
      * Advance playback to `to_tick`, dispatching all events in
      * (last_dispatched_tick, to_tick].
      *
      * Thread: Timing thread only. Must never allocate, block, or lock.
      */
-    virtual void advance(uint64_t to_tick, EventDispatcher& dispatcher,
-                         ProcessContext& ctx) = 0;
+    virtual void advance(uint64_t to_tick, EventDispatcher& dispatcher, ProcessContext& ctx) = 0;
 
     /*
      * Called when the transport locates to `tick`. Stateful sources reset
@@ -69,11 +77,13 @@ public:
      * Default: resets playback position to `tick` (no chasing).
      * Thread: Timing thread only.
      */
-    virtual void on_locate(uint64_t tick, EventDispatcher& /*chase_out*/,
-                           ProcessContext& /*ctx*/)
+    virtual void on_locate(uint64_t tick, EventDispatcher& /*chase_out*/, ProcessContext& /*ctx*/)
     {
         (void)tick;
     }
+
+protected:
+    EventSource() = default;
 };
 
 }  // namespace omega

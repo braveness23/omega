@@ -57,6 +57,8 @@ public:
 
     Engine(const Engine&) = delete;
     Engine& operator=(const Engine&) = delete;
+    Engine(Engine&&) = delete;
+    Engine& operator=(Engine&&) = delete;
 
     /* ── Clock ────────────────────────────────────────────────────────────── */
 
@@ -134,7 +136,7 @@ public:
      *
      * Thread: Any thread.
      */
-    TransportState transport_state() const;
+    [[nodiscard]] TransportState transport_state() const;
 
     /*
      * Returns the current transport position in nanoseconds from session start.
@@ -142,7 +144,7 @@ public:
      *
      * Thread: Any thread.
      */
-    uint64_t transport_position_ns() const;
+    [[nodiscard]] uint64_t transport_position_ns() const;
 
 private:
     void apply(const AddEventCmd& cmd);

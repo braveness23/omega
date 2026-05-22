@@ -2,6 +2,7 @@
 
 #include <omega/sink.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <vector>
 
@@ -33,43 +34,41 @@ public:
      * Returns the number of events captured so far.
      * Thread: Any thread (in tests, called after process() returns).
      */
-    size_t count() const noexcept { return events_.size(); }
+    [[nodiscard]] size_t count() const noexcept { return events_.size(); }
 
     /*
      * Returns true if a NOTE_ON event with the given note and channel exists.
      * Thread: Any thread.
      */
-    bool has_note_on(uint8_t note, uint8_t channel = 0) const noexcept
+    [[nodiscard]] bool has_note_on(uint8_t note, uint8_t channel = 0) const noexcept
     {
-        for (const auto& e : events_)
-            if (e.payload_tag == OMEGA_NOTE_ON && e.data[0] == note && e.channel == channel)
-                return true;
-        return false;
+        return std::any_of(events_.begin(), events_.end(), [note, channel](const Event& ev) {
+            return ev.payload_tag == OMEGA_NOTE_ON && ev.data[0] == note && ev.channel == channel;
+        });
     }
 
     /*
      * Returns true if a NOTE_OFF event with the given note and channel exists.
      * Thread: Any thread.
      */
-    bool has_note_off(uint8_t note, uint8_t channel = 0) const noexcept
+    [[nodiscard]] bool has_note_off(uint8_t note, uint8_t channel = 0) const noexcept
     {
-        for (const auto& e : events_)
-            if (e.payload_tag == OMEGA_NOTE_OFF && e.data[0] == note && e.channel == channel)
-                return true;
-        return false;
+        return std::any_of(events_.begin(), events_.end(), [note, channel](const Event& ev) {
+            return ev.payload_tag == OMEGA_NOTE_OFF && ev.data[0] == note && ev.channel == channel;
+        });
     }
 
     /*
      * Returns the first captured event. Undefined behaviour if count() == 0.
      * Thread: Any thread.
      */
-    const Event& first() const { return events_.front(); }
+    [[nodiscard]] const Event& first() const { return events_.front(); }
 
     /*
      * Returns the event at the given index. Undefined behaviour if index >= count().
      * Thread: Any thread.
      */
-    const Event& at(size_t index) const { return events_[index]; }
+    [[nodiscard]] const Event& at(size_t index) const { return events_[index]; }
 
     /*
      * Discards all captured events.

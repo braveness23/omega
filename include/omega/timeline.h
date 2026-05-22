@@ -65,15 +65,13 @@ public:
      * Thread: Timing thread only. Never allocates during steady-state playback
      * unless a note-on is dispatched (adds to active_notes_).
      */
-    void advance(uint64_t to_tick, EventDispatcher& dispatcher,
-                 ProcessContext& ctx) override;
+    void advance(uint64_t to_tick, EventDispatcher& dispatcher, ProcessContext& ctx) override;
 
     /*
      * Resets the dispatch position to `tick` and clears active notes.
      * Thread: Timing thread only.
      */
-    void on_locate(uint64_t tick, EventDispatcher& dispatcher,
-                   ProcessContext& ctx) override;
+    void on_locate(uint64_t tick, EventDispatcher& dispatcher, ProcessContext& ctx) override;
 
 private:
     struct ActiveNote
@@ -84,14 +82,14 @@ private:
         uint8_t channel;
     };
 
-    Track* find_track(TrackId id) noexcept;
-    const Track* find_track(TrackId id) const noexcept;
+    [[nodiscard]] Track* find_track(TrackId id) noexcept;
+    [[nodiscard]] const Track* find_track(TrackId id) const noexcept;
 
     std::vector<Track> tracks_;
     TrackId next_id_{1};
 
-    uint64_t next_tick_{0};   // first tick to dispatch on next advance()
-    bool started_{false};     // false until first advance() call
+    uint64_t next_tick_{0};  // first tick to dispatch on next advance()
+    bool started_{false};    // false until first advance() call
 
     std::vector<ActiveNote> active_notes_;
 };

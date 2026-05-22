@@ -7,9 +7,15 @@ namespace omega
 
 namespace
 {
-std::atomic<uint32_t> s_next_sink_id{1};
+
+uint32_t next_sink_id() noexcept
+{
+    static std::atomic<uint32_t> counter{1};
+    return counter.fetch_add(1, std::memory_order_relaxed);
 }
 
-OutputSink::OutputSink() noexcept : id_{s_next_sink_id.fetch_add(1, std::memory_order_relaxed)} {}
+}  // namespace
+
+OutputSink::OutputSink() noexcept : id_{next_sink_id()} {}
 
 }  // namespace omega

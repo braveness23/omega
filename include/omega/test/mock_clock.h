@@ -53,7 +53,7 @@ public:
     /*
      * Thread: Timing thread only.
      */
-    uint64_t now_ns() const noexcept override { return now_; }
+    [[nodiscard]] uint64_t now_ns() const noexcept override { return now_; }
 
 private:
     uint64_t now_{0};

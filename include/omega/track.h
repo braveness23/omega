@@ -17,23 +17,20 @@ namespace omega
  */
 struct Track
 {
-    TrackId id;
+    TrackId id{0};
     std::string name;
     std::pmr::vector<Event> events;
-    uint32_t sink_id;
-    uint8_t channel;
-    bool muted;
+    uint32_t sink_id{0};
+    uint8_t channel{0};
+    bool muted{false};
 
-    Track(TrackId id_, std::string name_,
+    Track(TrackId id_,
+          std::string name_,
           std::pmr::memory_resource* mr = std::pmr::get_default_resource())
-        : id{id_}
-        , name{std::move(name_)}
-        , events{mr}
-        , sink_id{0}
-        , channel{0}
-        , muted{false}
-    {
-    }
+        : id{id_}, name{std::move(name_)}, events{mr}
+    {}
+
+    ~Track() = default;
 
     Track(const Track&) = delete;
     Track& operator=(const Track&) = delete;

@@ -71,7 +71,7 @@ TEST_CASE("100 notes at random ticks all fire in tick order")
     constexpr int N = 100;
     for (int i = N - 1; i >= 0; --i)
     {
-        uint64_t tick = static_cast<uint64_t>(i * 10);
+        auto tick = static_cast<uint64_t>(i * 10);
         omega_event_t ev =
             omega_make_note_on(tick, sink.sink_id(), 0, static_cast<uint8_t>(i), 100, 0);
         REQUIRE(e.enqueue(AddEventCmd{track, ev}) == OMEGA_OK);
@@ -86,7 +86,9 @@ TEST_CASE("100 notes at random ticks all fire in tick order")
 
     REQUIRE(sink.count() == static_cast<size_t>(N));
     for (size_t i = 0; i + 1 < sink.count(); ++i)
+    {
         REQUIRE(sink.at(i).tick <= sink.at(i + 1).tick);
+    }
 }
 
 // ── Muted track ───────────────────────────────────────────────────────────────

@@ -23,6 +23,11 @@ class OMEGA_API OutputSink
 public:
     virtual ~OutputSink() = default;
 
+    OutputSink(const OutputSink&) = delete;
+    OutputSink& operator=(const OutputSink&) = delete;
+    OutputSink(OutputSink&&) = delete;
+    OutputSink& operator=(OutputSink&&) = delete;
+
     /*
      * Deliver one event to the sink. Called once per dispatched event per cycle.
      * Thread: Timing thread only.
@@ -40,7 +45,7 @@ public:
      * Returns the sink's unique ID, assigned at construction.
      * Thread: Any thread.
      */
-    uint32_t sink_id() const noexcept { return id_; }
+    [[nodiscard]] uint32_t sink_id() const noexcept { return id_; }
 
 protected:
     /*
