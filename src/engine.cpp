@@ -74,6 +74,16 @@ omega_status_t Engine::set_track_sink(TrackId track_id, uint32_t sink_id)
     return timeline_.set_sink(track_id, sink_id);
 }
 
+omega_status_t Engine::song_append(PatternId id, uint32_t repeat_count)
+{
+    return enqueue(SongAppendCmd{id, repeat_count});
+}
+
+omega_status_t Engine::song_clear()
+{
+    return enqueue(SongClearCmd{});
+}
+
 omega_status_t Engine::enqueue(Command cmd)
 {
     if (queue_.push(cmd))
@@ -126,9 +136,20 @@ void Engine::apply(const TransportCmd& cmd)
             ProcessContext ctx{};
             EventDispatcher dispatcher{sinks_};
             timeline_.on_locate(cmd.locate_tick, dispatcher, ctx);
+            song_.on_locate(cmd.locate_tick, dispatcher, ctx);
             break;
         }
     }
+}
+
+void Engine::apply(const SongAppendCmd& cmd)
+{
+    song_.append(cmd.pattern_id, cmd.repeat_count);
+}
+
+void Engine::apply(const SongClearCmd& /*cmd*/)
+{
+    song_.clear();
 }
 
 void Engine::process()
@@ -156,6 +177,14 @@ void Engine::process()
                 {
                     apply(c);
                 }
+                else if constexpr (std::is_same_v<T, SongAppendCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, SongClearCmd>)
+                {
+                    apply(c);
+                }
             },
             cmd);
     }
@@ -172,6 +201,7 @@ void Engine::process()
     ProcessContext ctx{};
     EventDispatcher dispatcher{sinks_};
     timeline_.advance(to_tick, dispatcher, ctx);
+    song_.advance(to_tick, dispatcher, ctx);
 
     for (auto& [sid, sink] : sinks_)
     {

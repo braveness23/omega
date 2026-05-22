@@ -8,7 +8,7 @@ playback modes from the design documents are functional.
 | Sprint | Status | Description |
 |--------|--------|-------------|
 | M3.1 | ✅ Done | PatternLibrary |
-| M3.2 | ⬜ Todo | SongArrangementSource |
+| M3.2 | ✅ Done | SongArrangementSource |
 | M3.3 | ⬜ Todo | PerformanceSource state machine |
 
 ---

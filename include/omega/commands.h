@@ -46,8 +46,23 @@ struct TransportCmd
     uint64_t locate_tick;
 };
 
-using Command =
-    std::variant<AddEventCmd, DeleteEventCmd, SetTempoCmd, SetLoopCmd, CuePatternCmd, TransportCmd>;
+struct SongAppendCmd
+{
+    PatternId pattern_id;
+    uint32_t repeat_count;
+};
+
+struct SongClearCmd
+{};
+
+using Command = std::variant<AddEventCmd,
+                             DeleteEventCmd,
+                             SetTempoCmd,
+                             SetLoopCmd,
+                             CuePatternCmd,
+                             TransportCmd,
+                             SongAppendCmd,
+                             SongClearCmd>;
 
 static_assert(sizeof(Command) <= 64, "Command must fit within 64 bytes");
 

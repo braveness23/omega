@@ -8,11 +8,12 @@ add_executable(omega_tests
     unit/test_sink.cpp
     unit/test_timeline.cpp
     unit/test_pattern_library.cpp
+    unit/test_song_arrangement.cpp
 )
 
 target_link_libraries(omega_tests
     PRIVATE
-        omega::core
+        omega::omega
         Catch2::Catch2WithMain
 )
 

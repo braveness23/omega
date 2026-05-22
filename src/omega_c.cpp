@@ -160,4 +160,22 @@ omega_status_t omega_pattern_set_length(omega_engine_t* eng,
     return eng->engine.pattern_set_length(id, length_ticks);
 }
 
+omega_status_t omega_song_append(omega_engine_t* eng, omega_pattern_id_t pattern_id, uint32_t repeats)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.song_append(pattern_id, repeats);
+}
+
+omega_status_t omega_song_clear(omega_engine_t* eng)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.song_clear();
+}
+
 }  // extern "C"

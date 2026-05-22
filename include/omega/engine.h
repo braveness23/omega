@@ -6,6 +6,7 @@
 #include <omega/event_source.h>
 #include <omega/omega.h>
 #include <omega/pattern_library.h>
+#include <omega/song_arrangement.h>
 #include <omega/tempo_map.h>
 #include <omega/timeline.h>
 #include <omega/types.h>
@@ -126,6 +127,31 @@ public:
     [[nodiscard]] PatternLibrary& pattern_library() noexcept;
     [[nodiscard]] const PatternLibrary& pattern_library() const noexcept;
 
+    /* ── Song arrangement ────────────────────────────────────────────────── */
+
+    /*
+     * Enqueues an entry to append to the song arrangement.
+     * Entries are played in order; each pattern repeats repeat_count times.
+     *
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t song_append(PatternId id, uint32_t repeat_count);
+
+    /*
+     * Enqueues a command to clear all arrangement entries and reset playback.
+     *
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t song_clear();
+
     /* ── Tracks ───────────────────────────────────────────────────────────── */
 
     /*
@@ -193,6 +219,8 @@ private:
     void apply(const DeleteEventCmd& cmd);
     void apply(const SetTempoCmd& cmd);
     void apply(const TransportCmd& cmd);
+    void apply(const SongAppendCmd& cmd);
+    void apply(const SongClearCmd& cmd);
 
     InternalClock internal_clock_;
     ClockSource* clock_;
@@ -202,6 +230,7 @@ private:
     EventDispatcher::SinkList sinks_;  // sorted by sink_id, non-owning
 
     TimelineSource timeline_;
+    SongArrangementSource song_{patterns_};
 
     detail::SpscQueue<Command, 4096> queue_;
     TempoMap tempo_map_;

@@ -335,6 +335,37 @@ OMEGA_API omega_status_t omega_pattern_set_length(omega_engine_t* e,
                                                   omega_pattern_id_t id,
                                                   omega_tick_t length_ticks);
 
+/* ── Song arrangement ─────────────────────────────────────────────────────── */
+
+/*
+ * Enqueues a command to append one entry to the song arrangement.
+ * Entries are played in order; the pattern repeats `repeats` times before
+ * advancing to the next entry. Entries with repeats == 0 are skipped.
+ * Call before playback starts, or at any time from the mutation thread.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t
+omega_song_append(omega_engine_t* e, omega_pattern_id_t pattern_id, uint32_t repeats);
+
+/*
+ * Enqueues a command to clear all song arrangement entries and reset playback
+ * to the beginning of the arrangement.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_song_clear(omega_engine_t* e);
+
 #ifdef __cplusplus
 }
 #endif
