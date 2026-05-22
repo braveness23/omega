@@ -389,6 +389,26 @@ jobs:
       - name: Run consumer
         run: ./build_consumer/omega_smoke_test
 
+  # ── Build gate ───────────────────────────────────────────────────────────────
+  # Single required status check for branch protection. Always runs so the
+  # check name is always present — skipped matrix jobs don't register by their
+  # expanded names, which would leave required checks permanently absent.
+  build-gate:
+    name: Build gate
+    if: always()
+    needs: [build-and-test, sanitizers, tsan, install-smoke-test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: All build jobs passed or were skipped
+        run: |
+          results="${{ join(needs.*.result, ' ') }}"
+          for r in $results; do
+            if [[ "$r" != "success" && "$r" != "skipped" ]]; then
+              echo "Job result '$r' is not success or skipped"
+              exit 1
+            fi
+          done
+
   # ── Coverage ──────────────────────────────────────────────────────────────────
   # Runs on main pushes only; uploads LCOV report to Codecov.
   # Coverage regressions are flagged as warnings on PRs (not hard failures).

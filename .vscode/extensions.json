@@ -1,0 +1,20 @@
+{
+    "recommendations": [
+        // C++ language support
+        "ms-vscode.cpptools",
+        "llvm-vs-code-extensions.vscode-clangd",
+        "notskm.clang-tidy",
+
+        // CMake
+        "ms-vscode.cmake-tools",
+        "twxs.cmake",
+
+        // Testing
+        "hbenl.vscode-test-explorer",
+        "fredericbonnet.cmake-test-adapter",
+
+        // GitHub
+        "github.vscode-github-actions",
+        "eamodio.gitlens"
+    ]
+}

@@ -67,7 +67,8 @@ void Engine::process()
 {
     // Drain the command queue; apply commands in order.
     Command cmd;
-    while (queue_.pop(cmd))
+    uint32_t drain_limit = queue_.size();
+    while (drain_limit-- > 0 && queue_.pop(cmd))
     {
         std::visit(
             [this](auto& c) {

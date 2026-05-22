@@ -1,12 +1,11 @@
 #pragma once
 
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <utility>
 
-namespace omega
-{
-namespace detail
+namespace omega::detail
 {
 
 /*
@@ -29,7 +28,7 @@ class SpscQueue
 
     alignas(64) std::atomic<uint32_t> tail_{0}; /* write position (producer) */
     alignas(64) std::atomic<uint32_t> head_{0}; /* read position (consumer)  */
-    T storage_[Capacity];
+    std::array<T, Capacity> storage_;
 
 public:
     /*
@@ -41,9 +40,11 @@ public:
     bool push(T&& item)
     {
         uint32_t tail = tail_.load(std::memory_order_relaxed);
-        uint32_t next = (tail + 1u) & (Capacity - 1u);
+        uint32_t next = (tail + 1U) & (Capacity - 1U);
         if (next == head_.load(std::memory_order_acquire))
+        {
             return false;
+        }
         storage_[tail] = std::move(item);
         tail_.store(next, std::memory_order_release);
         return true;
@@ -69,9 +70,11 @@ public:
     {
         uint32_t head = head_.load(std::memory_order_relaxed);
         if (head == tail_.load(std::memory_order_acquire))
+        {
             return false;
+        }
         out = std::move(storage_[head]);
-        head_.store((head + 1u) & (Capacity - 1u), std::memory_order_release);
+        head_.store((head + 1U) & (Capacity - 1U), std::memory_order_release);
         return true;
     }
 
@@ -81,7 +84,7 @@ public:
      *
      * Thread: any (approximate).
      */
-    bool empty() const
+    [[nodiscard]] bool empty() const
     {
         return head_.load(std::memory_order_acquire) == tail_.load(std::memory_order_acquire);
     }
@@ -91,13 +94,12 @@ public:
      *
      * Thread: any (approximate).
      */
-    uint32_t size() const
+    [[nodiscard]] uint32_t size() const
     {
-        uint32_t h = head_.load(std::memory_order_acquire);
-        uint32_t t = tail_.load(std::memory_order_acquire);
-        return (t - h + Capacity) & (Capacity - 1u);
+        uint32_t head_pos = head_.load(std::memory_order_acquire);
+        uint32_t tail_pos = tail_.load(std::memory_order_acquire);
+        return (tail_pos - head_pos + Capacity) & (Capacity - 1U);
     }
 };
 
-}  // namespace detail
-}  // namespace omega
+}  // namespace omega::detail
