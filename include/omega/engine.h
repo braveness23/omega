@@ -6,6 +6,7 @@
 #include <omega/event_source.h>
 #include <omega/omega.h>
 #include <omega/pattern_library.h>
+#include <omega/perf_slot.h>
 #include <omega/song_arrangement.h>
 #include <omega/tempo_map.h>
 #include <omega/timeline.h>
@@ -172,6 +173,79 @@ public:
      */
     omega_status_t set_track_sink(TrackId track_id, uint32_t sink_id);
 
+    /* ── Performance source ──────────────────────────────────────────────── */
+
+    /*
+     * Assigns a pattern to a performance slot.
+     * pattern == 0 unassigns (any state → EMPTY).
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t perf_assign(SlotId slot, PatternId pattern);
+
+    /*
+     * Cues the assigned pattern for the slot.
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t perf_cue(SlotId slot, CueMode mode);
+
+    /*
+     * Stops the slot at the given cue mode boundary.
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t perf_stop(SlotId slot, CueMode mode);
+
+    /*
+     * Stops all slots.
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t perf_stop_all(CueMode mode);
+
+    /*
+     * Sets per-slot transpose in semitones (-24 to +24).
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t perf_set_transpose(SlotId slot, int8_t semitones);
+
+    /*
+     * Sets per-slot velocity scale (0–200, 100 = unity).
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t perf_set_velocity_scale(SlotId slot, uint8_t scale);
+
+    /*
+     * Sets per-slot random bias (0–100).
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t perf_set_random_bias(SlotId slot, uint8_t bias);
+
     /* ── Command queue ────────────────────────────────────────────────────── */
 
     /*
@@ -221,6 +295,13 @@ private:
     void apply(const TransportCmd& cmd);
     void apply(const SongAppendCmd& cmd);
     void apply(const SongClearCmd& cmd);
+    void apply(const PerfAssignCmd& cmd);
+    void apply(const PerfCueCmd& cmd);
+    void apply(const PerfStopCmd& cmd);
+    void apply(const PerfStopAllCmd& cmd);
+    void apply(const PerfSetTransposeCmd& cmd);
+    void apply(const PerfSetVelocityScaleCmd& cmd);
+    void apply(const PerfSetRandomBiasCmd& cmd);
 
     InternalClock internal_clock_;
     ClockSource* clock_;
@@ -231,6 +312,7 @@ private:
 
     TimelineSource timeline_;
     SongArrangementSource song_{patterns_};
+    PerformanceSource perf_{patterns_};
 
     detail::SpscQueue<Command, 4096> queue_;
     TempoMap tempo_map_;

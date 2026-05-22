@@ -152,6 +152,17 @@ typedef uint32_t omega_pattern_id_t;
 /* Sentinel: returned by omega_pattern_create() on failure. Never a valid ID. */
 #define OMEGA_PATTERN_INVALID 0u
 
+typedef uint32_t omega_slot_id_t;
+
+/* Number of performance slots (0 to OMEGA_SLOT_MAX-1 are valid). */
+#define OMEGA_SLOT_MAX 64u
+
+typedef enum
+{
+    OMEGA_CUE_IMMEDIATE = 0,   /* start/stop immediately */
+    OMEGA_CUE_AT_BOUNDARY = 1, /* wait for the next loop boundary */
+} omega_cue_mode_t;
+
 typedef enum
 {
     OMEGA_TRANSPORT_STOPPED = 0,
@@ -350,8 +361,9 @@ OMEGA_API omega_status_t omega_pattern_set_length(omega_engine_t* e,
  *   OMEGA_ERR_INVALID    — e is NULL.
  *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
  */
-OMEGA_API omega_status_t
-omega_song_append(omega_engine_t* e, omega_pattern_id_t pattern_id, uint32_t repeats);
+OMEGA_API omega_status_t omega_song_append(omega_engine_t* e,
+                                           omega_pattern_id_t pattern_id,
+                                           uint32_t repeats);
 
 /*
  * Enqueues a command to clear all song arrangement entries and reset playback
@@ -365,6 +377,112 @@ omega_song_append(omega_engine_t* e, omega_pattern_id_t pattern_id, uint32_t rep
  *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
  */
 OMEGA_API omega_status_t omega_song_clear(omega_engine_t* e);
+
+/* ── Performance source ───────────────────────────────────────────────────── */
+
+/*
+ * Assigns a pattern to a performance slot. pattern_id == OMEGA_PATTERN_INVALID
+ * unassigns (any state → EMPTY, immediate note-off if playing).
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_perf_assign(omega_engine_t* e,
+                                           omega_slot_id_t slot,
+                                           omega_pattern_id_t pattern_id);
+
+/*
+ * Cues the assigned pattern for the given slot.
+ *   OMEGA_CUE_IMMEDIATE  — starts immediately.
+ *   OMEGA_CUE_AT_BOUNDARY — waits for the next loop boundary.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_perf_cue(omega_engine_t* e,
+                                        omega_slot_id_t slot,
+                                        omega_cue_mode_t mode);
+
+/*
+ * Stops the given slot.
+ *   OMEGA_CUE_IMMEDIATE  — silences at the start of the next advance window.
+ *   OMEGA_CUE_AT_BOUNDARY — silences at the next loop boundary.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_perf_stop(omega_engine_t* e,
+                                         omega_slot_id_t slot,
+                                         omega_cue_mode_t mode);
+
+/*
+ * Stops all slots.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_perf_stop_all(omega_engine_t* e, omega_cue_mode_t mode);
+
+/*
+ * Sets the transpose for a slot in semitones (-24 to +24).
+ * Applied at dispatch time to all note events.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_perf_set_transpose(omega_engine_t* e,
+                                                  omega_slot_id_t slot,
+                                                  int8_t semitones);
+
+/*
+ * Sets the velocity scale for a slot (0–200, 100 = unity).
+ * Applied at dispatch time: dispatched_vel = clamp((vel * scale) / 100, 1, 127).
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_perf_set_velocity_scale(omega_engine_t* e,
+                                                       omega_slot_id_t slot,
+                                                       uint8_t scale);
+
+/*
+ * Sets the random pitch bias for a slot (0–100).
+ * At 100%, each note may be randomly offset by up to ±5 semitones.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_perf_set_random_bias(omega_engine_t* e,
+                                                    omega_slot_id_t slot,
+                                                    uint8_t bias);
 
 #ifdef __cplusplus
 }

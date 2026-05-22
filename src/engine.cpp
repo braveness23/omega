@@ -84,6 +84,41 @@ omega_status_t Engine::song_clear()
     return enqueue(SongClearCmd{});
 }
 
+omega_status_t Engine::perf_assign(SlotId slot, PatternId pattern)
+{
+    return enqueue(PerfAssignCmd{slot, pattern});
+}
+
+omega_status_t Engine::perf_cue(SlotId slot, CueMode mode)
+{
+    return enqueue(PerfCueCmd{slot, mode});
+}
+
+omega_status_t Engine::perf_stop(SlotId slot, CueMode mode)
+{
+    return enqueue(PerfStopCmd{slot, mode});
+}
+
+omega_status_t Engine::perf_stop_all(CueMode mode)
+{
+    return enqueue(PerfStopAllCmd{mode});
+}
+
+omega_status_t Engine::perf_set_transpose(SlotId slot, int8_t semitones)
+{
+    return enqueue(PerfSetTransposeCmd{slot, semitones});
+}
+
+omega_status_t Engine::perf_set_velocity_scale(SlotId slot, uint8_t scale)
+{
+    return enqueue(PerfSetVelocityScaleCmd{slot, scale});
+}
+
+omega_status_t Engine::perf_set_random_bias(SlotId slot, uint8_t bias)
+{
+    return enqueue(PerfSetRandomBiasCmd{slot, bias});
+}
+
 omega_status_t Engine::enqueue(Command cmd)
 {
     if (queue_.push(cmd))
@@ -137,6 +172,7 @@ void Engine::apply(const TransportCmd& cmd)
             EventDispatcher dispatcher{sinks_};
             timeline_.on_locate(cmd.locate_tick, dispatcher, ctx);
             song_.on_locate(cmd.locate_tick, dispatcher, ctx);
+            perf_.on_locate(cmd.locate_tick, dispatcher, ctx);
             break;
         }
     }
@@ -150,6 +186,47 @@ void Engine::apply(const SongAppendCmd& cmd)
 void Engine::apply(const SongClearCmd& /*cmd*/)
 {
     song_.clear();
+}
+
+void Engine::apply(const PerfAssignCmd& cmd)
+{
+    perf_.assign(cmd.slot, cmd.pattern);
+}
+
+void Engine::apply(const PerfCueCmd& cmd)
+{
+    uint64_t pos = last_position_ns_.load(std::memory_order_relaxed);
+    uint64_t tick = tempo_map_.ns_to_ticks(pos);
+    perf_.cue(cmd.slot, cmd.mode, tick);
+}
+
+void Engine::apply(const PerfStopCmd& cmd)
+{
+    uint64_t pos = last_position_ns_.load(std::memory_order_relaxed);
+    uint64_t tick = tempo_map_.ns_to_ticks(pos);
+    perf_.stop(cmd.slot, cmd.mode, tick);
+}
+
+void Engine::apply(const PerfStopAllCmd& cmd)
+{
+    uint64_t pos = last_position_ns_.load(std::memory_order_relaxed);
+    uint64_t tick = tempo_map_.ns_to_ticks(pos);
+    perf_.stop_all(cmd.mode, tick);
+}
+
+void Engine::apply(const PerfSetTransposeCmd& cmd)
+{
+    perf_.set_transpose(cmd.slot, cmd.semitones);
+}
+
+void Engine::apply(const PerfSetVelocityScaleCmd& cmd)
+{
+    perf_.set_velocity_scale(cmd.slot, cmd.scale);
+}
+
+void Engine::apply(const PerfSetRandomBiasCmd& cmd)
+{
+    perf_.set_random_bias(cmd.slot, cmd.bias);
 }
 
 void Engine::process()
@@ -185,6 +262,34 @@ void Engine::process()
                 {
                     apply(c);
                 }
+                else if constexpr (std::is_same_v<T, PerfAssignCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, PerfCueCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, PerfStopCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, PerfStopAllCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, PerfSetTransposeCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, PerfSetVelocityScaleCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, PerfSetRandomBiasCmd>)
+                {
+                    apply(c);
+                }
             },
             cmd);
     }
@@ -202,6 +307,7 @@ void Engine::process()
     EventDispatcher dispatcher{sinks_};
     timeline_.advance(to_tick, dispatcher, ctx);
     song_.advance(to_tick, dispatcher, ctx);
+    perf_.advance(to_tick, dispatcher, ctx);
 
     for (auto& [sid, sink] : sinks_)
     {

@@ -71,10 +71,9 @@ void SongArrangementSource::advance(uint64_t to_tick,
         uint64_t pat_to = window_end - iter_start_tick_;
 
         auto pos = std::lower_bound(
-            pat->events.begin(),
-            pat->events.end(),
-            pat_from,
-            [](const Event& ev, uint64_t v) { return ev.tick < v; });
+            pat->events.begin(), pat->events.end(), pat_from, [](const Event& ev, uint64_t v) {
+                return ev.tick < v;
+            });
 
         while (pos != pat->events.end() && pos->tick <= pat_to)
         {

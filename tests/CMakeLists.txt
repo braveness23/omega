@@ -9,6 +9,7 @@ add_executable(omega_tests
     unit/test_timeline.cpp
     unit/test_pattern_library.cpp
     unit/test_song_arrangement.cpp
+    unit/test_performance_source.cpp
 )
 
 target_link_libraries(omega_tests

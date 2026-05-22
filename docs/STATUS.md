@@ -9,7 +9,7 @@ playback modes from the design documents are functional.
 |--------|--------|-------------|
 | M3.1 | ✅ Done | PatternLibrary |
 | M3.2 | ✅ Done | SongArrangementSource |
-| M3.3 | ⬜ Todo | PerformanceSource state machine |
+| M3.3 | ✅ Done | PerformanceSource state machine |
 
 ---
 
