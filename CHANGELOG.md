@@ -9,6 +9,13 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **M2 — Single-track playback via C API** (sprints 2.1–2.4):
+  - `ClockSource` abstraction + `MockClock` test utility (sprint 2.1)
+  - `OutputSink` interface + `CapturingSink` test utility (sprint 2.2)
+  - `TimelineSource` + `TrackData` — linear multi-track playback, note/CC chasing on locate (sprint 2.3)
+  - C API wiring: `omega_engine_add_track`, `omega_engine_add_event`, `omega_engine_play/stop/locate`, `omega_engine_process`; C API integration tests (sprint 2.4)
+
 ### Fixed
 - Reduced `SpscQueue` default capacity from 65536 to 4096 to avoid stack overflow on Windows (default stack is 1 MB; 65536-slot queue consumed ~4 MB)
 

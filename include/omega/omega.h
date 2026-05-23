@@ -25,7 +25,7 @@
 
 #include <omega/export.h>
 
-#include <stdint.h>
+#include <cstdint>
 
 #ifdef __cplusplus
 extern "C" {
@@ -129,25 +129,146 @@ OMEGA_API omega_event_t omega_make_program(uint64_t tick,
                                            uint8_t channel,
                                            uint8_t program);
 
-/* ── (Further API sections added here as implementation begins) ─────────────
+/* ── Engine ───────────────────────────────────────────────────────────────── */
+
+typedef struct omega_engine_s omega_engine_t;
+
+/*
+ * Opaque sink handle.  In C++ consumer code, cast from omega::OutputSink*:
  *
- * Template for engine create/destroy:
- *
- *   Ownership: caller-owned. Call omega_engine_destroy() before exit.
- *   The engine holds non-owning references to all objects passed to it.
- *   Destroy all dependent objects before destroying the engine.
- *
- * Template for a mutating function:
- *
- *   Thread: Mutation thread only.
- *   Must not be called concurrently with another mutation; serialize externally.
- *
- *   Returns:
- *     OMEGA_OK            — <success condition>
- *     OMEGA_ERR_INVALID   — e or <arg> is NULL
- *     OMEGA_ERR_NOMEM     — allocation failed
- *     OMEGA_ERR_QUEUE_FULL — mutation queue at capacity
+ *   CapturingSink sink;
+ *   omega_engine_add_sink(e, (omega_sink_t*)&sink);
  */
+typedef struct omega_sink_s omega_sink_t;
+
+typedef uint32_t omega_track_id_t;
+
+typedef enum
+{
+    OMEGA_TRANSPORT_STOPPED = 0,
+    OMEGA_TRANSPORT_PLAYING = 1,
+} omega_transport_state_t;
+
+/*
+ * Creates a new engine using the built-in real-time clock.
+ *
+ * Thread: Any thread, before first use.
+ *
+ * Returns: caller-owned handle; NULL on allocation failure.
+ * Call omega_engine_destroy() when done.
+ */
+OMEGA_API omega_engine_t* omega_engine_create(void);
+
+/*
+ * Destroys the engine and frees all associated resources.
+ * Stop the engine (omega_engine_stop + process) before destroying it.
+ *
+ * Thread: Any thread, after all other threads have ceased using the engine.
+ */
+OMEGA_API void omega_engine_destroy(omega_engine_t* e);
+
+/*
+ * Registers an output sink with the engine. The engine holds a non-owning
+ * reference; the sink must outlive the engine. Call before playback starts.
+ *
+ * Thread: Mutation thread only, before playback starts.
+ *
+ * Returns:
+ *   OMEGA_OK          — sink registered.
+ *   OMEGA_ERR_INVALID — e or sink is NULL.
+ */
+OMEGA_API omega_status_t omega_engine_add_sink(omega_engine_t* e, omega_sink_t* sink);
+
+/*
+ * Creates a new empty track in the engine's built-in timeline.
+ * Call before playback starts.
+ *
+ * Thread: Mutation thread only, before playback starts.
+ *
+ * Returns:
+ *   OMEGA_OK          — track created; *out_id is set.
+ *   OMEGA_ERR_INVALID — e or out_id is NULL.
+ */
+OMEGA_API omega_status_t omega_engine_add_track(omega_engine_t* e,
+                                                const char* name,
+                                                omega_track_id_t* out_id);
+
+/*
+ * Sets the output sink for a track.
+ * Call before playback starts.
+ *
+ * Thread: Mutation thread only, before playback starts.
+ *
+ * Returns:
+ *   OMEGA_OK            — sink assigned.
+ *   OMEGA_ERR_INVALID   — e is NULL.
+ *   OMEGA_ERR_NOT_FOUND — track_id is not registered.
+ */
+OMEGA_API omega_status_t omega_engine_set_track_sink(omega_engine_t* e,
+                                                     omega_track_id_t track,
+                                                     uint32_t sink_id);
+
+/*
+ * Enqueues an event to be added to the given track on the next process() call.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — event enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_engine_add_event(omega_engine_t* e,
+                                                omega_track_id_t track,
+                                                omega_event_t ev);
+
+/*
+ * Enqueues a PLAY command. Playback begins on the next process() call.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_engine_play(omega_engine_t* e);
+
+/*
+ * Enqueues a STOP command. Playback halts on the next process() call.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_engine_stop(omega_engine_t* e);
+
+/*
+ * Advances the engine by one cycle: drains the command queue, then dispatches
+ * all events due since the last process() call. Never allocates or blocks.
+ *
+ * Thread: Timing thread only.
+ */
+OMEGA_API void omega_engine_process(omega_engine_t* e);
+
+/*
+ * Returns the current transport state.
+ * May return a stale value if called concurrently with process().
+ *
+ * Thread: Any thread.
+ */
+OMEGA_API omega_transport_state_t omega_engine_transport_state(const omega_engine_t* e);
+
+/*
+ * Returns the current transport position in nanoseconds from session start.
+ * Updated by process(); may return a stale value when read concurrently.
+ *
+ * Thread: Any thread.
+ */
+OMEGA_API uint64_t omega_engine_position_ns(const omega_engine_t* e);
 
 #ifdef __cplusplus
 }
