@@ -15,6 +15,10 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - `OutputSink` interface + `CapturingSink` test utility (sprint 2.2)
   - `TimelineSource` + `TrackData` — linear multi-track playback, note/CC chasing on locate (sprint 2.3)
   - C API wiring: `omega_engine_add_track`, `omega_engine_add_event`, `omega_engine_play/stop/locate`, `omega_engine_process`; C API integration tests (sprint 2.4)
+- **M3 — Pattern library, song arrangement, and performance source** (sprints 3.1–3.3):
+  - `PatternLibrary` — named, length-bounded event sequences stored in PMR vectors; C API `omega_pattern_create/destroy/add_event/set_length` (sprint 3.1)
+  - `SongArrangementSource` — chains patterns with repeat counts; window-based tick dispatch; `on_locate()` for mid-arrangement resume; note-off tracking; C API `omega_song_append/clear` (sprint 3.2)
+  - `PerformanceSource` — 64-slot state machine (EMPTY→IDLE→QUEUED→PLAYING→STOPPING); per-slot transpose (±24 semitones), velocity scale (0–200%), random bias (0–100%); phase-resume on locate; C API `omega_perf_assign/cue/stop/stop_all/set_transpose/set_velocity_scale/set_random_bias` (sprint 3.3)
 
 ### Fixed
 - Reduced `SpscQueue` default capacity from 65536 to 4096 to avoid stack overflow on Windows (default stack is 1 MB; 65536-slot queue consumed ~4 MB)
