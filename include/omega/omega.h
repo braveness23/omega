@@ -63,12 +63,14 @@ OMEGA_API omega_version_t omega_version(void);
 
 typedef enum
 {
-    OMEGA_OK = 0,               /* success */
-    OMEGA_ERR_INVALID = -1,     /* NULL argument or invalid parameter */
-    OMEGA_ERR_NOMEM = -2,       /* allocation failure */
-    OMEGA_ERR_NOT_FOUND = -3,   /* handle not registered */
-    OMEGA_ERR_QUEUE_FULL = -4,  /* mutation queue at capacity */
-    OMEGA_ERR_UNSUPPORTED = -5, /* operation not supported in current state */
+    OMEGA_OK = 0,                   /* success */
+    OMEGA_ERR_INVALID = -1,         /* NULL argument or invalid parameter */
+    OMEGA_ERR_NOMEM = -2,           /* allocation failure */
+    OMEGA_ERR_NOT_FOUND = -3,       /* handle not registered */
+    OMEGA_ERR_QUEUE_FULL = -4,      /* mutation queue at capacity */
+    OMEGA_ERR_UNSUPPORTED = -5,     /* operation not supported in current state */
+    OMEGA_ERR_NO_METER = -6,        /* no time signature map defined (freeform mode) */
+    OMEGA_ERR_NO_SMPTE_CONFIG = -7, /* SmpteConfig not set on the session */
 } omega_status_t;
 
 /*
@@ -161,6 +163,7 @@ typedef enum
 {
     OMEGA_CUE_IMMEDIATE = 0,   /* start/stop immediately */
     OMEGA_CUE_AT_BOUNDARY = 1, /* wait for the next loop boundary */
+    OMEGA_CUE_BAR = 2,         /* wait for the next musical bar boundary */
 } omega_cue_mode_t;
 
 typedef enum
@@ -855,6 +858,222 @@ OMEGA_API float omega_ctx_mod_get_ctx(const omega_process_context_t* ctx,
 OMEGA_API void omega_ctx_mod_set_ctx(omega_process_context_t* ctx,
                                      omega_mod_channel_t channel,
                                      float value);
+
+/* ── Time signature map ───────────────────────────────────────────────────── */
+
+/* A single time signature change point. */
+typedef struct
+{
+    uint64_t tick;       /* tick at which this meter takes effect */
+    uint8_t numerator;   /* beats per bar (1-99) */
+    uint8_t denominator; /* beat unit: 1, 2, 4, 8, 16, or 32 */
+} omega_time_sig_point_t;
+
+/* Bar/beat position: bar and beat are 1-based. */
+typedef struct
+{
+    uint32_t bar;         /* 1-based bar number */
+    uint8_t beat;         /* 1-based beat within bar */
+    uint32_t subdivision; /* ticks past the beat boundary */
+} omega_beat_pos_t;
+
+/*
+ * Insert or replace a time signature at tick.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL, denominator is not a power of 2 in [1,32],
+ *                          or numerator is zero.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_timesig_set(omega_engine_t* e,
+                                           uint64_t tick,
+                                           uint8_t numerator,
+                                           uint8_t denominator);
+
+/*
+ * Remove the time signature at exactly tick.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_timesig_remove(omega_engine_t* e, uint64_t tick);
+
+/*
+ * Clear all time signature entries (enter freeform mode).
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_timesig_clear(omega_engine_t* e);
+
+/*
+ * Returns 1 if no time signature has been set (freeform mode), 0 otherwise.
+ *
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ *
+ * Returns: 1 = freeform, 0 = metered; -1 if e is NULL.
+ */
+OMEGA_API int omega_timesig_is_freeform(const omega_engine_t* e);
+
+/*
+ * Returns the active time signature at or before tick, or fills *out with zeros
+ * if the map is empty or tick precedes the first entry.
+ *
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ *
+ * Returns:
+ *   OMEGA_OK           — out filled.
+ *   OMEGA_ERR_NOT_FOUND — no entry at or before tick (or map is empty).
+ *   OMEGA_ERR_INVALID  — e or out is NULL.
+ */
+OMEGA_API omega_status_t omega_timesig_at(const omega_engine_t* e,
+                                          uint64_t tick,
+                                          omega_time_sig_point_t* out);
+
+/*
+ * Convert absolute tick → {bar, beat, subdivision}.
+ *
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ *
+ * Returns:
+ *   OMEGA_OK             — out filled.
+ *   OMEGA_ERR_INVALID    — e or out is NULL.
+ *   OMEGA_ERR_NO_METER   — session is in freeform mode or tick precedes first entry.
+ */
+OMEGA_API omega_status_t omega_tick_to_beat_pos(const omega_engine_t* e,
+                                                uint64_t tick,
+                                                omega_beat_pos_t* out);
+
+/*
+ * Convert {bar, beat, subdivision} → absolute tick.
+ *
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ *
+ * Returns:
+ *   OMEGA_OK             — out filled.
+ *   OMEGA_ERR_INVALID    — e or pos is NULL, or bar/beat is zero, or beat > numerator.
+ *   OMEGA_ERR_NO_METER   — session is in freeform mode.
+ */
+OMEGA_API omega_status_t omega_beat_pos_to_tick(const omega_engine_t* e,
+                                                const omega_beat_pos_t* pos,
+                                                uint64_t* out);
+
+/*
+ * Tick of the next bar boundary at or after from_tick.
+ *
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ *
+ * Returns:
+ *   OMEGA_OK           — out filled.
+ *   OMEGA_ERR_INVALID  — e or out is NULL.
+ *   OMEGA_ERR_NO_METER — session is in freeform mode.
+ */
+OMEGA_API omega_status_t omega_next_bar_tick(const omega_engine_t* e,
+                                             uint64_t from_tick,
+                                             uint64_t* out);
+
+/*
+ * Quantize tick to the nearest beat (round-half-up).
+ *
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ *
+ * Returns:
+ *   OMEGA_OK           — out filled.
+ *   OMEGA_ERR_INVALID  — e or out is NULL.
+ *   OMEGA_ERR_NO_METER — session is in freeform mode.
+ */
+OMEGA_API omega_status_t omega_quantize_to_beat(const omega_engine_t* e,
+                                                uint64_t tick,
+                                                uint64_t* out);
+
+/* ── SMPTE config ─────────────────────────────────────────────────────────── */
+
+/*
+ * SMPTE frame-rate configuration.
+ *   fps        — 24, 25, or 30 (for 29.97: set fps=30 and is_2997=1)
+ *   drop_frame — enable drop-frame addressing; only valid when is_2997=1
+ *   is_2997    — 1 = 30000/1001 time base; fps must be 30
+ */
+typedef struct
+{
+    uint8_t fps;
+    uint8_t drop_frame; /* 0 or 1 */
+    uint8_t is_2997;    /* 0 or 1 */
+} omega_smpte_config_t;
+
+/* SMPTE timecode address. */
+typedef struct
+{
+    uint8_t hours;
+    uint8_t minutes;
+    uint8_t seconds;
+    uint8_t frames;
+} omega_smpte_time_t;
+
+/*
+ * Set the SMPTE frame-rate config.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e or config is NULL, or config values are invalid.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_smpte_config_set(omega_engine_t* e,
+                                                const omega_smpte_config_t* config);
+
+/*
+ * Clear the SMPTE config. Subsequent conversion calls return OMEGA_ERR_NO_SMPTE_CONFIG.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_smpte_config_clear(omega_engine_t* e);
+
+/*
+ * Convert absolute tick → HH:MM:SS:FF.
+ *
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ *
+ * Returns:
+ *   OMEGA_OK                   — out filled.
+ *   OMEGA_ERR_INVALID          — e or out is NULL.
+ *   OMEGA_ERR_NO_SMPTE_CONFIG  — SMPTE config not set.
+ */
+OMEGA_API omega_status_t omega_tick_to_smpte(const omega_engine_t* e,
+                                             uint64_t tick,
+                                             omega_smpte_time_t* out);
+
+/*
+ * Convert HH:MM:SS:FF → absolute tick.
+ *
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ *
+ * Returns:
+ *   OMEGA_OK                   — out filled.
+ *   OMEGA_ERR_INVALID          — e, t, or out is NULL; or the SMPTE address is
+ *                                illegal (e.g., frame 0/1 at a non-round drop-frame minute).
+ *   OMEGA_ERR_NO_SMPTE_CONFIG  — SMPTE config not set.
+ */
+OMEGA_API omega_status_t omega_smpte_to_tick(const omega_engine_t* e,
+                                             const omega_smpte_time_t* t,
+                                             uint64_t* out);
 
 #ifdef __cplusplus
 }

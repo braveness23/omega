@@ -1,4 +1,6 @@
 #include <omega/engine.h>
+#include <omega/smpte_converter.h>
+#include <omega/time_signature_map.h>
 
 #include <algorithm>
 #include <type_traits>
@@ -170,6 +172,39 @@ omega_status_t Engine::ctx_set_chaos(uint8_t chaos)
 omega_status_t Engine::ctx_set_groove(uint8_t groove_id, float swing)
 {
     return enqueue(SetCtxGrooveCmd{groove_id, swing});
+}
+
+omega_status_t Engine::timesig_set(uint64_t tick, uint8_t numerator, uint8_t denominator)
+{
+    if (!is_valid_timesig_denominator(denominator) || numerator == 0u)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return enqueue(SetTimeSigCmd{tick, numerator, denominator});
+}
+
+omega_status_t Engine::timesig_remove(uint64_t tick)
+{
+    return enqueue(RemoveTimeSigCmd{tick});
+}
+
+omega_status_t Engine::timesig_clear()
+{
+    return enqueue(ClearTimeSigCmd{});
+}
+
+omega_status_t Engine::smpte_config_set(const SmpteConfig& config)
+{
+    if (!is_valid_smpte_config(config))
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return enqueue(SetSmpteConfigCmd{config});
+}
+
+omega_status_t Engine::smpte_config_clear()
+{
+    return enqueue(ClearSmpteConfigCmd{});
 }
 
 omega_status_t Engine::add_source(EventSource* source, uint32_t priority)
@@ -378,6 +413,31 @@ void Engine::apply(const RemoveSourceCmd& cmd)
     }
 }
 
+void Engine::apply(const SetTimeSigCmd& cmd)
+{
+    timesig_map_.insert(cmd.tick, cmd.numerator, cmd.denominator);
+}
+
+void Engine::apply(const RemoveTimeSigCmd& cmd)
+{
+    timesig_map_.remove(cmd.tick);
+}
+
+void Engine::apply(const ClearTimeSigCmd& /*cmd*/)
+{
+    timesig_map_.clear();
+}
+
+void Engine::apply(const SetSmpteConfigCmd& cmd)
+{
+    smpte_config_ = cmd.config;
+}
+
+void Engine::apply(const ClearSmpteConfigCmd& /*cmd*/)
+{
+    smpte_config_.reset();
+}
+
 void Engine::process()
 {
     Command cmd;
@@ -476,6 +536,26 @@ void Engine::process()
                     apply(c);
                 }
                 else if constexpr (std::is_same_v<T, RemoveSourceCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, SetTimeSigCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, RemoveTimeSigCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, ClearTimeSigCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, SetSmpteConfigCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, ClearSmpteConfigCmd>)
                 {
                     apply(c);
                 }

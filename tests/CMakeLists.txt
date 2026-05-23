@@ -14,6 +14,8 @@ add_executable(omega_tests
     unit/test_modulation_bus.cpp
     unit/test_perf_context.cpp
     unit/test_custom_source.cpp
+    unit/test_time_signature_map.cpp
+    unit/test_smpte_converter.cpp
 )
 
 target_link_libraries(omega_tests
@@ -29,6 +31,7 @@ catch_discover_tests(omega_tests)
 add_executable(omega_integration_tests
     integration/test_c_api_playback.cpp
     integration/test_c_api_patterns.cpp
+    integration/test_c_api_timesig.cpp
 )
 
 target_link_libraries(omega_integration_tests

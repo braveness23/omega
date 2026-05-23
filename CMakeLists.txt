@@ -105,6 +105,8 @@ endif()
 add_library(omega_core STATIC
     src/types.cpp
     src/tempo_map.cpp
+    src/time_signature_map.cpp
+    src/smpte_converter.cpp
     src/clock.cpp
     src/sink.cpp
     src/timeline.cpp

@@ -11,14 +11,17 @@
 #include <omega/pattern_library.h>
 #include <omega/perf_context.h>
 #include <omega/perf_slot.h>
+#include <omega/smpte_converter.h>
 #include <omega/song_arrangement.h>
 #include <omega/tempo_map.h>
+#include <omega/time_signature_map.h>
 #include <omega/timeline.h>
 #include <omega/types.h>
 
 #include <atomic>
 #include <cstdint>
 #include <memory_resource>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -364,6 +367,78 @@ public:
      */
     omega_status_t remove_source(EventSource* source);
 
+    /* ── Time signature map ─────────────────────────────────────────────────── */
+
+    /*
+     * Insert or replace a time signature at tick.
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_INVALID    — denominator is not a power of 2 in [1,32] or numerator is zero.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t timesig_set(uint64_t tick, uint8_t numerator, uint8_t denominator);
+
+    /*
+     * Remove the time signature at exactly tick.
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t timesig_remove(uint64_t tick);
+
+    /*
+     * Clear all time signature entries (enter freeform mode).
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t timesig_clear();
+
+    /*
+     * Returns a non-owning reference to the TimeSignatureMap.
+     * Thread: Timing thread for reads from advance(); Mutation thread otherwise.
+     */
+    [[nodiscard]] const TimeSignatureMap& timesig_map() const noexcept { return timesig_map_; }
+    [[nodiscard]] const TempoMap& tempo_map() const noexcept { return tempo_map_; }
+
+    /* ── SMPTE config ────────────────────────────────────────────────────────── */
+
+    /*
+     * Set the SMPTE frame-rate config.
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_INVALID    — config is not valid (see is_valid_smpte_config).
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t smpte_config_set(const SmpteConfig& config);
+
+    /*
+     * Clear the SMPTE config (SmpteConverter calls will return NO_SMPTE_CONFIG).
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t smpte_config_clear();
+
+    /*
+     * Returns a copy of the current SMPTE config, if set.
+     * Thread: Mutation thread only. Must not be called concurrently with process().
+     */
+    [[nodiscard]] const std::optional<SmpteConfig>& smpte_config() const noexcept
+    {
+        return smpte_config_;
+    }
+
     /* ── Command queue ────────────────────────────────────────────────────── */
 
     /*
@@ -430,6 +505,11 @@ private:
     void apply(const SetCtxGrooveCmd& cmd);
     void apply(const AddSourceCmd& cmd);
     void apply(const RemoveSourceCmd& cmd);
+    void apply(const SetTimeSigCmd& cmd);
+    void apply(const RemoveTimeSigCmd& cmd);
+    void apply(const ClearTimeSigCmd& cmd);
+    void apply(const SetSmpteConfigCmd& cmd);
+    void apply(const ClearSmpteConfigCmd& cmd);
 
     InternalClock internal_clock_;
     ClockSource* clock_;
@@ -438,9 +518,12 @@ private:
 
     EventDispatcher::SinkList sinks_;  // sorted by sink_id, non-owning
 
+    // timesig_map_ must be declared before perf_ — perf_ holds a const reference.
+    TimeSignatureMap timesig_map_;
+
     TimelineSource timeline_;
     SongArrangementSource song_{patterns_};
-    PerformanceSource perf_{patterns_};
+    PerformanceSource perf_{patterns_, timesig_map_};
 
     std::vector<EventInput*> inputs_;  // non-owning; modified only from timing thread via queue
     InputBus input_bus_;
@@ -456,6 +539,8 @@ private:
     // Modified only from timing thread via command queue.
     // Each entry: {priority, source*}
     std::vector<std::pair<uint32_t, EventSource*>> custom_sources_;
+
+    std::optional<SmpteConfig> smpte_config_;
 
     detail::SpscQueue<Command, 4096> queue_;
     TempoMap tempo_map_;

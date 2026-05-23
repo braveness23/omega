@@ -5,9 +5,29 @@
 #include <omega/omega.h>
 #include <omega/perf_slot.h>
 #include <omega/sink.h>
+#include <omega/smpte_converter.h>
+#include <omega/time_signature_map.h>
 #include <omega/types.h>
 
 #include <new>
+
+namespace
+{
+
+omega::CueMode to_cpp_cue_mode(omega_cue_mode_t m) noexcept
+{
+    switch (m)
+    {
+        case OMEGA_CUE_IMMEDIATE:
+            return omega::CueMode::IMMEDIATE;
+        case OMEGA_CUE_BAR:
+            return omega::CueMode::NEXT_BAR;
+        default:
+            return omega::CueMode::NEXT_BEAT;
+    }
+}
+
+}  // namespace
 
 // omega_engine_s is the heap-allocated owner of the C++ Engine.
 // omega_engine_t* (opaque to C callers) points to one of these.
@@ -261,8 +281,7 @@ omega_status_t omega_perf_cue(omega_engine_t* eng, omega_slot_id_t slot, omega_c
     {
         return OMEGA_ERR_INVALID;
     }
-    omega::CueMode cpp_mode =
-        (mode == OMEGA_CUE_IMMEDIATE) ? omega::CueMode::IMMEDIATE : omega::CueMode::NEXT_BEAT;
+    omega::CueMode cpp_mode = to_cpp_cue_mode(mode);
     return eng->engine.perf_cue(slot, cpp_mode);
 }
 
@@ -272,8 +291,7 @@ omega_status_t omega_perf_stop(omega_engine_t* eng, omega_slot_id_t slot, omega_
     {
         return OMEGA_ERR_INVALID;
     }
-    omega::CueMode cpp_mode =
-        (mode == OMEGA_CUE_IMMEDIATE) ? omega::CueMode::IMMEDIATE : omega::CueMode::NEXT_BEAT;
+    omega::CueMode cpp_mode = to_cpp_cue_mode(mode);
     return eng->engine.perf_stop(slot, cpp_mode);
 }
 
@@ -283,8 +301,7 @@ omega_status_t omega_perf_stop_all(omega_engine_t* eng, omega_cue_mode_t mode)
     {
         return OMEGA_ERR_INVALID;
     }
-    omega::CueMode cpp_mode =
-        (mode == OMEGA_CUE_IMMEDIATE) ? omega::CueMode::IMMEDIATE : omega::CueMode::NEXT_BEAT;
+    omega::CueMode cpp_mode = to_cpp_cue_mode(mode);
     return eng->engine.perf_stop_all(cpp_mode);
 }
 
@@ -596,6 +613,194 @@ void omega_ctx_mod_set_ctx(omega_process_context_t* ctx, omega_mod_channel_t cha
     {
         pctx->modulation_bus->set(channel, value);
     }
+}
+
+// ── Time signature map ────────────────────────────────────────────────────────
+
+omega_status_t omega_timesig_set(omega_engine_t* eng,
+                                 uint64_t tick,
+                                 uint8_t numerator,
+                                 uint8_t denominator)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.timesig_set(tick, numerator, denominator);
+}
+
+omega_status_t omega_timesig_remove(omega_engine_t* eng, uint64_t tick)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.timesig_remove(tick);
+}
+
+omega_status_t omega_timesig_clear(omega_engine_t* eng)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.timesig_clear();
+}
+
+int omega_timesig_is_freeform(const omega_engine_t* eng)
+{
+    if (eng == nullptr)
+    {
+        return -1;
+    }
+    return eng->engine.timesig_map().is_freeform() ? 1 : 0;
+}
+
+omega_status_t omega_timesig_at(const omega_engine_t* eng,
+                                uint64_t tick,
+                                omega_time_sig_point_t* out)
+{
+    if (eng == nullptr || out == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    const omega::TimeSigPoint* pt = eng->engine.timesig_map().at(tick);
+    if (pt == nullptr)
+    {
+        return OMEGA_ERR_NOT_FOUND;
+    }
+    out->tick = pt->tick;
+    out->numerator = pt->numerator;
+    out->denominator = pt->denominator;
+    return OMEGA_OK;
+}
+
+omega_status_t omega_tick_to_beat_pos(const omega_engine_t* eng,
+                                      uint64_t tick,
+                                      omega_beat_pos_t* out)
+{
+    if (eng == nullptr || out == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    omega::MeterCursor cursor(eng->engine.timesig_map());
+    omega::BeatPosition pos{};
+    omega_status_t s = cursor.tick_to_beat_pos(tick, pos);
+    if (s == OMEGA_OK)
+    {
+        out->bar = pos.bar;
+        out->beat = pos.beat;
+        out->subdivision = pos.subdivision;
+    }
+    return s;
+}
+
+omega_status_t omega_beat_pos_to_tick(const omega_engine_t* eng,
+                                      const omega_beat_pos_t* in,
+                                      uint64_t* out)
+{
+    if (eng == nullptr || in == nullptr || out == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    omega::MeterCursor cursor(eng->engine.timesig_map());
+    omega::BeatPosition pos{};
+    pos.bar = in->bar;
+    pos.beat = in->beat;
+    pos.subdivision = in->subdivision;
+    return cursor.beat_pos_to_tick(pos, *out);
+}
+
+omega_status_t omega_next_bar_tick(const omega_engine_t* eng, uint64_t from_tick, uint64_t* out)
+{
+    if (eng == nullptr || out == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    omega::MeterCursor cursor(eng->engine.timesig_map());
+    return cursor.next_bar_tick(from_tick, *out);
+}
+
+omega_status_t omega_quantize_to_beat(const omega_engine_t* eng, uint64_t tick, uint64_t* out)
+{
+    if (eng == nullptr || out == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    omega::MeterCursor cursor(eng->engine.timesig_map());
+    return cursor.quantize_to_beat(tick, *out);
+}
+
+// ── SMPTE config ──────────────────────────────────────────────────────────────
+
+omega_status_t omega_smpte_config_set(omega_engine_t* eng, const omega_smpte_config_t* config)
+{
+    if (eng == nullptr || config == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    omega::SmpteConfig cpp_config;
+    cpp_config.fps = config->fps;
+    cpp_config.drop_frame = (config->drop_frame != 0u);
+    cpp_config.is_2997 = (config->is_2997 != 0u);
+    return eng->engine.smpte_config_set(cpp_config);
+}
+
+omega_status_t omega_smpte_config_clear(omega_engine_t* eng)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.smpte_config_clear();
+}
+
+omega_status_t omega_tick_to_smpte(const omega_engine_t* eng,
+                                   uint64_t tick,
+                                   omega_smpte_time_t* out)
+{
+    if (eng == nullptr || out == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    const auto& cfg_opt = eng->engine.smpte_config();
+    if (!cfg_opt.has_value())
+    {
+        return OMEGA_ERR_NO_SMPTE_CONFIG;
+    }
+    omega::SmpteConverter converter(*cfg_opt, eng->engine.tempo_map());
+    omega::SmpteTime t{};
+    omega_status_t s = converter.tick_to_smpte(tick, t);
+    if (s == OMEGA_OK)
+    {
+        out->hours = t.hours;
+        out->minutes = t.minutes;
+        out->seconds = t.seconds;
+        out->frames = t.frames;
+    }
+    return s;
+}
+
+omega_status_t omega_smpte_to_tick(const omega_engine_t* eng,
+                                   const omega_smpte_time_t* t,
+                                   uint64_t* out)
+{
+    if (eng == nullptr || t == nullptr || out == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    const auto& cfg_opt = eng->engine.smpte_config();
+    if (!cfg_opt.has_value())
+    {
+        return OMEGA_ERR_NO_SMPTE_CONFIG;
+    }
+    omega::SmpteConverter converter(*cfg_opt, eng->engine.tempo_map());
+    omega::SmpteTime smpte{};
+    smpte.hours = t->hours;
+    smpte.minutes = t->minutes;
+    smpte.seconds = t->seconds;
+    smpte.frames = t->frames;
+    return converter.smpte_to_tick(smpte, *out);
 }
 
 }  // extern "C"

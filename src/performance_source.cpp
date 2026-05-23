@@ -7,7 +7,10 @@
 namespace omega
 {
 
-PerformanceSource::PerformanceSource(const PatternLibrary& library) noexcept : library_{library} {}
+PerformanceSource::PerformanceSource(const PatternLibrary& library,
+                                     const TimeSignatureMap& timesig_map) noexcept
+    : library_{library}, timesig_map_{timesig_map}
+{}
 
 // ── Boundary helpers ──────────────────────────────────────────────────────────
 
@@ -70,6 +73,26 @@ void PerformanceSource::assign(SlotId slot_id, PatternId pattern)
     }
 }
 
+// Returns the next bar boundary at or after current_tick using the session's time
+// signature map. Falls back to the next loop boundary when in freeform mode.
+uint64_t PerformanceSource::next_bar_boundary(uint64_t current_tick,
+                                              uint64_t loop_len) const noexcept
+{
+    const TimeSigPoint* pt = timesig_map_.at(current_tick);
+    if (pt != nullptr)
+    {
+        uint64_t tpbar = ticks_per_bar_for(pt->numerator, pt->denominator);
+        if (tpbar > 0u)
+        {
+            uint64_t offset = current_tick - pt->tick;
+            uint64_t bar_start = pt->tick + (offset / tpbar) * tpbar;
+            return (bar_start == current_tick) ? current_tick : bar_start + tpbar;
+        }
+    }
+    // Freeform mode: align to pattern loop boundary.
+    return global_boundary(current_tick, loop_len);
+}
+
 void PerformanceSource::cue(SlotId slot_id, CueMode mode, uint64_t current_tick)
 {
     if (slot_id >= PERF_MAX_SLOTS)
@@ -98,6 +121,45 @@ void PerformanceSource::cue(SlotId slot_id, CueMode mode, uint64_t current_tick)
         slot.start_tick = next_tick_;
         slot.pending = 0u;
         slot.state = SlotState::PLAYING;
+        return;
+    }
+
+    if (mode == CueMode::NEXT_BAR)
+    {
+        uint64_t bar_tick = next_bar_boundary(current_tick, len);
+        switch (slot.state)
+        {
+            case SlotState::EMPTY:
+                break;
+            case SlotState::IDLE:
+                slot.pending = slot.assigned;
+                slot.transition_tick = bar_tick;
+                slot.state = SlotState::QUEUED;
+                break;
+            case SlotState::QUEUED:
+                slot.pending = slot.assigned;
+                slot.transition_tick = bar_tick;
+                break;
+            case SlotState::PLAYING:
+            {
+                if (slot.assigned == slot.playing)
+                {
+                    slot.pending = 0u;
+                    slot.transition_tick = bar_tick;
+                    slot.state = SlotState::STOPPING;
+                }
+                else
+                {
+                    slot.pending = slot.assigned;
+                    slot.transition_tick = bar_tick;
+                    slot.state = SlotState::STOPPING;
+                }
+                break;
+            }
+            case SlotState::STOPPING:
+                slot.pending = slot.assigned;
+                break;
+        }
         return;
     }
 

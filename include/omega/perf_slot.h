@@ -2,6 +2,7 @@
 
 #include <omega/event_source.h>
 #include <omega/pattern_library.h>
+#include <omega/time_signature_map.h>
 #include <omega/types.h>
 
 #include <array>
@@ -37,7 +38,8 @@ enum class SlotState : uint8_t
 class PerformanceSource final : public EventSource
 {
 public:
-    explicit PerformanceSource(const PatternLibrary& library) noexcept;
+    explicit PerformanceSource(const PatternLibrary& library,
+                               const TimeSignatureMap& timesig_map) noexcept;
 
     /*
      * Assigns a pattern to a slot. pattern == 0 unassigns (any state → EMPTY).
@@ -49,6 +51,8 @@ public:
      * Cues the assigned pattern for the given slot.
      *   CueMode::IMMEDIATE  — starts immediately; start_tick = current_tick.
      *   CueMode::NEXT_BEAT  — queues at next global loop boundary.
+     *   CueMode::NEXT_BAR   — queues at next musical bar boundary; falls back
+     *                         to NEXT_BEAT if the session is in freeform mode.
      * Thread: Timing thread only (applied from command queue).
      */
     void cue(SlotId slot, CueMode mode, uint64_t current_tick);
@@ -107,8 +111,11 @@ private:
     [[nodiscard]] uint64_t next_loop_boundary(const PerfSlot& slot,
                                               uint64_t current_tick) const noexcept;
     [[nodiscard]] static uint64_t global_boundary(uint64_t current_tick, uint64_t length) noexcept;
+    [[nodiscard]] uint64_t next_bar_boundary(uint64_t current_tick,
+                                             uint64_t loop_len) const noexcept;
 
     const PatternLibrary& library_;
+    const TimeSignatureMap& timesig_map_;
     std::array<PerfSlot, PERF_MAX_SLOTS> slots_{};
     uint64_t next_tick_{0};
 };

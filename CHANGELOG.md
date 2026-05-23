@@ -10,6 +10,17 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **M4.5 — TimeSignatureMap, SmpteConverter, OMEGA_CUE_BAR** (sprints 4.5.1–4.5.3):
+  - `TimeSignatureMap` — sorted list of `TimeSigPoint{tick, numerator, denominator}`; empty = freeform mode; `insert()` validates denominator (power-of-two 1–32) and replaces any existing point at the same tick; `remove()`; `at()` returns the governing time signature at any tick (sprint 4.5.1)
+  - `MeterCursor` (implements `PositionConverter`) — `tick_to_beat_pos()` / `beat_pos_to_tick()` with bar counting; `next_bar_tick()` / `next_beat_tick()`; `quantize_to_beat()` / `quantize_to_subdivision()` (round-half-up); non-realtime only (sprint 4.5.1)
+  - `PositionConverter` abstract base — `next_boundary()` and `quantize()` virtual interface used by `MeterCursor` and `SmpteConverter` (sprint 4.5.1)
+  - `SmpteConfig` — `{fps, drop_frame, is_2997}`; `is_valid_smpte_config()` validates fps ∈ {24,25,30}, is_2997 requires fps=30, drop_frame requires is_2997 (sprint 4.5.2)
+  - `SmpteConverter` (implements `PositionConverter`) — tick↔HH:MM:SS:FF via `ns_to_frame` (floor) / `frame_to_ns` (ceiling); NDF for 24/25/30fps, drop-frame NTSC 29.97 (17982 frames per 10-min group); `next_boundary()`, `quantize()` (round-half-up); non-realtime only (sprint 4.5.2)
+  - `OMEGA_CUE_BAR = 2` — new cue mode; `PerformanceSource` waits for the next musical bar boundary (uses `TimeSignatureMap::at()` on timing thread, safe); falls back to next-beat in freeform mode (sprint 4.5.3)
+  - `OMEGA_ERR_NO_METER = -6`, `OMEGA_ERR_NO_SMPTE_CONFIG = -7` — new status codes (sprint 4.5.3)
+  - C API: `omega_timesig_set/remove/clear/is_freeform/at`, `omega_tick_to_beat_pos`, `omega_beat_pos_to_tick`, `omega_next_bar_tick`, `omega_quantize_to_beat` (sprint 4.5.3)
+  - C API: `omega_smpte_config_set/clear`, `omega_tick_to_smpte`, `omega_smpte_to_tick` (sprint 4.5.3)
+  - Engine: `timesig_set/remove/clear`, `smpte_config_set/clear`, `tempo_map()` accessor; `SetTimeSigCmd`, `RemoveTimeSigCmd`, `ClearTimeSigCmd`, `SetSmpteConfigCmd`, `ClearSmpteConfigCmd` command variants (sprint 4.5.3)
 - **M4.2 — ModulationBus** (sprint 4.2):
   - `ModulationBus` — 256-channel named float bus; `register_channel()`, `find()`, `get()`, `set()`, `snapshot()`; TSan-clean cross-thread access via `atomic<uint32_t>` bit-cast (sprint 4.2)
   - `ProcessContext.modulation_bus` — non-owning pointer to the engine's `ModulationBus`; set before every `advance()` call (sprint 4.2)

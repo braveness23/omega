@@ -1,6 +1,7 @@
 #pragma once
 
 #include <omega/omega.h>
+#include <omega/smpte_converter.h>
 #include <omega/types.h>
 
 #include <cstdint>
@@ -146,6 +147,33 @@ struct SetCtxGrooveCmd
     float swing;
 };
 
+// ── M4.5 time signature commands ─────────────────────────────────────────────
+
+struct SetTimeSigCmd
+{
+    uint64_t tick;
+    uint8_t numerator;
+    uint8_t denominator;
+};
+
+struct RemoveTimeSigCmd
+{
+    uint64_t tick;
+};
+
+struct ClearTimeSigCmd
+{};
+
+// ── M4.5 SMPTE config commands ────────────────────────────────────────────────
+
+struct SetSmpteConfigCmd
+{
+    SmpteConfig config;
+};
+
+struct ClearSmpteConfigCmd
+{};
+
 // ── M4.4 custom source commands ───────────────────────────────────────────────
 
 struct AddSourceCmd
@@ -183,7 +211,12 @@ using Command = std::variant<AddEventCmd,
                              SetCtxChaosCmd,
                              SetCtxGrooveCmd,
                              AddSourceCmd,
-                             RemoveSourceCmd>;
+                             RemoveSourceCmd,
+                             SetTimeSigCmd,
+                             RemoveTimeSigCmd,
+                             ClearTimeSigCmd,
+                             SetSmpteConfigCmd,
+                             ClearSmpteConfigCmd>;
 
 static_assert(sizeof(Command) <= 64, "Command must fit within 64 bytes");
 
