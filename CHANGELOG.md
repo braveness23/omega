@@ -9,19 +9,43 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+<!-- New releases go above this line in the format:
+## [0.4.0] - YYYY-MM-DD
+### Added
+### Changed
+### Deprecated
+### Removed
+### Fixed
+### Security
+-->
+
+---
+
+## [0.3.0] - 2026-05-23
+
+### Added
+- **M3 — Pattern library, song arrangement, and performance source** (sprints 3.1–3.3):
+  - `PatternLibrary` — named, length-bounded event sequences stored in PMR vectors; C API `omega_pattern_create/destroy/add_event/set_length` (sprint 3.1)
+  - `SongArrangementSource` — chains patterns with repeat counts; window-based tick dispatch; `on_locate()` for mid-arrangement resume; note-off tracking; C API `omega_song_append/clear` (sprint 3.2)
+  - `PerformanceSource` — 64-slot state machine (EMPTY→IDLE→QUEUED→PLAYING→STOPPING); per-slot transpose (±24 semitones), velocity scale (0–200%), random bias (0–100%); phase-resume on locate; C API `omega_perf_assign/cue/stop/stop_all/set_transpose/set_velocity_scale/set_random_bias` (sprint 3.3)
+
+---
+
+## [0.2.0] - 2026-05-22
+
 ### Added
 - **M2 — Single-track playback via C API** (sprints 2.1–2.4):
   - `ClockSource` abstraction + `MockClock` test utility (sprint 2.1)
   - `OutputSink` interface + `CapturingSink` test utility (sprint 2.2)
   - `TimelineSource` + `TrackData` — linear multi-track playback, note/CC chasing on locate (sprint 2.3)
   - C API wiring: `omega_engine_add_track`, `omega_engine_add_event`, `omega_engine_play/stop/locate`, `omega_engine_process`; C API integration tests (sprint 2.4)
-- **M3 — Pattern library, song arrangement, and performance source** (sprints 3.1–3.3):
-  - `PatternLibrary` — named, length-bounded event sequences stored in PMR vectors; C API `omega_pattern_create/destroy/add_event/set_length` (sprint 3.1)
-  - `SongArrangementSource` — chains patterns with repeat counts; window-based tick dispatch; `on_locate()` for mid-arrangement resume; note-off tracking; C API `omega_song_append/clear` (sprint 3.2)
-  - `PerformanceSource` — 64-slot state machine (EMPTY→IDLE→QUEUED→PLAYING→STOPPING); per-slot transpose (±24 semitones), velocity scale (0–200%), random bias (0–100%); phase-resume on locate; C API `omega_perf_assign/cue/stop/stop_all/set_transpose/set_velocity_scale/set_random_bias` (sprint 3.3)
 
 ### Fixed
 - Reduced `SpscQueue` default capacity from 65536 to 4096 to avoid stack overflow on Windows (default stack is 1 MB; 65536-slot queue consumed ~4 MB)
+
+---
+
+## [0.1.0] - 2026-05-22
 
 ### Added
 - **M1 — Core engine** (sprints 1.1–1.5): first real implementation code:
@@ -33,7 +57,6 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - `include/omega/engine.h` + `src/engine.cpp`: `Engine` skeleton — SPSC queue drain loop in `process()`, atomic `TransportState` and position, `SetTempoCmd`/`TransportCmd` handling
   - `omega_core` converted from `INTERFACE` to `STATIC` library
   - 36 unit tests covering all five sprints (ASan + UBSan clean)
-
 - **Library foundation** (design 12): non-implementation infrastructure required before first code commit:
   - `CMakePresets.json` with `dev` (ASan/UBSan), `tsan` (TSan), `release`, and CI presets
   - `OMEGA_WITH_TSAN` CMake option; TSan and ASan+UBSan are now mutually exclusive with a hard error
@@ -53,10 +76,6 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - `docs/migration/v0-to-v1.md` migration guide template
   - CI jobs added: TSan, clang-tidy (PR-only), CHANGELOG lint (PR-only), ABI compliance stub (PR-only), install smoke test, coverage (main-only), benchmarks (main-only)
   - All `FetchContent` dependencies pinned to specific tags or commit hashes (libremidi v5.1.0, midifile `98917df`, Catch2 v3.5.2, Ableton Link Link-3.1.5)
-- Initial design proposal covering architecture, event model, and three sequencing modes
-- Design documents: timing model, thread model, memory/storage, C API, pattern state machine, session container, extensions, testing strategy, prior art
-- Project infrastructure: license, contributing guide, CI, issue templates
-- **EventSource abstraction** (design 10): pluggable playback modes via `EventSource` interface; `TransformSource` base class for composition-based routing; `on_locate()` with `chase_out` dispatcher for note/CC/program chasing; updated `EventSourceRegistry` signatures; `MockEventSource` test utility; extended extension point catalogue (step sequencer, generative, polyrhythmic, reactive)
 - **Orchestration layer** (design 11): four complementary additions that together enable virtually any sequencer architecture to be expressed:
   - `EventInput` / `InputBus` — first-class abstraction for incoming events (MIDI, OSC, CV); polled each cycle before `advance()` calls; events broadcast to all sources via `ProcessContext`
   - `TransformSource` — composition-based source routing; provided transforms: `ScaleQuantizerSource`, `TransposeSource`, `VelocityCurveSource`, `HumanizerSource`, `ChordSpreadSource`, `FilterSource`, `DelaySource`
@@ -67,17 +86,14 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - New C API sections: `omega_input_*`, `omega_mod_*`, `omega_ctx_*`, `omega_process_ctx_t`
   - New session JSON keys: `modulation_bus`, `performance_context`, `groove_library`
   - `MockEventInput` test utility
+- **EventSource abstraction** (design 10): pluggable playback modes via `EventSource` interface; `TransformSource` base class for composition-based routing; `on_locate()` with `chase_out` dispatcher for note/CC/program chasing; updated `EventSourceRegistry` signatures; `MockEventSource` test utility; extended extension point catalogue (step sequencer, generative, polyrhythmic, reactive)
+- Initial design proposal covering architecture, event model, and three sequencing modes
+- Design documents: timing model, thread model, memory/storage, C API, pattern state machine, session container, extensions, testing strategy, prior art
+- Project infrastructure: license, contributing guide, CI, issue templates
 
 ---
 
-<!-- New releases go above this line in the format:
-## [0.2.0] - YYYY-MM-DD
-### Added
-### Changed
-### Deprecated
-### Removed
-### Fixed
-### Security
--->
-
-[Unreleased]: https://github.com/braveness23/omega/compare/HEAD...HEAD
+[Unreleased]: https://github.com/braveness23/omega/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/braveness23/omega/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/braveness23/omega/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/braveness23/omega/releases/tag/v0.1.0
