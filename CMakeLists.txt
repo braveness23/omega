@@ -108,6 +108,9 @@ add_library(omega_core STATIC
     src/clock.cpp
     src/sink.cpp
     src/timeline.cpp
+    src/pattern_library.cpp
+    src/song_arrangement_source.cpp
+    src/performance_source.cpp
     src/engine.cpp
 )
 add_library(omega::core ALIAS omega_core)

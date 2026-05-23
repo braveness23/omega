@@ -46,8 +46,71 @@ struct TransportCmd
     uint64_t locate_tick;
 };
 
-using Command =
-    std::variant<AddEventCmd, DeleteEventCmd, SetTempoCmd, SetLoopCmd, CuePatternCmd, TransportCmd>;
+struct SongAppendCmd
+{
+    PatternId pattern_id;
+    uint32_t repeat_count;
+};
+
+struct SongClearCmd
+{};
+
+struct PerfAssignCmd
+{
+    SlotId slot;
+    PatternId pattern;
+};
+
+struct PerfCueCmd
+{
+    SlotId slot;
+    CueMode mode;
+};
+
+struct PerfStopCmd
+{
+    SlotId slot;
+    CueMode mode;
+};
+
+struct PerfStopAllCmd
+{
+    CueMode mode;
+};
+
+struct PerfSetTransposeCmd
+{
+    SlotId slot;
+    int8_t semitones;
+};
+
+struct PerfSetVelocityScaleCmd
+{
+    SlotId slot;
+    uint8_t scale;
+};
+
+struct PerfSetRandomBiasCmd
+{
+    SlotId slot;
+    uint8_t bias;
+};
+
+using Command = std::variant<AddEventCmd,
+                             DeleteEventCmd,
+                             SetTempoCmd,
+                             SetLoopCmd,
+                             CuePatternCmd,
+                             TransportCmd,
+                             SongAppendCmd,
+                             SongClearCmd,
+                             PerfAssignCmd,
+                             PerfCueCmd,
+                             PerfStopCmd,
+                             PerfStopAllCmd,
+                             PerfSetTransposeCmd,
+                             PerfSetVelocityScaleCmd,
+                             PerfSetRandomBiasCmd>;
 
 static_assert(sizeof(Command) <= 64, "Command must fit within 64 bytes");
 

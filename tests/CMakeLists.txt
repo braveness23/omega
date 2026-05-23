@@ -7,11 +7,14 @@ add_executable(omega_tests
     unit/test_clock.cpp
     unit/test_sink.cpp
     unit/test_timeline.cpp
+    unit/test_pattern_library.cpp
+    unit/test_song_arrangement.cpp
+    unit/test_performance_source.cpp
 )
 
 target_link_libraries(omega_tests
     PRIVATE
-        omega::core
+        omega::omega
         Catch2::Catch2WithMain
 )
 
@@ -21,6 +24,7 @@ catch_discover_tests(omega_tests)
 # ── Integration tests (C API) ─────────────────────────────────────────────────
 add_executable(omega_integration_tests
     integration/test_c_api_playback.cpp
+    integration/test_c_api_patterns.cpp
 )
 
 target_link_libraries(omega_integration_tests

@@ -1,6 +1,7 @@
 #include <omega/commands.h>
 #include <omega/engine.h>
 #include <omega/omega.h>
+#include <omega/perf_slot.h>
 #include <omega/sink.h>
 #include <omega/types.h>
 
@@ -115,6 +116,142 @@ uint64_t omega_engine_position_ns(const omega_engine_t* eng)
         return 0;
     }
     return eng->engine.transport_position_ns();
+}
+
+omega_pattern_id_t omega_pattern_create(omega_engine_t* eng,
+                                        const char* name,
+                                        omega_tick_t length_ticks)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_PATTERN_INVALID;
+    }
+    return eng->engine.create_pattern(name != nullptr ? name : "", length_ticks);
+}
+
+omega_status_t omega_pattern_destroy(omega_engine_t* eng, omega_pattern_id_t id)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    eng->engine.destroy_pattern(id);
+    return OMEGA_OK;
+}
+
+omega_status_t omega_pattern_add_event(omega_engine_t* eng,
+                                       omega_pattern_id_t id,
+                                       const omega_event_t* ev)
+{
+    if (eng == nullptr || ev == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.pattern_add_event(id, *ev);
+}
+
+omega_status_t omega_pattern_set_length(omega_engine_t* eng,
+                                        omega_pattern_id_t id,
+                                        omega_tick_t length_ticks)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.pattern_set_length(id, length_ticks);
+}
+
+omega_status_t omega_song_append(omega_engine_t* eng,
+                                 omega_pattern_id_t pattern_id,
+                                 uint32_t repeats)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.song_append(pattern_id, repeats);
+}
+
+omega_status_t omega_song_clear(omega_engine_t* eng)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.song_clear();
+}
+
+omega_status_t omega_perf_assign(omega_engine_t* eng,
+                                 omega_slot_id_t slot,
+                                 omega_pattern_id_t pattern_id)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.perf_assign(slot, pattern_id);
+}
+
+omega_status_t omega_perf_cue(omega_engine_t* eng, omega_slot_id_t slot, omega_cue_mode_t mode)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    omega::CueMode cpp_mode =
+        (mode == OMEGA_CUE_IMMEDIATE) ? omega::CueMode::IMMEDIATE : omega::CueMode::NEXT_BEAT;
+    return eng->engine.perf_cue(slot, cpp_mode);
+}
+
+omega_status_t omega_perf_stop(omega_engine_t* eng, omega_slot_id_t slot, omega_cue_mode_t mode)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    omega::CueMode cpp_mode =
+        (mode == OMEGA_CUE_IMMEDIATE) ? omega::CueMode::IMMEDIATE : omega::CueMode::NEXT_BEAT;
+    return eng->engine.perf_stop(slot, cpp_mode);
+}
+
+omega_status_t omega_perf_stop_all(omega_engine_t* eng, omega_cue_mode_t mode)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    omega::CueMode cpp_mode =
+        (mode == OMEGA_CUE_IMMEDIATE) ? omega::CueMode::IMMEDIATE : omega::CueMode::NEXT_BEAT;
+    return eng->engine.perf_stop_all(cpp_mode);
+}
+
+omega_status_t omega_perf_set_transpose(omega_engine_t* eng, omega_slot_id_t slot, int8_t semitones)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.perf_set_transpose(slot, semitones);
+}
+
+omega_status_t omega_perf_set_velocity_scale(omega_engine_t* eng,
+                                             omega_slot_id_t slot,
+                                             uint8_t scale)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.perf_set_velocity_scale(slot, scale);
+}
+
+omega_status_t omega_perf_set_random_bias(omega_engine_t* eng, omega_slot_id_t slot, uint8_t bias)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.perf_set_random_bias(slot, bias);
 }
 
 }  // extern "C"

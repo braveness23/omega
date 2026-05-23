@@ -5,6 +5,9 @@
 #include <omega/detail/spsc_queue.h>
 #include <omega/event_source.h>
 #include <omega/omega.h>
+#include <omega/pattern_library.h>
+#include <omega/perf_slot.h>
+#include <omega/song_arrangement.h>
 #include <omega/tempo_map.h>
 #include <omega/timeline.h>
 #include <omega/types.h>
@@ -84,6 +87,72 @@ public:
      */
     omega_status_t add_sink(OutputSink* sink);
 
+    /* ── Patterns ────────────────────────────────────────────────────────── */
+
+    /*
+     * Creates a new pattern in the built-in pattern library.
+     * Call before playback starts.
+     *
+     * Thread: Mutation thread only, before playback starts.
+     *
+     * Returns the assigned PatternId (always >= 1).
+     */
+    PatternId create_pattern(std::string name, uint64_t length_ticks);
+
+    /*
+     * Removes a pattern from the library. Its ID is never reused.
+     * Thread: Mutation thread only, before playback starts.
+     */
+    void destroy_pattern(PatternId id);
+
+    /*
+     * Inserts an event into a pattern in tick-sorted order.
+     * Thread: Mutation thread only, before playback starts.
+     *
+     * Returns OMEGA_ERR_NOT_FOUND if id is not a valid pattern.
+     */
+    omega_status_t pattern_add_event(PatternId id, Event event);
+
+    /*
+     * Updates the length of a pattern.
+     * Thread: Mutation thread only, before playback starts.
+     *
+     * Returns OMEGA_ERR_NOT_FOUND if id is not a valid pattern.
+     */
+    omega_status_t pattern_set_length(PatternId id, uint64_t length_ticks);
+
+    /*
+     * Returns a non-owning reference to the pattern library.
+     * Thread: Mutation thread for writes; Timing thread for reads.
+     */
+    [[nodiscard]] PatternLibrary& pattern_library() noexcept;
+    [[nodiscard]] const PatternLibrary& pattern_library() const noexcept;
+
+    /* ── Song arrangement ────────────────────────────────────────────────── */
+
+    /*
+     * Enqueues an entry to append to the song arrangement.
+     * Entries are played in order; each pattern repeats repeat_count times.
+     *
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t song_append(PatternId id, uint32_t repeat_count);
+
+    /*
+     * Enqueues a command to clear all arrangement entries and reset playback.
+     *
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t song_clear();
+
     /* ── Tracks ───────────────────────────────────────────────────────────── */
 
     /*
@@ -103,6 +172,79 @@ public:
      * Returns OMEGA_ERR_NOT_FOUND if track_id is not registered.
      */
     omega_status_t set_track_sink(TrackId track_id, uint32_t sink_id);
+
+    /* ── Performance source ──────────────────────────────────────────────── */
+
+    /*
+     * Assigns a pattern to a performance slot.
+     * pattern == 0 unassigns (any state → EMPTY).
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t perf_assign(SlotId slot, PatternId pattern);
+
+    /*
+     * Cues the assigned pattern for the slot.
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t perf_cue(SlotId slot, CueMode mode);
+
+    /*
+     * Stops the slot at the given cue mode boundary.
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t perf_stop(SlotId slot, CueMode mode);
+
+    /*
+     * Stops all slots.
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t perf_stop_all(CueMode mode);
+
+    /*
+     * Sets per-slot transpose in semitones (-24 to +24).
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t perf_set_transpose(SlotId slot, int8_t semitones);
+
+    /*
+     * Sets per-slot velocity scale (0–200, 100 = unity).
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t perf_set_velocity_scale(SlotId slot, uint8_t scale);
+
+    /*
+     * Sets per-slot random bias (0–100).
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t perf_set_random_bias(SlotId slot, uint8_t bias);
 
     /* ── Command queue ────────────────────────────────────────────────────── */
 
@@ -151,13 +293,26 @@ private:
     void apply(const DeleteEventCmd& cmd);
     void apply(const SetTempoCmd& cmd);
     void apply(const TransportCmd& cmd);
+    void apply(const SongAppendCmd& cmd);
+    void apply(const SongClearCmd& cmd);
+    void apply(const PerfAssignCmd& cmd);
+    void apply(const PerfCueCmd& cmd);
+    void apply(const PerfStopCmd& cmd);
+    void apply(const PerfStopAllCmd& cmd);
+    void apply(const PerfSetTransposeCmd& cmd);
+    void apply(const PerfSetVelocityScaleCmd& cmd);
+    void apply(const PerfSetRandomBiasCmd& cmd);
 
     InternalClock internal_clock_;
     ClockSource* clock_;
 
+    PatternLibrary patterns_;
+
     EventDispatcher::SinkList sinks_;  // sorted by sink_id, non-owning
 
     TimelineSource timeline_;
+    SongArrangementSource song_{patterns_};
+    PerformanceSource perf_{patterns_};
 
     detail::SpscQueue<Command, 4096> queue_;
     TempoMap tempo_map_;
