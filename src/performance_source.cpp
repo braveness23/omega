@@ -14,7 +14,9 @@ PerformanceSource::PerformanceSource(const PatternLibrary& library) noexcept : l
 uint64_t PerformanceSource::global_boundary(uint64_t current_tick, uint64_t length) noexcept
 {
     if (length == 0)
+    {
         return current_tick;
+    }
     return ((current_tick + length - 1u) / length) * length;
 }
 
@@ -23,7 +25,9 @@ uint64_t PerformanceSource::next_loop_boundary(const PerfSlot& slot,
 {
     const Pattern* pat = library_.get(slot.playing);
     if (pat == nullptr || pat->length_ticks == 0)
+    {
         return current_tick;
+    }
     uint64_t len = pat->length_ticks;
     uint64_t elapsed = current_tick >= slot.start_tick ? current_tick - slot.start_tick : 0u;
     uint64_t loop_idx = elapsed / len;
@@ -35,7 +39,9 @@ uint64_t PerformanceSource::next_loop_boundary(const PerfSlot& slot,
 void PerformanceSource::assign(SlotId slot_id, PatternId pattern)
 {
     if (slot_id >= PERF_MAX_SLOTS)
+    {
         return;
+    }
     PerfSlot& slot = slots_[slot_id];
 
     if (pattern == 0u)
@@ -67,15 +73,21 @@ void PerformanceSource::assign(SlotId slot_id, PatternId pattern)
 void PerformanceSource::cue(SlotId slot_id, CueMode mode, uint64_t current_tick)
 {
     if (slot_id >= PERF_MAX_SLOTS)
+    {
         return;
+    }
     PerfSlot& slot = slots_[slot_id];
 
     if (slot.assigned == 0u)
+    {
         return;
+    }
 
     const Pattern* pat = library_.get(slot.assigned);
     if (pat == nullptr || pat->length_ticks == 0u)
+    {
         return;
+    }
 
     uint64_t len = pat->length_ticks;
 
@@ -136,7 +148,9 @@ void PerformanceSource::cue(SlotId slot_id, CueMode mode, uint64_t current_tick)
 void PerformanceSource::stop(SlotId slot_id, CueMode mode, uint64_t current_tick)
 {
     if (slot_id >= PERF_MAX_SLOTS)
+    {
         return;
+    }
     PerfSlot& slot = slots_[slot_id];
 
     if (mode == CueMode::IMMEDIATE)
@@ -187,25 +201,33 @@ void PerformanceSource::stop(SlotId slot_id, CueMode mode, uint64_t current_tick
 void PerformanceSource::stop_all(CueMode mode, uint64_t current_tick)
 {
     for (uint32_t i = 0u; i < PERF_MAX_SLOTS; ++i)
+    {
         stop(i, mode, current_tick);
+    }
 }
 
 void PerformanceSource::set_transpose(SlotId slot_id, int8_t semitones)
 {
     if (slot_id < PERF_MAX_SLOTS)
+    {
         slots_[slot_id].transpose = semitones;
+    }
 }
 
 void PerformanceSource::set_velocity_scale(SlotId slot_id, uint8_t scale)
 {
     if (slot_id < PERF_MAX_SLOTS)
+    {
         slots_[slot_id].velocity_scale = scale;
+    }
 }
 
 void PerformanceSource::set_random_bias(SlotId slot_id, uint8_t bias)
 {
     if (slot_id < PERF_MAX_SLOTS)
+    {
         slots_[slot_id].random_bias = bias;
+    }
 }
 
 // ── Event dispatch helpers ────────────────────────────────────────────────────
@@ -217,14 +239,18 @@ void PerformanceSource::dispatch_slot_events(PerfSlot& slot,
 {
     const Pattern* pat = library_.get(slot.playing);
     if (pat == nullptr || pat->length_ticks == 0u || pat->events.empty())
+    {
         return;
+    }
 
     uint64_t len = pat->length_ticks;
     uint64_t S = slot.start_tick;
 
     uint64_t from = from_tick >= S ? from_tick : S;
     if (from > to_tick)
+    {
         return;
+    }
 
     uint64_t loop_idx = (from - S) / len;
 
@@ -234,7 +260,9 @@ void PerformanceSource::dispatch_slot_events(PerfSlot& slot,
         uint64_t iter_end = iter_start + len;
 
         if (iter_start > to_tick)
+        {
             break;
+        }
 
         uint64_t window_from = from > iter_start ? from : iter_start;
         uint64_t window_to = to_tick < iter_end - 1u ? to_tick : iter_end - 1u;
@@ -253,20 +281,28 @@ void PerformanceSource::dispatch_slot_events(PerfSlot& slot,
 
             if (ev.payload_tag == OMEGA_NOTE_ON || ev.payload_tag == OMEGA_NOTE_OFF)
             {
-                int16_t note = static_cast<int16_t>(ev.data[0]) + slot.transpose;
+                auto note = static_cast<int16_t>(static_cast<int16_t>(ev.data[0]) + slot.transpose);
                 if (note < 0)
+                {
                     note = 0;
+                }
                 else if (note > 127)
+                {
                     note = 127;
+                }
                 ev.data[0] = static_cast<uint8_t>(note);
 
                 if (ev.payload_tag == OMEGA_NOTE_ON)
                 {
                     uint32_t vel = (static_cast<uint32_t>(ev.data[1]) * slot.velocity_scale) / 100u;
                     if (vel < 1u)
+                    {
                         vel = 1u;
+                    }
                     else if (vel > 127u)
+                    {
                         vel = 127u;
+                    }
                     ev.data[1] = static_cast<uint8_t>(vel);
 
                     if (slot.random_bias > 0u)
@@ -278,11 +314,16 @@ void PerformanceSource::dispatch_slot_events(PerfSlot& slot,
                         {
                             slot.rng_state = slot.rng_state * 1664525u + 1013904223u;
                             int bias_offset = static_cast<int>(slot.rng_state % 11u) - 5;
-                            int16_t biased = static_cast<int16_t>(ev.data[0]) + bias_offset;
+                            auto biased =
+                                static_cast<int16_t>(static_cast<int16_t>(ev.data[0]) + bias_offset);
                             if (biased < 0)
+                            {
                                 biased = 0;
+                            }
                             else if (biased > 127)
+                            {
                                 biased = 127;
+                            }
                             ev.data[0] = static_cast<uint8_t>(biased);
                         }
                     }
@@ -306,7 +347,9 @@ void PerformanceSource::dispatch_slot_events(PerfSlot& slot,
         }
 
         if (to_tick < iter_end)
+        {
             break;
+        }
         ++loop_idx;
     }
 }

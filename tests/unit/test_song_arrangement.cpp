@@ -35,7 +35,7 @@ TEST_CASE("SongArrangement: empty arrangement dispatches nothing")
     REQUIRE(sink.count() == 0u);
 }
 
-TEST_CASE("SongArrangement: single pattern, repeat 1 — note fires at correct tick")
+TEST_CASE("SongArrangement: single pattern, repeat 1 - note fires at correct tick")
 {
     MockClock clock;
     CapturingSink sink;
@@ -59,7 +59,7 @@ TEST_CASE("SongArrangement: single pattern, repeat 1 — note fires at correct t
     REQUIRE(sink.at(0).tick == 0u);
 }
 
-TEST_CASE("SongArrangement: A×2, B×1 — four notes at correct absolute ticks")
+TEST_CASE("SongArrangement: Ax2, Bx1 - four notes at correct absolute ticks")
 {
     // Pattern A: length 960, one note (note 60) at tick 0
     // Pattern B: length 1920, note 61 at tick 0, note 62 at tick 960
@@ -94,7 +94,10 @@ TEST_CASE("SongArrangement: A×2, B×1 — four notes at correct absolute ticks"
     REQUIRE(sink.count() == 4u);
 
     // Verify each note fired at the correct absolute tick.
-    bool found_a0 = false, found_a1 = false, found_b0 = false, found_b1 = false;
+    bool found_a0 = false;
+    bool found_a1 = false;
+    bool found_b0 = false;
+    bool found_b1 = false;
     for (size_t i = 0; i < sink.count(); ++i)
     {
         const Event& ev = sink.at(i);
@@ -243,7 +246,7 @@ TEST_CASE("SongArrangement: locate into middle of arrangement resumes correctly"
     REQUIRE(sink.at(0).tick == 1920u);
 }
 
-TEST_CASE("SongArrangement: locate past end of arrangement — nothing fires")
+TEST_CASE("SongArrangement: locate past end of arrangement - nothing fires")
 {
     MockClock clock;
     CapturingSink sink;

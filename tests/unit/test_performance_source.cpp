@@ -4,6 +4,7 @@
 #include <omega/test/capturing_sink.h>
 #include <omega/test/mock_clock.h>
 
+#include <array>
 #include <catch2/catch_test_macros.hpp>
 
 using namespace omega;
@@ -41,7 +42,7 @@ struct Rig
 
 // ── assign: state machine transitions ─────────────────────────────────────────
 
-TEST_CASE("Perf assign: EMPTY → IDLE — subsequent cue plays the pattern")
+TEST_CASE("Perf assign: EMPTY to IDLE - subsequent cue plays the pattern")
 {
     Rig r;
     PatternId pid = r.engine.create_pattern("A", 960u);
@@ -56,7 +57,7 @@ TEST_CASE("Perf assign: EMPTY → IDLE — subsequent cue plays the pattern")
     REQUIRE(r.sink.has_note_on(60, 0));
 }
 
-TEST_CASE("Perf assign: IDLE → IDLE — reassign plays the new pattern on cue")
+TEST_CASE("Perf assign: IDLE to IDLE - reassign plays the new pattern on cue")
 {
     Rig r;
     PatternId pid_a = r.engine.create_pattern("A", 960u);
@@ -75,7 +76,7 @@ TEST_CASE("Perf assign: IDLE → IDLE — reassign plays the new pattern on cue"
     REQUIRE(r.sink.has_note_on(72, 0));
 }
 
-TEST_CASE("Perf assign: QUEUED → QUEUED — updated pattern plays at boundary")
+TEST_CASE("Perf assign: QUEUED to QUEUED - updated pattern plays at boundary")
 {
     Rig r;
     PatternId pid_a = r.engine.create_pattern("A", 960u);
@@ -103,7 +104,7 @@ TEST_CASE("Perf assign: QUEUED → QUEUED — updated pattern plays at boundary"
     REQUIRE(r.sink.has_note_on(72, 0));
 }
 
-TEST_CASE("Perf assign: PLAYING → PLAYING (no state change) — new pattern plays after next cue")
+TEST_CASE("Perf assign: PLAYING to PLAYING (no state change) - new pattern plays after next cue")
 {
     Rig r;
     PatternId pid_a = r.engine.create_pattern("A", 960u);
@@ -132,7 +133,7 @@ TEST_CASE("Perf assign: PLAYING → PLAYING (no state change) — new pattern pl
 
 // ── cue(BOUNDARY): state machine transitions ──────────────────────────────────
 
-TEST_CASE("Perf cue BOUNDARY: IDLE → QUEUED → PLAYING at boundary")
+TEST_CASE("Perf cue BOUNDARY: IDLE to QUEUED to PLAYING at boundary")
 {
     Rig r;
     PatternId pid = r.engine.create_pattern("A", 960u);
@@ -148,7 +149,7 @@ TEST_CASE("Perf cue BOUNDARY: IDLE → QUEUED → PLAYING at boundary")
     REQUIRE(r.sink.has_note_on(60, 0));
 }
 
-TEST_CASE("Perf cue BOUNDARY: QUEUED → QUEUED (update queued pattern)")
+TEST_CASE("Perf cue BOUNDARY: QUEUED to QUEUED (update queued pattern)")
 {
     Rig r;
     PatternId pid_a = r.engine.create_pattern("A", 960u);
@@ -175,7 +176,7 @@ TEST_CASE("Perf cue BOUNDARY: QUEUED → QUEUED (update queued pattern)")
     REQUIRE(r.sink.has_note_on(72, 0));
 }
 
-TEST_CASE("Perf cue BOUNDARY: PLAYING (different pattern) → STOPPING then PLAYING new")
+TEST_CASE("Perf cue BOUNDARY: PLAYING (different pattern) to STOPPING then PLAYING new")
 {
     Rig r;
     PatternId pid_a = r.engine.create_pattern("A", 960u);
@@ -202,7 +203,7 @@ TEST_CASE("Perf cue BOUNDARY: PLAYING (different pattern) → STOPPING then PLAY
     REQUIRE(r.sink.has_note_on(72, 0));
 }
 
-TEST_CASE("Perf cue BOUNDARY: PLAYING (same pattern) → STOPPING (toggle)")
+TEST_CASE("Perf cue BOUNDARY: PLAYING (same pattern) to STOPPING (toggle)")
 {
     Rig r;
     PatternId pid = r.engine.create_pattern("A", 960u);
@@ -229,7 +230,7 @@ TEST_CASE("Perf cue BOUNDARY: PLAYING (same pattern) → STOPPING (toggle)")
     REQUIRE(r.sink.has_note_off(60, 0));
 }
 
-TEST_CASE("Perf cue BOUNDARY: STOPPING → pending set (restart at boundary)")
+TEST_CASE("Perf cue BOUNDARY: STOPPING to pending set (restart at boundary)")
 {
     Rig r;
     PatternId pid_a = r.engine.create_pattern("A", 960u);
@@ -257,7 +258,7 @@ TEST_CASE("Perf cue BOUNDARY: STOPPING → pending set (restart at boundary)")
 
 // ── cue(IMMEDIATE): state machine transitions ─────────────────────────────────
 
-TEST_CASE("Perf cue IMMEDIATE: IDLE → PLAYING")
+TEST_CASE("Perf cue IMMEDIATE: IDLE to PLAYING")
 {
     Rig r;
     PatternId pid = r.engine.create_pattern("A", 960u);
@@ -272,7 +273,7 @@ TEST_CASE("Perf cue IMMEDIATE: IDLE → PLAYING")
     REQUIRE(r.sink.has_note_on(60, 0));
 }
 
-TEST_CASE("Perf cue IMMEDIATE: QUEUED → PLAYING (cancel queue)")
+TEST_CASE("Perf cue IMMEDIATE: QUEUED to PLAYING (cancel queue)")
 {
     Rig r;
     PatternId pid = r.engine.create_pattern("A", 960u);
@@ -294,7 +295,7 @@ TEST_CASE("Perf cue IMMEDIATE: QUEUED → PLAYING (cancel queue)")
     REQUIRE(r.sink.at(0).tick < 960u);
 }
 
-TEST_CASE("Perf cue IMMEDIATE: PLAYING → PLAYING (restart from phase 0)")
+TEST_CASE("Perf cue IMMEDIATE: PLAYING to PLAYING (restart from phase 0)")
 {
     Rig r;
     PatternId pid = r.engine.create_pattern("A", 960u);
@@ -320,7 +321,7 @@ TEST_CASE("Perf cue IMMEDIATE: PLAYING → PLAYING (restart from phase 0)")
     REQUIRE(r.sink.has_note_on(60, 0));
 }
 
-TEST_CASE("Perf cue IMMEDIATE: STOPPING → PLAYING (cancel stop)")
+TEST_CASE("Perf cue IMMEDIATE: STOPPING to PLAYING (cancel stop)")
 {
     Rig r;
     PatternId pid = r.engine.create_pattern("A", 960u);
@@ -345,7 +346,7 @@ TEST_CASE("Perf cue IMMEDIATE: STOPPING → PLAYING (cancel stop)")
 
 // ── cue_stop(BOUNDARY) transitions ───────────────────────────────────────────
 
-TEST_CASE("Perf stop BOUNDARY: PLAYING → STOPPING → IDLE at boundary")
+TEST_CASE("Perf stop BOUNDARY: PLAYING to STOPPING to IDLE at boundary")
 {
     Rig r;
     PatternId pid = r.engine.create_pattern("A", 960u);
@@ -375,7 +376,7 @@ TEST_CASE("Perf stop BOUNDARY: PLAYING → STOPPING → IDLE at boundary")
     REQUIRE_FALSE(r.sink.has_note_on(60, 0));
 }
 
-TEST_CASE("Perf stop BOUNDARY: QUEUED → IDLE (cancel before it starts)")
+TEST_CASE("Perf stop BOUNDARY: QUEUED to IDLE (cancel before it starts)")
 {
     Rig r;
     PatternId pid = r.engine.create_pattern("A", 960u);
@@ -397,7 +398,7 @@ TEST_CASE("Perf stop BOUNDARY: QUEUED → IDLE (cancel before it starts)")
 
 // ── cue_stop(IMMEDIATE) transitions ──────────────────────────────────────────
 
-TEST_CASE("Perf stop IMMEDIATE: PLAYING → IDLE with note-off")
+TEST_CASE("Perf stop IMMEDIATE: PLAYING to IDLE with note-off")
 {
     Rig r;
     PatternId pid = r.engine.create_pattern("A", 960u);
@@ -419,7 +420,7 @@ TEST_CASE("Perf stop IMMEDIATE: PLAYING → IDLE with note-off")
     REQUIRE(r.sink.has_note_off(60, 0));
 }
 
-TEST_CASE("Perf stop IMMEDIATE: QUEUED → IDLE")
+TEST_CASE("Perf stop IMMEDIATE: QUEUED to IDLE")
 {
     Rig r;
     PatternId pid = r.engine.create_pattern("A", 960u);
@@ -438,7 +439,7 @@ TEST_CASE("Perf stop IMMEDIATE: QUEUED → IDLE")
     REQUIRE(r.sink.count() == 0u);
 }
 
-TEST_CASE("Perf stop IMMEDIATE: STOPPING → IDLE (accelerate the stop)")
+TEST_CASE("Perf stop IMMEDIATE: STOPPING to IDLE (accelerate the stop)")
 {
     Rig r;
     PatternId pid = r.engine.create_pattern("A", 960u);
@@ -465,7 +466,7 @@ TEST_CASE("Perf stop IMMEDIATE: STOPPING → IDLE (accelerate the stop)")
 
 // ── Loop boundary transitions (internal) ─────────────────────────────────────
 
-TEST_CASE("Perf loop boundary: QUEUED → PLAYING fires events at boundary tick")
+TEST_CASE("Perf loop boundary: QUEUED to PLAYING fires events at boundary tick")
 {
     Rig r;
     PatternId pid = r.engine.create_pattern("A", 960u);
@@ -486,7 +487,7 @@ TEST_CASE("Perf loop boundary: QUEUED → PLAYING fires events at boundary tick"
     REQUIRE(r.sink.at(0).tick == 960u);
 }
 
-TEST_CASE("Perf loop boundary: STOPPING → IDLE fires note-off at boundary")
+TEST_CASE("Perf loop boundary: STOPPING to IDLE fires note-off at boundary")
 {
     Rig r;
     PatternId pid = r.engine.create_pattern("A", 960u);
@@ -663,7 +664,7 @@ TEST_CASE("Perf velocity scale 0: minimum dispatched velocity is 1")
 
 // ── Looping ───────────────────────────────────────────────────────────────────
 
-TEST_CASE("Perf: pattern loops — second loop fires events at expected ticks")
+TEST_CASE("Perf: pattern loops - second loop fires events at expected ticks")
 {
     Rig r;
     PatternId pid = r.engine.create_pattern("A", 480u);
@@ -679,13 +680,15 @@ TEST_CASE("Perf: pattern loops — second loop fires events at expected ticks")
 
     // Find the three note-ons and verify their absolute ticks
     size_t on_count = 0u;
-    uint64_t ticks[3] = {};
+    std::array<uint64_t, 3> ticks{};
     for (size_t i = 0u; i < r.sink.count(); ++i)
     {
         if (r.sink.at(i).payload_tag == OMEGA_NOTE_ON)
         {
             if (on_count < 3u)
+            {
                 ticks[on_count] = r.sink.at(i).tick;
+            }
             ++on_count;
         }
     }
@@ -803,7 +806,7 @@ TEST_CASE("Perf C API: stop_all silences all slots")
 
 // ── unassign ──────────────────────────────────────────────────────────────────
 
-TEST_CASE("Perf unassign: any state → EMPTY via assign(0)")
+TEST_CASE("Perf unassign: any state to EMPTY via assign(0)")
 {
     Rig r;
     PatternId pid = r.engine.create_pattern("A", 960u);

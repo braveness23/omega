@@ -102,8 +102,8 @@ private:
                               uint64_t from_tick,
                               uint64_t to_tick,
                               EventDispatcher& dispatcher);
-    void fire_note_offs(PerfSlot& slot, uint64_t to_tick, EventDispatcher& dispatcher);
-    void silence_slot(PerfSlot& slot, uint64_t at_tick, EventDispatcher& dispatcher);
+    static void fire_note_offs(PerfSlot& slot, uint64_t to_tick, EventDispatcher& dispatcher);
+    static void silence_slot(PerfSlot& slot, uint64_t at_tick, EventDispatcher& dispatcher);
     [[nodiscard]] uint64_t next_loop_boundary(const PerfSlot& slot,
                                               uint64_t current_tick) const noexcept;
     [[nodiscard]] static uint64_t global_boundary(uint64_t current_tick, uint64_t length) noexcept;

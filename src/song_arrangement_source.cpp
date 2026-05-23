@@ -120,7 +120,7 @@ void SongArrangementSource::on_locate(uint64_t tick,
     active_notes_.clear();
     next_tick_ = tick;
 
-    const uint32_t n = static_cast<uint32_t>(entries_.size());
+    auto n = static_cast<uint32_t>(entries_.size());
     uint64_t abs_start = 0;
 
     for (uint32_t i = 0; i < n; ++i)
