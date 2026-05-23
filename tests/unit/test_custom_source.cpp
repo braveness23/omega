@@ -76,9 +76,9 @@ TEST_CASE("Custom sources at lower priority run before built-in sources")
 
     struct OrderCapture : EventSource
     {
-        std::vector<std::string>* order;
+        std::vector<std::string>* order{nullptr};
         std::string name;
-        void advance(uint64_t, EventDispatcher&, ProcessContext&) override
+        void advance(uint64_t /*to_tick*/, EventDispatcher& /*d*/, ProcessContext& /*ctx*/) override
         {
             order->push_back(name);
         }
@@ -112,7 +112,10 @@ TEST_CASE("omega_engine_remove_source: source is not called after removal")
     struct CountSource : EventSource
     {
         int calls{0};
-        void advance(uint64_t, EventDispatcher&, ProcessContext&) override { ++calls; }
+        void advance(uint64_t /*to_tick*/, EventDispatcher& /*d*/, ProcessContext& /*ctx*/) override
+        {
+            ++calls;
+        }
     } src;
 
     eng.add_source(&src, OMEGA_SOURCE_PRIORITY_PLAYBACK);
@@ -132,14 +135,15 @@ TEST_CASE("omega_engine_remove_source: source is not called after removal")
     REQUIRE(src.calls == 1);
 }
 
-TEST_CASE("Custom source add/remove goes through command queue — TSan")
+TEST_CASE("Custom source add/remove goes through command queue (TSan)")
 {
     MockClock clock;
     Engine eng{&clock};
 
     struct NoopSource : EventSource
     {
-        void advance(uint64_t, EventDispatcher&, ProcessContext&) override {}
+        void advance(uint64_t /*to_tick*/, EventDispatcher& /*d*/, ProcessContext& /*ctx*/) override
+        {}
     } src;
 
     constexpr int ITERATIONS = 30000;
@@ -307,7 +311,9 @@ TEST_CASE("C API: omega_dispatch delivers event to sink from advance_fn")
 
     // Use a C++ CapturingSink registered directly (opaque cast)
     CapturingSink csink;
-    omega_engine_add_sink(eng, reinterpret_cast<omega_sink_t*>(&csink));
+    omega_engine_add_sink(eng,
+                          reinterpret_cast<omega_sink_t*>(
+                              &csink));  // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
 
     uint32_t sid = csink.sink_id();
 

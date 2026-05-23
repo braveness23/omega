@@ -33,7 +33,7 @@ struct SmpteConfig
 
 // Returns true if the config values are valid (fps in {24,25,30}, is_2997 requires fps==30,
 // drop_frame requires is_2997).
-inline constexpr bool is_valid_smpte_config(const SmpteConfig& c) noexcept
+constexpr bool is_valid_smpte_config(const SmpteConfig& c) noexcept
 {
     if (c.fps != 24u && c.fps != 25u && c.fps != 30u)
     {

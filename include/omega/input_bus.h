@@ -49,7 +49,7 @@ public:
     }
 
 private:
-    std::array<Event, CAPACITY> events_;
+    std::array<Event, CAPACITY> events_{};
     uint32_t count_{0};
     std::atomic<uint32_t> overflow_{0};
 };

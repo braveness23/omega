@@ -13,14 +13,14 @@ ModulationBus::ModulationBus() noexcept
 
 float ModulationBus::bits_to_float(uint32_t bits) noexcept
 {
-    float f;
+    float f{};
     std::memcpy(&f, &bits, sizeof(f));
     return f;
 }
 
 uint32_t ModulationBus::float_to_bits(float f) noexcept
 {
-    uint32_t bits;
+    uint32_t bits{};
     std::memcpy(&bits, &f, sizeof(bits));
     return bits;
 }

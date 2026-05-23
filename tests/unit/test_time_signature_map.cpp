@@ -455,7 +455,8 @@ TEST_CASE("MeterCursor: quantize() delegates to quantize_to_beat", "[meter_curso
     TimeSignatureMap m;
     REQUIRE(m.insert(0u, 4u, 4u) == OMEGA_OK);
     MeterCursor cur(m);
-    uint64_t out1 = 0u, out2 = 0u;
+    uint64_t out1 = 0u;
+    uint64_t out2 = 0u;
     REQUIRE(cur.quantize(100u, out1) == OMEGA_OK);
     REQUIRE(cur.quantize_to_beat(100u, out2) == OMEGA_OK);
     CHECK(out1 == out2);
@@ -466,7 +467,8 @@ TEST_CASE("MeterCursor: next_boundary() delegates to next_bar_tick", "[meter_cur
     TimeSignatureMap m;
     REQUIRE(m.insert(0u, 4u, 4u) == OMEGA_OK);
     MeterCursor cur(m);
-    uint64_t out1 = 0u, out2 = 0u;
+    uint64_t out1 = 0u;
+    uint64_t out2 = 0u;
     REQUIRE(cur.next_boundary(100u, out1) == OMEGA_OK);
     REQUIRE(cur.next_bar_tick(100u, out2) == OMEGA_OK);
     CHECK(out1 == out2);

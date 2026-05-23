@@ -17,7 +17,7 @@ struct ContextCapture : EventSource
 {
     omega_perf_ctx_t last{};
     bool called{false};
-    void advance(uint64_t, EventDispatcher&, ProcessContext& ctx) override
+    void advance(uint64_t /*to_tick*/, EventDispatcher& /*d*/, ProcessContext& ctx) override
     {
         last = ctx.perf_ctx;
         called = true;

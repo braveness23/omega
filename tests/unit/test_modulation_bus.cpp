@@ -5,6 +5,7 @@
 #include <omega/test/mock_clock.h>
 #include <omega/test/mock_event_source.h>
 
+#include <array>
 #include <catch2/catch_test_macros.hpp>
 #include <thread>
 
@@ -15,11 +16,11 @@ using namespace omega;
 TEST_CASE("ModulationBus starts with all channels at 0.0f")
 {
     ModulationBus bus;
-    float out[ModulationBus::CAPACITY];
-    bus.snapshot(out, ModulationBus::CAPACITY);
-    for (uint32_t i = 0; i < ModulationBus::CAPACITY; ++i)
+    std::array<float, ModulationBus::CAPACITY> out{};
+    bus.snapshot(out.data(), ModulationBus::CAPACITY);
+    for (float v : out)
     {
-        REQUIRE(out[i] == 0.0f);
+        REQUIRE(v == 0.0f);
     }
 }
 
@@ -72,8 +73,8 @@ TEST_CASE("ModulationBus: snapshot copies values")
     ModulationBus bus;
     uint32_t ch0 = bus.register_channel("a", 1.0f);
     uint32_t ch1 = bus.register_channel("b", 2.0f);
-    float out[2];
-    bus.snapshot(out, 2);
+    std::array<float, 2> out{};
+    bus.snapshot(out.data(), 2);
     REQUIRE(out[ch0] == 1.0f);
     REQUIRE(out[ch1] == 2.0f);
 }
@@ -84,7 +85,7 @@ TEST_CASE("ModulationBus: snapshot with null out is a no-op")
     bus.snapshot(nullptr, 10);  // must not crash
 }
 
-TEST_CASE("ModulationBus: set/get from timing thread, snapshot from mutation thread — TSan")
+TEST_CASE("ModulationBus: set/get from timing thread, snapshot from mutation thread (TSan)")
 {
     ModulationBus bus;
     uint32_t ch = bus.register_channel("osc", 0.0f);
@@ -98,10 +99,10 @@ TEST_CASE("ModulationBus: set/get from timing thread, snapshot from mutation thr
         }
     });
 
-    float out[ModulationBus::CAPACITY];
+    std::array<float, ModulationBus::CAPACITY> out{};
     for (int i = 0; i < 10000; ++i)
     {
-        bus.snapshot(out, ModulationBus::CAPACITY);
+        bus.snapshot(out.data(), ModulationBus::CAPACITY);
     }
 
     running.store(false, std::memory_order_relaxed);
@@ -124,10 +125,10 @@ TEST_CASE("Engine: custom source writes to modulation channel, next source reads
     // Writer source: sets channel `ch` to 1.0f during advance()
     struct WriterSource : EventSource
     {
-        ModulationBus* bus;
-        uint32_t ch;
+        ModulationBus* bus{nullptr};
+        uint32_t ch{0};
         bool called{false};
-        void advance(uint64_t, EventDispatcher&, ProcessContext& ctx) override
+        void advance(uint64_t /*to_tick*/, EventDispatcher& /*d*/, ProcessContext& ctx) override
         {
             ctx.modulation_bus->set(ch, 1.0f);
             called = true;
@@ -139,8 +140,8 @@ TEST_CASE("Engine: custom source writes to modulation channel, next source reads
     // Reader source: reads channel `ch`; stores the value; dispatches a note if value != 0
     struct ReaderSource : EventSource
     {
-        ModulationBus* bus;
-        uint32_t ch;
+        ModulationBus* bus{nullptr};
+        uint32_t ch{0};
         float last_value{-1.0f};
         void advance(uint64_t to_tick, EventDispatcher& d, ProcessContext& ctx) override
         {
@@ -225,8 +226,8 @@ TEST_CASE("C API: omega_mod_snapshot")
     REQUIRE(eng != nullptr);
 
     omega_mod_channel_t ch = omega_mod_register(eng, "val", 3.0f);
-    float out[4]{};
-    REQUIRE(omega_mod_snapshot(eng, out, 4) == OMEGA_OK);
+    std::array<float, 4> out{};
+    REQUIRE(omega_mod_snapshot(eng, out.data(), 4) == OMEGA_OK);
     REQUIRE(out[ch] == 3.0f);
 
     omega_engine_destroy(eng);

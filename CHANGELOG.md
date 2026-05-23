@@ -46,6 +46,18 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - C API: `omega_input_create/destroy`, `omega_engine_add_input`, `omega_engine_remove_input`, `omega_input_overflow_count`, `omega_deliver` (sprint 4.1)
   - `AddInputCmd` / `RemoveInputCmd` — new `Command` variants; input list modified on timing thread via SPSC queue (sprint 4.1)
 
+### Fixed
+- clang-tidy: added `NOLINT` for `clang-analyzer-optin.performance.Padding` on `Engine` (field ordering constrained by initialization-order dependency)
+- clang-tidy: value-initialize `InputBus::events_`, `ModulationBus::bits_to_float` local `f`, `float_to_bits` local `bits`, and `CaptureDispatcher::events` to suppress `cppcoreguidelines-init-variables` / `cppcoreguidelines-pro-type-member-init`
+- clang-tidy: change `ModulationBus::channels_` and `CaptureDispatcher::events` from C-style arrays to `std::array<>` (`cppcoreguidelines-avoid-c-arrays`)
+- clang-tidy: `TransformSource` Rule of 5 — add `= delete` for copy/move; remove redundant `override` on `final` override (`cppcoreguidelines-special-member-functions`, `modernize-use-override`)
+- clang-tidy: remove redundant `inline` specifier from `constexpr` helpers in `time_signature_map.h` and `smpte_converter.h` (`readability-redundant-inline-specifier`)
+- clang-tidy: name anonymous parameters and initialize uninit fields in test structs (`readability-named-parameter`, `cppcoreguidelines-pro-type-member-init`)
+- clang-tidy: replace C-style float arrays with `std::array` in test files; use range-based for where applicable
+- MSVC: initialize `bits_to_float` / `float_to_bits` locals before `memcpy` — fixes MSVC `/RTCu` crash in ModulationBus TSan test
+- MSVC: replace em dash (`—`) with ASCII hyphen in `TEST_CASE` names — fixes CTest filter encoding failure on Windows (`test_modulation_bus`, `test_custom_source`, `test_smpte_converter`)
+- clang-tidy: split comma-separated `uint64_t` declarations in `test_time_signature_map.cpp` (`readability-isolate-declaration`)
+
 <!-- New releases go above this line in the format:
 ## [0.4.0] - YYYY-MM-DD
 ### Added

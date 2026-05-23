@@ -230,7 +230,7 @@ TEST_CASE("SmpteConverter: DF smpte_to_tick at 00:01:00:02 is plausible", "[smpt
     CHECK(tick <= 57659u);
 }
 
-TEST_CASE("SmpteConverter: DF frame count formula — 17982 frames in 10 minutes", "[smpte_df]")
+TEST_CASE("SmpteConverter: DF frame count formula - 17982 frames in 10 minutes", "[smpte_df]")
 {
     // Verify the drop-frame formula: 00:10:00:00 encodes exactly 17 982 frame labels
     // from 00:00:00:00 (= frames 0..17 981 dropped, not counted).

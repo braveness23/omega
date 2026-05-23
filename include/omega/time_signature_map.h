@@ -9,19 +9,19 @@ namespace omega
 {
 
 // Returns true if v is a valid time signature denominator (power of 2, 1–32).
-inline constexpr bool is_valid_timesig_denominator(uint8_t v) noexcept
+constexpr bool is_valid_timesig_denominator(uint8_t v) noexcept
 {
     return v == 1u || v == 2u || v == 4u || v == 8u || v == 16u || v == 32u;
 }
 
 // Ticks per beat for a denominator (literal note value: 4 = quarter note, etc.).
-inline constexpr uint64_t ticks_per_beat_for(uint8_t denominator) noexcept
+constexpr uint64_t ticks_per_beat_for(uint8_t denominator) noexcept
 {
     return (static_cast<uint64_t>(OMEGA_PPQN) * 4u) / static_cast<uint64_t>(denominator);
 }
 
 // Ticks per bar for a numerator/denominator pair.
-inline constexpr uint64_t ticks_per_bar_for(uint8_t numerator, uint8_t denominator) noexcept
+constexpr uint64_t ticks_per_bar_for(uint8_t numerator, uint8_t denominator) noexcept
 {
     return ticks_per_beat_for(denominator) * static_cast<uint64_t>(numerator);
 }

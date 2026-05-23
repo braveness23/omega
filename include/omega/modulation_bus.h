@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <cstring>
@@ -58,7 +59,7 @@ private:
     static float bits_to_float(uint32_t bits) noexcept;
     static uint32_t float_to_bits(float f) noexcept;
 
-    std::atomic<uint32_t> channels_[CAPACITY];
+    std::array<std::atomic<uint32_t>, CAPACITY> channels_;
     std::unordered_map<std::string, uint32_t> names_;
     uint32_t next_{0};
 };

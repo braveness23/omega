@@ -2,6 +2,7 @@
 
 #include <omega/event_source.h>
 
+#include <array>
 #include <cstdint>
 
 namespace omega
@@ -30,7 +31,12 @@ class TransformSource : public EventSource
 public:
     ~TransformSource() override = default;
 
-    void advance(uint64_t to_tick, EventDispatcher& downstream, ProcessContext& ctx) override final;
+    TransformSource(const TransformSource&) = delete;
+    TransformSource& operator=(const TransformSource&) = delete;
+    TransformSource(TransformSource&&) = delete;
+    TransformSource& operator=(TransformSource&&) = delete;
+
+    void advance(uint64_t to_tick, EventDispatcher& downstream, ProcessContext& ctx) final;
 
     void on_locate(uint64_t tick, EventDispatcher& chase_out, ProcessContext& ctx) override;
 
@@ -63,7 +69,7 @@ private:
             }
         }
 
-        Event events[CAPACITY];
+        std::array<Event, CAPACITY> events{};
         uint32_t count{0};
     };
 

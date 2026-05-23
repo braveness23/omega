@@ -43,7 +43,7 @@ namespace omega
  * Add sinks and create tracks from the mutation thread before starting
  * playback. Once playback is running, use enqueue() for all mutations.
  */
-class Engine
+class Engine  // NOLINT(clang-analyzer-optin.performance.Padding)
 {
 public:
     /*
