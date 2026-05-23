@@ -1,6 +1,6 @@
 # Design Proposal: EventSource Abstraction
 
-**Status**: Accepted. This decision supersedes the implicit mode model described in [06-session-container.md](06-session-container.md) and [07-extensions.md](07-extensions.md). Those documents have been updated to reflect this design. The orchestration layer additions in [11-orchestration-layer.md](11-orchestration-layer.md) extend this interface further — see that document for the final `EventSource` signatures including `ProcessContext` and note/parameter chasing.
+**Status**: Implemented in v0.4.0. This decision supersedes the implicit mode model described in [06-session-container.md](06-session-container.md) and [07-extensions.md](07-extensions.md). Those documents have been updated to reflect this design. The orchestration layer additions in [11-orchestration-layer.md](11-orchestration-layer.md) extend this interface further — see that document for the final `EventSource` signatures including `ProcessContext` and note/parameter chasing.
 
 ---
 

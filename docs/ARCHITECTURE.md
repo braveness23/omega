@@ -3,37 +3,38 @@
 Omega is organized in three layers: a C++ core, a stable C API, and optional platform integrations.
 
 ```
-┌──────────────────────────────────────────────────────┐
-│                   Your Application                   │
-│          (any language, any UI framework)            │
-├──────────────────────────────────────────────────────┤
-│                   C API  —  omega.h                  │
-│         Stable ABI. Bindable from any language.      │
-├──────────────────────────────────────────────────────┤
-│                     C++ Core                         │
-│                                                      │
-│  ┌─────────┐  ┌─────────┐  ┌───────────────────┐    │
-│  │ Engine  │  │ Session │  │  Command History  │    │
-│  └────┬────┘  └────┬────┘  └───────────────────┘    │
-│       │            │                                 │
-│  ┌────▼────────────▼────────────────────────────┐   │
-│  │              Session Data                    │   │
-│  │  PatternLibrary · TempoMap · SinkRegistry    │   │
-│  │  EventSourceRegistry                         │   │
-│  └──────────────────────────────────────────────┘   │
-│                                                      │
-│  ┌─────────────┐  ┌────────────┐  ┌─────────────┐   │
-│  │ EventSource │  │ OutputSink │  │ ClockSource │   │
-│  │  (abstract) │  │ (abstract) │  │ (abstract)  │   │
-│  └──────┬──────┘  └─────┬──────┘  └─────────────┘   │
-│         │               │          ┌─────────────┐   │
-│  Timeline · Pattern     │          │  SpscQueue  │   │
-│  Performance · custom   │          │  (internal) │   │
-│                         │          └─────────────┘   │
-├─────────────────────────┴────────────────────────────┤
-│   MIDI (libremidi)  ·  OSC · CV · custom sinks ...   │
-│   SMF (midifile)    ·  Link (optional, GPL)          │
-└──────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                      Your Application                        │
+│             (any language, any UI framework)                 │
+├──────────────────────────────────────────────────────────────┤
+│                    C API  —  omega.h                         │
+│          Stable ABI. Bindable from any language.             │
+├──────────────────────────────────────────────────────────────┤
+│                        C++ Core                              │
+│                                                              │
+│  ┌─────────┐   ┌──────────────────────────────────────────┐ │
+│  │ Engine  │   │              Session Data                │ │
+│  │process()│   │  PatternLibrary  · TempoMap              │ │
+│  └────┬────┘   │  TimeSignatureMap · SmpteConfig          │ │
+│       │        │  SinkRegistry    · EventSourceRegistry   │ │
+│       │        │  EventInputRegistry                      │ │
+│       │        │  ModulationBus   · PerformanceContext    │ │
+│       │        └──────────────────────────────────────────┘ │
+│       │                                                      │
+│  ┌────▼────────────┐  ┌────────────┐  ┌─────────────────┐   │
+│  │  EventSource    │  │ OutputSink │  │  ClockSource    │   │
+│  │  (abstract)     │  │ (abstract) │  │  (abstract)     │   │
+│  └──────┬──────────┘  └────────────┘  └─────────────────┘   │
+│         │              ┌────────────┐  ┌─────────────────┐   │
+│  Timeline · Pattern    │ EventInput │  │   SpscQueue     │   │
+│  Performance · custom  │ (abstract) │  │   (internal)    │   │
+│  TransformSource       └────────────┘  └─────────────────┘   │
+│                              │                               │
+│                       InputBus (per cycle)                   │
+├──────────────────────────────────────────────────────────────┤
+│   MIDI (libremidi)  ·  OSC · CV · custom sinks/inputs        │
+│   SMF (midifile)    ·  Link (optional, GPL)                  │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ## Design Documents
@@ -52,6 +53,7 @@ Start here if you're new to the codebase:
 10. [EventSource Abstraction](design/10-event-source-abstraction.md) — pluggable playback modes via EventSource; new mode catalogue
 11. [Orchestration Layer](design/11-orchestration-layer.md) — EventInput, TransformSource routing, ModulationBus, PerformanceContext, chasing
 12. [Library Foundation](design/12-library-foundation.md) — build system, versioning, ABI policy, CI quality gates, release process, header conventions
+13. [Time Signature Support](design/13-time-signature.md) — TimeSignatureMap, MeterCursor, SmpteConverter, PositionConverter, OMEGA_CUE_BAR, freeform mode
 
 ## Key Decisions at a Glance
 
@@ -71,6 +73,10 @@ Start here if you're new to the codebase:
 | Source routing | TransformSource composition (no graph registry) | [11](design/11-orchestration-layer.md) |
 | Param modulation | ModulationBus (float channels, updated each cycle) | [11](design/11-orchestration-layer.md) |
 | Shared context | PerformanceContext (scale, chord, groove, chaos) | [11](design/11-orchestration-layer.md) |
+| Time signature | TimeSignatureMap (empty = freeform) | [13](design/13-time-signature.md) |
+| Bar/beat navigation | MeterCursor (non-realtime) | [13](design/13-time-signature.md) |
+| SMPTE timecode | SmpteConverter + SmpteConfig (optional) | [13](design/13-time-signature.md) |
+| Coordinate interface | PositionConverter base class | [13](design/13-time-signature.md) |
 | MIDI I/O | libremidi (MIT) | [09](design/09-prior-art.md) |
 | SMF parsing | midifile/Stanford (BSD) | [09](design/09-prior-art.md) |
 | Native format | JSON (v1) | [06](design/06-session-container.md) |

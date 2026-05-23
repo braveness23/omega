@@ -2,9 +2,9 @@
 
 ## Status
 
-**Accepted.** Implementation target: after M4 (Orchestration Layer), before M5 (Platform
-Integrations). Tagged `v0.3.5-alpha`. See the [Milestone Placement](#milestone-placement-m45)
-section for sprint breakdown.
+**Implemented in v0.4.0** (sprints 4.5.1–4.5.3, released 2026-05-23). These sprints were executed
+after M4.4 and included in the same v0.4.0 release. See the
+[Milestone Placement](#milestone-placement-m45) section for the original sprint breakdown.
 
 ---
 
@@ -575,7 +575,7 @@ This work slots between M4 (Orchestration Layer) and M5 (Platform Integrations) 
 - M5 Sprint 5.2/5.3 must be extended to handle `TimeSignatureMap`; those sprints should read this
   document before implementation
 
-Proposed tag: `v0.3.5-alpha`
+Released as part of `v0.4.0` (2026-05-23).
 
 ### Sprint 4.5.1 — `TimeSignatureMap` + `MeterCursor`
 

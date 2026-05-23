@@ -1,6 +1,6 @@
 # Design Proposal: Orchestration Layer
 
-**Status**: Accepted. All affected design documents have been updated to reflect this design.
+**Status**: Implemented in v0.4.0. All affected design documents have been updated to reflect this design.
 
 This document proposes four complementary additions that together allow Omega to orchestrate virtually any sequencer architecture: **EventInput**, **source routing via TransformSource composition**, **ModulationBus**, and **PerformanceContext**. As a corollary, these additions also close the **note and parameter chasing** gap identified separately.
 

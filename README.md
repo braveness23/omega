@@ -8,7 +8,7 @@ A C++ sequencing engine and MIDI library. The foundation for building serious mu
 
 Omega is a library, not an application. It handles timing, event scheduling, multi-track and pattern sequencing, and live performance control — with no opinion about what the interface looks like or what protocols it speaks.
 
-**Current status**: Design phase. No implementation yet. Design documents and infrastructure are complete.
+**Current status**: Active development — M4 complete (v0.4.0). M5 (MIDI I/O, SMF import/export) in progress. See [docs/STATUS.md](docs/STATUS.md).
 
 ---
 

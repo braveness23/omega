@@ -10,13 +10,13 @@ Sprint breakdowns are sized for 1–3 focused coding sessions each.
 
 | Milestone | Tag | Description |
 |---|---|---|
-| M0 | — | Infrastructure complete (done) |
-| M1 | — | Core engine builds and passes first tests (done) |
-| M2 | `v0.1.0-alpha` | Single-track playback through C API |
-| M3 | `v0.2.0-alpha` | All three built-in sources working |
-| M4 | `v0.3.0-alpha` | Orchestration layer (inputs, modulation, perf context) |
-| M5 | `v0.4.0-alpha` | Platform integrations (real MIDI I/O, SMF import/export) |
-| M6 | `v0.5.0-beta` | Polish, coverage, valgrind-clean — release candidate |
+| M0 | — | Infrastructure complete (done 2026-05-20) |
+| M1 | `v0.1.0` | Core engine builds and passes first tests (done 2026-05-20) |
+| M2 | `v0.2.0` | Single-track playback through C API (done 2026-05-21) |
+| M3 | `v0.3.0` | All three built-in sources working (done 2026-05-22) |
+| M4 | `v0.4.0` | Orchestration layer + time signatures, SMPTE, CUE_BAR (done 2026-05-23) |
+| M5 | `v0.5.0-alpha` | Platform integrations (real MIDI I/O, SMF import/export) |
+| M6 | `v0.6.0-beta` | Polish, coverage, valgrind-clean — release candidate |
 | v1.0.0 | `v1.0.0` | ABI-stable public release |
 
 ---
@@ -39,7 +39,7 @@ Everything needed to write code without CI friction. Completed 2026-05-20.
 
 ---
 
-## M1 — Core Engine (DONE)
+## M1 — Core Engine (DONE — v0.1.0)
 
 Build the lock-free infrastructure and data types. No playback yet — just the skeleton that
 `engine.process()` will run on. Completed 2026-05-20.
@@ -181,7 +181,7 @@ public:
 
 ---
 
-## M2 — First Playback
+## M2 — First Playback (DONE — v0.2.0)
 
 Single-track linear playback through the C API. The milestone is: add a note to a track, press
 play, and the note fires at the right tick via a `CapturingSink`. No real MIDI output yet.
@@ -296,11 +296,11 @@ omega_event_t  omega_make_cc(...);
 - `omega_engine_destroy()` with NULL is a no-op (no crash)
 - All CI jobs pass including the install smoke test job
 
-**Milestone tag: `v0.1.0-alpha`** — the library builds, installs, and can play events.
+**Milestone tag: `v0.2.0`** — the library builds, installs, and can play events. *(Released 2026-05-21)*
 
 ---
 
-## M3 — All Three Built-in Sources
+## M3 — All Three Built-in Sources (DONE — v0.3.0)
 
 Add `SongArrangementSource` and `PerformanceSource`. After this milestone, all three playback
 modes from the design documents are functional.
@@ -401,15 +401,19 @@ omega_status_t omega_perf_set_velocity_scale(omega_engine_t, omega_slot_id_t, ui
 omega_status_t omega_perf_set_random_bias(omega_engine_t, omega_slot_id_t, uint8_t);
 ```
 
-**Milestone tag: `v0.2.0-alpha`** — all three playback sources functional, tested, and
-accessible via C API.
+**Milestone tag: `v0.3.0`** — all three playback sources functional, tested, and
+accessible via C API. *(Released 2026-05-22)*
 
 ---
 
-## M4 — Orchestration Layer
+## M4 — Orchestration Layer (DONE — v0.4.0)
 
 EventInput, InputBus, ModulationBus, PerformanceContext, TransformSource, and custom source/input
 registration. After this milestone, the extension API is complete.
+
+**M4.5** (included in v0.4.0): `TimeSignatureMap`, `MeterCursor`, `SmpteConverter`,
+`PositionConverter`, and `OMEGA_CUE_BAR` — see [docs/design/13-time-signature.md](design/13-time-signature.md)
+for the full spec and sprint breakdown.
 
 ### Sprint 4.1 — EventInput + InputBus
 
@@ -549,7 +553,7 @@ three priority buckets. Custom sources are assigned a priority at registration t
 - `omega_engine_remove_source()` followed immediately by `process()` — source is not called (TSan clean)
 - `MockEventSource` (public test utility) primed with events; all events are dispatched at correct ticks
 
-**Milestone tag: `v0.3.0-alpha`** — full extension API functional.
+**Milestone tag: `v0.4.0`** — full extension API functional. *(Released 2026-05-23)*
 
 ---
 
@@ -643,7 +647,7 @@ public:
 - `~OmegaTimer()` joins cleanly; no hung threads (verified with `valgrind --tool=helgrind`)
 - TSan job passes with OmegaTimer + mutation thread doing `enqueue()` concurrently
 
-**Milestone tag: `v0.4.0-alpha`** — real MIDI I/O and SMF import/export working.
+**Milestone tag: `v0.5.0-alpha`** — real MIDI I/O and SMF import/export working.
 
 ---
 
@@ -711,7 +715,7 @@ gaps. Focus on:
 - All four benchmarks run in CI and are uploaded as artifacts
 - `bench.process_cycle` < 5 µs on a modern desktop (documented as informational, not a hard gate)
 
-**Milestone tag: `v0.5.0-beta`**
+**Milestone tag: `v0.6.0-beta`**
 
 ---
 
@@ -735,7 +739,7 @@ gaps. Focus on:
 **Documentation:**
 - [ ] `docs/migration/v0-to-v1.md` finalized (no breaking changes since ABI starts fresh)
 - [ ] README reflects current API with working quick-start
-- [ ] All design docs updated to say "Implemented in v1.0.0" where applicable
+- [ ] All design docs updated to reflect their implementation version
 
 **Release:**
 - [ ] Tag `v1.0.0` on main; push tag
@@ -768,19 +772,21 @@ Built-in sources: `TimelineSource` and `SongArrangementSource` are Priority 2.
 ## Appendix: Sprint Dependency Graph
 
 ```
-M1.1 (types) → M1.2 (SPSC) → M1.3 (commands) → M1.5 (engine)
+M1.1 (types) → M1.2 (SPSC) → M1.3 (commands) → M1.5 (engine) → v0.1.0 ✓
                                                     ↑
 M1.4 (TempoMap) ───────────────────────────────────┘
 
-M2.1 (clocks) → M2.2 (sinks) → M2.3 (timeline) → M2.4 (C API)  → v0.1.0-alpha
+M2.1 (clocks) → M2.2 (sinks) → M2.3 (timeline) → M2.4 (C API) → v0.2.0 ✓
                                                     ↓
-M3.1 (patterns) → M3.2 (song) ─────────────────────→ M3.3 (perf) → v0.2.0-alpha
+M3.1 (patterns) → M3.2 (song) → M3.3 (perf) ──────────────────→ v0.3.0 ✓
                                                     ↓
-M4.1 (inputs) → M4.2 (modbuf) → M4.3 (perfctx) → M4.4 (custom) → v0.3.0-alpha
+M4.1 (inputs) → M4.2 (modbuf) → M4.3 (perfctx) → M4.4 (custom)
                                                     ↓
-M5.1 (MIDI I/O) → M5.2 (import) → M5.3 (export) → M5.4 (timer) → v0.4.0-alpha
+M4.5.1 (timesig) → M4.5.2 (smpte) → M4.5.3 (C API+CUE_BAR) ──→ v0.4.0 ✓
                                                     ↓
-M6.1–6.5 (polish) ──────────────────────────────────────────────→ v0.5.0-beta → v1.0.0
+M5.1 (MIDI I/O) → M5.2 (import) → M5.3 (export) → M5.4 (timer) → v0.5.0-alpha
+                                                    ↓
+M6.1–6.5 (polish) ──────────────────────────────────────────────→ v0.6.0-beta → v1.0.0
 ```
 
 Each sprint in the same milestone can be worked in parallel if two sessions are available,
