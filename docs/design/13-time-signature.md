@@ -2,7 +2,7 @@
 
 ## Status
 
-**Proposed.** Implementation target: after M4 (Orchestration Layer), before M5 (Platform
+**Accepted.** Implementation target: after M4 (Orchestration Layer), before M5 (Platform
 Integrations). Tagged `v0.3.5-alpha`. See the [Milestone Placement](#milestone-placement-m45)
 section for sprint breakdown.
 

@@ -135,7 +135,7 @@ This keeps patterns phase-coherent with the global grid. Two slots cued at the s
 
 **Free start** (opt-in): `start_tick = current_tick`. The pattern starts at phase 0 immediately regardless of global position. Use for slots that don't need to be grid-aligned.
 
-The cue mode enum: `OMEGA_CUE_AT_BOUNDARY` uses global alignment. `OMEGA_CUE_QUANTIZED` snaps to the nearest beat. `OMEGA_CUE_IMMEDIATE` sets `start_tick = current_tick`.
+The cue mode enum: `OMEGA_CUE_AT_BOUNDARY` uses global alignment. `OMEGA_CUE_QUANTIZED` snaps to the nearest beat. `OMEGA_CUE_IMMEDIATE` sets `start_tick = current_tick`. `OMEGA_CUE_BAR` waits for the next bar boundary as defined by `TimeSignatureMap`; in freeform sessions (no meter defined) it degrades silently to `OMEGA_CUE_AT_BOUNDARY`. `OMEGA_CUE_BAR` boundary calculation is done inline in `PerformanceSource::advance()` using a direct read of `TimeSignatureMap` — no `MeterCursor` allocation on the timing thread.
 
 ---
 
