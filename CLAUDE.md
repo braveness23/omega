@@ -6,7 +6,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-Omega is in **design phase** — no implementation exists yet. The `src/` directory is empty, `include/omega/` has stub headers (`omega.h`, `export.h`) with documentation conventions but no implementations, and all CMake library targets are `INTERFACE` stubs. The design documents in `docs/design/` are the authoritative source of truth.
+Omega is in active development, currently targeting **M5 — Platform Integrations** (real MIDI I/O, SMF import/export).
+
+**Completed through v0.4.0:**
+- M0: Infrastructure (build system, CI, presets, clang-tidy, smoke test)
+- M1: Core engine (SpscQueue, TempoMap, Engine::process(), 36 tests)
+- M2: First playback via C API (ClockSource, OutputSink, TimelineSource, C API wiring)
+- M3: All three built-in sources (PatternLibrary, SongArrangementSource, PerformanceSource — 135 tests)
+- M4: Full orchestration layer — EventInput/InputBus, ModulationBus, PerformanceContext, TransformSource, custom source/input registration, plus M4.5: TimeSignatureMap, MeterCursor, SmpteConverter, PositionConverter, OMEGA_CUE_BAR
+
+The `src/` directory contains the full implementation. `include/omega/` contains all public headers. `omega_core` is a STATIC library. See `docs/ROADMAP.md` and `docs/STATUS.md` for the full milestone history.
 
 ---
 

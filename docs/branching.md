@@ -49,12 +49,12 @@ At v1.0.0, introduce `release/1.x`:
 
 | Milestone | `CMakeLists.txt VERSION` during dev | Tag on completion |
 |---|---|---|
-| M1 done, M2 in progress | `0.1.0` | — |
-| M2 done | `0.1.0` → tag → bump to `0.2.0` | `v0.1.0-alpha` |
-| M3 done | `0.2.0` → tag → bump to `0.3.0` | `v0.2.0-alpha` |
-| M4 done | `0.3.0` → tag → bump to `0.4.0` | `v0.3.0-alpha` |
-| M5 done | `0.4.0` → tag → bump to `0.5.0` | `v0.4.0-alpha` |
-| M6 done | `0.5.0` → tag → bump to `1.0.0` | `v0.5.0-beta` |
+| M1 done | `0.1.0` → tag → bump to `0.2.0` | `v0.1.0` ✓ |
+| M2 done | `0.2.0` → tag → bump to `0.3.0` | `v0.2.0` ✓ |
+| M3 done | `0.3.0` → tag → bump to `0.4.0` | `v0.3.0` ✓ |
+| M4+M4.5 done | `0.4.0` → tag → bump to `0.5.0` | `v0.4.0` ✓ |
+| M5 done | `0.5.0` → tag → bump to `0.6.0` | `v0.5.0-alpha` |
+| M6 done | `0.6.0` → tag → bump to `1.0.0` | `v0.6.0-beta` |
 | Stable release | `1.0.0` | `v1.0.0` |
 
 `CMakeLists.txt VERSION` always tracks the **next intended release**. It matches the tag at the
@@ -82,8 +82,8 @@ After v1.0.0 it only bumps on ABI-breaking changes, per the policy in
 Tags are always **annotated** so the message appears in `git describe` and GitHub Releases:
 
 ```bash
-git tag -a v0.1.0-alpha -m "M2 complete — single-track playback through C API"
-git push origin v0.1.0-alpha
+git tag -a v0.5.0-alpha -m "M5 complete — real MIDI I/O and SMF import/export"
+git push origin v0.5.0-alpha
 ```
 
 The CI workflow fires on `v*` tags, so the full build matrix runs on the exact tagged commit

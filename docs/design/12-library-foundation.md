@@ -1,6 +1,6 @@
 # Design: Library Foundation
 
-**Status**: Proposed.
+**Status**: Implemented in v0.1.0 (infrastructure) and v0.4.0 (ABI and release process scaffolding).
 
 This document defines the non-implementation infrastructure that a permanent library requires before any code is written. Every item here is a gate, not a suggestion. A library missing any of these will accumulate technical debt that compounds with every release.
 
