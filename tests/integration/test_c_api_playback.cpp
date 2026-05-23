@@ -18,7 +18,7 @@ TEST_CASE("C API: engine lifecycle creates and destroys cleanly")
     omega_engine_destroy(e);
 }
 
-TEST_CASE("C API: null handle safety — all functions tolerate NULL")
+TEST_CASE("C API: null handle safety - all functions tolerate NULL")
 {
     omega_track_id_t tid{};
     REQUIRE(omega_engine_add_sink(nullptr, nullptr) == OMEGA_ERR_INVALID);
