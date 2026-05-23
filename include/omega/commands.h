@@ -7,6 +7,11 @@
 
 namespace omega
 {
+class EventInput;  // forward declaration for AddInputCmd / RemoveInputCmd
+}
+
+namespace omega
+{
 
 struct AddEventCmd
 {
@@ -96,6 +101,16 @@ struct PerfSetRandomBiasCmd
     uint8_t bias;
 };
 
+struct AddInputCmd
+{
+    EventInput* input;  // non-owning
+};
+
+struct RemoveInputCmd
+{
+    EventInput* input;  // non-owning
+};
+
 using Command = std::variant<AddEventCmd,
                              DeleteEventCmd,
                              SetTempoCmd,
@@ -110,7 +125,9 @@ using Command = std::variant<AddEventCmd,
                              PerfStopAllCmd,
                              PerfSetTransposeCmd,
                              PerfSetVelocityScaleCmd,
-                             PerfSetRandomBiasCmd>;
+                             PerfSetRandomBiasCmd,
+                             AddInputCmd,
+                             RemoveInputCmd>;
 
 static_assert(sizeof(Command) <= 64, "Command must fit within 64 bytes");
 

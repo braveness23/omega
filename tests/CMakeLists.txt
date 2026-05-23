@@ -10,6 +10,7 @@ add_executable(omega_tests
     unit/test_pattern_library.cpp
     unit/test_song_arrangement.cpp
     unit/test_performance_source.cpp
+    unit/test_event_input.cpp
 )
 
 target_link_libraries(omega_tests

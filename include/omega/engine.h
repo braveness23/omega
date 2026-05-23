@@ -3,7 +3,9 @@
 #include <omega/clock.h>
 #include <omega/commands.h>
 #include <omega/detail/spsc_queue.h>
+#include <omega/event_input.h>
 #include <omega/event_source.h>
+#include <omega/input_bus.h>
 #include <omega/omega.h>
 #include <omega/pattern_library.h>
 #include <omega/perf_slot.h>
@@ -246,6 +248,42 @@ public:
      */
     omega_status_t perf_set_random_bias(SlotId slot, uint8_t bias);
 
+    /* ── Inputs ──────────────────────────────────────────────────────────────── */
+
+    /*
+     * Enqueues a command to register an EventInput. On the next process() call,
+     * the input is added to the polling list.
+     *
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_INVALID    — input is NULL.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t add_input(EventInput* input);
+
+    /*
+     * Enqueues a command to deregister an EventInput. On the next process() call,
+     * the input is removed from the polling list.
+     *
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_INVALID    — input is NULL.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t remove_input(EventInput* input);
+
+    /*
+     * Returns the cumulative number of events dropped due to InputBus overflow.
+     * Never resets; monotonically increasing.
+     *
+     * Thread: Any thread.
+     */
+    [[nodiscard]] uint32_t input_overflow_count() const noexcept;
+
     /* ── Command queue ────────────────────────────────────────────────────── */
 
     /*
@@ -302,6 +340,8 @@ private:
     void apply(const PerfSetTransposeCmd& cmd);
     void apply(const PerfSetVelocityScaleCmd& cmd);
     void apply(const PerfSetRandomBiasCmd& cmd);
+    void apply(const AddInputCmd& cmd);
+    void apply(const RemoveInputCmd& cmd);
 
     InternalClock internal_clock_;
     ClockSource* clock_;
@@ -313,6 +353,9 @@ private:
     TimelineSource timeline_;
     SongArrangementSource song_{patterns_};
     PerformanceSource perf_{patterns_};
+
+    std::vector<EventInput*> inputs_;  // non-owning; modified only from timing thread via queue
+    InputBus input_bus_;
 
     detail::SpscQueue<Command, 4096> queue_;
     TempoMap tempo_map_;

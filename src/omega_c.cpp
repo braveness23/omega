@@ -1,9 +1,12 @@
 #include <omega/commands.h>
 #include <omega/engine.h>
+#include <omega/event_input.h>
 #include <omega/omega.h>
 #include <omega/perf_slot.h>
 #include <omega/sink.h>
 #include <omega/types.h>
+
+#include <new>
 
 // omega_engine_s is the heap-allocated owner of the C++ Engine.
 // omega_engine_t* (opaque to C callers) points to one of these.
@@ -17,6 +20,29 @@ struct omega_engine_s  // NOLINT(readability-identifier-naming)
 // C++ callers cast OutputSink* to omega_sink_t* and pass it to the C API.
 struct omega_sink_s  // NOLINT(readability-identifier-naming)
 {};
+
+// omega_input_t is the heap-allocated owner of a CEventInput.
+// omega_input_dispatcher_t is an opaque alias for omega::InputDispatcher.
+struct omega_input_dispatcher_s  // NOLINT(readability-identifier-naming)
+{};
+
+class CEventInput : public omega::EventInput
+{
+public:
+    CEventInput(omega_input_poll_fn_t poll_fn, void* userdata) noexcept
+        : poll_fn_{poll_fn}, userdata_{userdata}
+    {}
+
+    void poll(omega::InputDispatcher& dispatcher) override
+    {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        poll_fn_(reinterpret_cast<omega_input_dispatcher_t*>(&dispatcher), userdata_);
+    }
+
+private:
+    omega_input_poll_fn_t poll_fn_;
+    void* userdata_;
+};
 
 extern "C" {
 
@@ -252,6 +278,66 @@ omega_status_t omega_perf_set_random_bias(omega_engine_t* eng, omega_slot_id_t s
         return OMEGA_ERR_INVALID;
     }
     return eng->engine.perf_set_random_bias(slot, bias);
+}
+
+omega_input_t* omega_input_create(const omega_input_desc_t* desc)
+{
+    if (desc == nullptr || desc->poll_fn == nullptr)
+    {
+        return nullptr;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    auto* p = new (std::nothrow) CEventInput(desc->poll_fn, desc->userdata);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    return reinterpret_cast<omega_input_t*>(p);
+}
+
+void omega_input_destroy(omega_input_t* input)
+{
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory,cppcoreguidelines-pro-type-reinterpret-cast)
+    delete reinterpret_cast<CEventInput*>(input);
+}
+
+omega_status_t omega_engine_add_input(omega_engine_t* eng, omega_input_t* input)
+{
+    if (eng == nullptr || input == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    return eng->engine.add_input(reinterpret_cast<omega::EventInput*>(input));
+}
+
+omega_status_t omega_engine_remove_input(omega_engine_t* eng, omega_input_t* input)
+{
+    if (eng == nullptr || input == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    return eng->engine.remove_input(reinterpret_cast<omega::EventInput*>(input));
+}
+
+uint32_t omega_input_overflow_count(const omega_engine_t* eng)
+{
+    if (eng == nullptr)
+    {
+        return 0;
+    }
+    return eng->engine.input_overflow_count();
+}
+
+void omega_deliver(omega_input_dispatcher_t* dispatcher, const omega_event_t* ev)
+{
+    if (dispatcher == nullptr || ev == nullptr)
+    {
+        return;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    reinterpret_cast<omega::InputDispatcher*>(dispatcher)
+        ->deliver(
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+            *reinterpret_cast<const omega::Event*>(ev));
 }
 
 }  // extern "C"

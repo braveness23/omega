@@ -9,6 +9,16 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **M4.1 — EventInput + InputBus** (sprint 4.1):
+  - `EventInput` abstract base — poll-based incoming event source (MIDI, OSC, CV); called each cycle before `EventSource::advance()` (sprint 4.1)
+  - `InputDispatcher` — per-cycle helper passed to `EventInput::poll()`; delivers events into the `InputBus` (sprint 4.1)
+  - `InputBus` — fixed-capacity (256 events) per-cycle event buffer; overflow increments a cumulative counter readable via `omega_input_overflow_count()` (sprint 4.1)
+  - `MockEventInput` test utility — primes events to deliver on the next `poll()` call; part of the public test API in `include/omega/test/` (sprint 4.1)
+  - `ProcessContext.input_bus` — pointer to the cycle's InputBus; set before every `advance()` call (sprint 4.1)
+  - C API: `omega_input_create/destroy`, `omega_engine_add_input`, `omega_engine_remove_input`, `omega_input_overflow_count`, `omega_deliver` (sprint 4.1)
+  - `AddInputCmd` / `RemoveInputCmd` — new `Command` variants; input list modified on timing thread via SPSC queue (sprint 4.1)
+
 <!-- New releases go above this line in the format:
 ## [0.4.0] - YYYY-MM-DD
 ### Added

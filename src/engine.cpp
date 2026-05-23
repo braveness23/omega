@@ -119,6 +119,29 @@ omega_status_t Engine::perf_set_random_bias(SlotId slot, uint8_t bias)
     return enqueue(PerfSetRandomBiasCmd{slot, bias});
 }
 
+omega_status_t Engine::add_input(EventInput* input)
+{
+    if (input == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return enqueue(AddInputCmd{input});
+}
+
+omega_status_t Engine::remove_input(EventInput* input)
+{
+    if (input == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return enqueue(RemoveInputCmd{input});
+}
+
+uint32_t Engine::input_overflow_count() const noexcept
+{
+    return input_bus_.overflow_count();
+}
+
 omega_status_t Engine::enqueue(Command cmd)
 {
     if (queue_.push(cmd))
@@ -169,6 +192,7 @@ void Engine::apply(const TransportCmd& cmd)
                 session_start_ns_ = clock_->now_ns() - pos;
             }
             ProcessContext ctx{};
+            ctx.input_bus = &input_bus_;
             EventDispatcher dispatcher{sinks_};
             timeline_.on_locate(cmd.locate_tick, dispatcher, ctx);
             song_.on_locate(cmd.locate_tick, dispatcher, ctx);
@@ -227,6 +251,23 @@ void Engine::apply(const PerfSetVelocityScaleCmd& cmd)
 void Engine::apply(const PerfSetRandomBiasCmd& cmd)
 {
     perf_.set_random_bias(cmd.slot, cmd.bias);
+}
+
+void Engine::apply(const AddInputCmd& cmd)
+{
+    if (cmd.input != nullptr)
+    {
+        inputs_.push_back(cmd.input);
+    }
+}
+
+void Engine::apply(const RemoveInputCmd& cmd)
+{
+    auto it = std::find(inputs_.begin(), inputs_.end(), cmd.input);
+    if (it != inputs_.end())
+    {
+        inputs_.erase(it);
+    }
 }
 
 void Engine::process()
@@ -290,6 +331,14 @@ void Engine::process()
                 {
                     apply(c);
                 }
+                else if constexpr (std::is_same_v<T, AddInputCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, RemoveInputCmd>)
+                {
+                    apply(c);
+                }
             },
             cmd);
     }
@@ -299,11 +348,21 @@ void Engine::process()
         return;
     }
 
+    input_bus_.clear();
+    {
+        InputDispatcher input_dispatcher{input_bus_};
+        for (auto* input : inputs_)
+        {
+            input->poll(input_dispatcher);
+        }
+    }
+
     uint64_t now = clock_->now_ns();
     uint64_t position = now - session_start_ns_;
     uint64_t to_tick = tempo_map_.ns_to_ticks(position);
 
     ProcessContext ctx{};
+    ctx.input_bus = &input_bus_;
     EventDispatcher dispatcher{sinks_};
     timeline_.advance(to_tick, dispatcher, ctx);
     song_.advance(to_tick, dispatcher, ctx);

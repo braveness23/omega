@@ -484,6 +484,82 @@ OMEGA_API omega_status_t omega_perf_set_random_bias(omega_engine_t* e,
                                                     omega_slot_id_t slot,
                                                     uint8_t bias);
 
+/* ── Inputs ───────────────────────────────────────────────────────────────── */
+
+typedef struct omega_input_s omega_input_t;
+typedef struct omega_input_dispatcher_s omega_input_dispatcher_t;
+
+typedef void (*omega_input_poll_fn_t)(omega_input_dispatcher_t* dispatcher, void* userdata);
+
+typedef struct
+{
+    omega_input_poll_fn_t poll_fn;
+    void* userdata;
+} omega_input_desc_t;
+
+/*
+ * Creates a callback-based EventInput from a poll function and user data.
+ *
+ * Thread: Any thread, before passing to omega_engine_add_input().
+ *
+ * Returns: caller-owned handle; NULL if desc or poll_fn is NULL, or on
+ * allocation failure. Call omega_input_destroy() when done.
+ */
+OMEGA_API omega_input_t* omega_input_create(const omega_input_desc_t* desc);
+
+/*
+ * Destroys an EventInput handle. Must not be called while the input is still
+ * registered with an engine.
+ *
+ * Thread: Any thread, after omega_engine_remove_input() has been processed.
+ */
+OMEGA_API void omega_input_destroy(omega_input_t* input);
+
+/*
+ * Enqueues a command to register an EventInput with the engine. The input is
+ * added to the polling list on the next process() call. The engine holds a
+ * non-owning reference; the input must outlive the engine (or until removed).
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e or input is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_engine_add_input(omega_engine_t* e, omega_input_t* input);
+
+/*
+ * Enqueues a command to deregister an EventInput. The input is removed from
+ * the polling list on the next process() call.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e or input is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_engine_remove_input(omega_engine_t* e, omega_input_t* input);
+
+/*
+ * Returns the cumulative number of events dropped since engine creation due
+ * to InputBus capacity overflow (capacity is 256 events per cycle).
+ *
+ * Thread: Any thread.
+ *
+ * Returns: overflow event count; 0 if e is NULL.
+ */
+OMEGA_API uint32_t omega_input_overflow_count(const omega_engine_t* e);
+
+/*
+ * Delivers one event into the InputBus from within an omega_input_poll_fn_t
+ * callback.
+ *
+ * Thread: Timing thread only (called from within poll_fn).
+ */
+OMEGA_API void omega_deliver(omega_input_dispatcher_t* dispatcher, const omega_event_t* ev);
+
 #ifdef __cplusplus
 }
 #endif
