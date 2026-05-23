@@ -9,6 +9,12 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+<!-- New releases go above this line -->
+
+---
+
+## [0.4.0] - 2026-05-23
+
 ### Added
 - **M4.5 — TimeSignatureMap, SmpteConverter, OMEGA_CUE_BAR** (sprints 4.5.1–4.5.3):
   - `TimeSignatureMap` — sorted list of `TimeSigPoint{tick, numerator, denominator}`; empty = freeform mode; `insert()` validates denominator (power-of-two 1–32) and replaces any existing point at the same tick; `remove()`; `at()` returns the governing time signature at any tick (sprint 4.5.1)
@@ -57,16 +63,6 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - MSVC: initialize `bits_to_float` / `float_to_bits` locals before `memcpy` — fixes MSVC `/RTCu` crash in ModulationBus TSan test
 - MSVC: replace em dash (`—`) with ASCII hyphen in `TEST_CASE` names — fixes CTest filter encoding failure on Windows (`test_modulation_bus`, `test_custom_source`, `test_smpte_converter`)
 - clang-tidy: split comma-separated `uint64_t` declarations in `test_time_signature_map.cpp` (`readability-isolate-declaration`)
-
-<!-- New releases go above this line in the format:
-## [0.4.0] - YYYY-MM-DD
-### Added
-### Changed
-### Deprecated
-### Removed
-### Fixed
-### Security
--->
 
 ---
 

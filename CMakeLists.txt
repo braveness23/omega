@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(omega
-    VERSION 0.3.0
+    VERSION 0.4.0
     DESCRIPTION "A C++ sequencing engine and MIDI library"
     HOMEPAGE_URL "https://github.com/braveness23/omega"
     LANGUAGES CXX C
