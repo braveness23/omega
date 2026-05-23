@@ -76,7 +76,9 @@ TEST_CASE("Engine enqueue returns OMEGA_ERR_QUEUE_FULL at capacity")
     {
         last = e.enqueue(SetTempoCmd{120'000u});
         if (last != OMEGA_OK)
+        {
             break;
+        }
     }
     REQUIRE(last == OMEGA_ERR_QUEUE_FULL);
 }
@@ -92,7 +94,9 @@ TEST_CASE("Engine process() and enqueue() are TSan-clean from two threads", "[ts
 
     std::thread timing_thread([&]() {
         for (int i = 0; i < N_CYCLES; ++i)
+        {
             e.process();
+        }
         timing_done.store(true, std::memory_order_release);
     });
 

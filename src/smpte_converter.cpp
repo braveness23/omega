@@ -73,7 +73,7 @@ uint64_t SmpteConverter::frame_to_ns(uint64_t frame) const noexcept
 #endif
     }
     // ceil(frame * 1e9 / fps)
-    const uint64_t fps = static_cast<uint64_t>(config_.fps);
+    auto fps = static_cast<uint64_t>(config_.fps);
     return (frame * 1'000'000'000ULL + fps - 1u) / fps;
 }
 
@@ -117,8 +117,8 @@ void SmpteConverter::frame_to_smpte_df(uint64_t frame, SmpteTime& out) noexcept
     uint64_t r = frame % k_frames_per_10min;
 
     uint64_t total_minutes = groups_of_10 * 10u;
-    uint32_t secs;
-    uint8_t f;
+    uint32_t secs{};
+    uint8_t f{};
 
     if (r < 1800u)
     {
@@ -198,7 +198,7 @@ omega_status_t SmpteConverter::smpte_to_tick(const SmpteTime& t, uint64_t& out) 
     }
 
     uint64_t frame = 0;
-    omega_status_t s;
+    omega_status_t s = OMEGA_OK;
     if (config_.drop_frame)
     {
         s = smpte_df_to_frame(t, frame);

@@ -138,7 +138,7 @@ omega_status_t MeterCursor::beat_pos_to_tick(const BeatPosition& pos, uint64_t& 
         uint64_t tpbeat = ticks_per_beat_for(seg.denominator);
         bool is_last = (i + 1 >= pts.size());
 
-        uint64_t bars_in_seg;
+        uint64_t bars_in_seg = 0u;
         if (is_last)
         {
             bars_in_seg = UINT64_MAX;

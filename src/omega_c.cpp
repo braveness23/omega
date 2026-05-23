@@ -86,10 +86,11 @@ public:
                  omega::EventDispatcher& dispatcher,
                  omega::ProcessContext& ctx) override
     {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         advance_fn_(to_tick,
-                    reinterpret_cast<omega_dispatcher_t*>(&dispatcher),
-                    reinterpret_cast<omega_process_context_t*>(&ctx),  // NOLINT
+                    reinterpret_cast<omega_dispatcher_t*>(
+                        &dispatcher),  // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
+                    reinterpret_cast<omega_process_context_t*>(
+                        &ctx),  // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
                     userdata_);
     }
 

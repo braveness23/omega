@@ -9,6 +9,10 @@ struct EngineFixture
     omega_engine_t* eng{nullptr};
     EngineFixture() : eng{omega_engine_create()} {}
     ~EngineFixture() { omega_engine_destroy(eng); }
+    EngineFixture(const EngineFixture&) = delete;
+    EngineFixture& operator=(const EngineFixture&) = delete;
+    EngineFixture(EngineFixture&&) = delete;
+    EngineFixture& operator=(EngineFixture&&) = delete;
 };
 
 // ── NULL guard tests ──────────────────────────────────────────────────────────

@@ -28,7 +28,7 @@ class SpscQueue
 
     alignas(64) std::atomic<uint32_t> tail_{0}; /* write position (producer) */
     alignas(64) std::atomic<uint32_t> head_{0}; /* read position (consumer)  */
-    std::array<T, Capacity> storage_;
+    std::array<T, Capacity> storage_;           // NOLINT(cppcoreguidelines-pro-type-member-init)
 
 public:
     /*

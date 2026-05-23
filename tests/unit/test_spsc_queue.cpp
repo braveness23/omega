@@ -10,7 +10,7 @@ TEST_CASE("SpscQueue is empty on construction")
 {
     SpscQueue<int, 16> q;
     REQUIRE(q.empty());
-    REQUIRE(q.size() == 0u);
+    REQUIRE(q.size() == 0u);  // NOLINT(readability-container-size-empty)
 }
 
 TEST_CASE("SpscQueue push and pop round-trip")
@@ -47,7 +47,9 @@ TEST_CASE("SpscQueue preserves FIFO order")
 {
     SpscQueue<int, 8> q;
     for (int i = 0; i < 5; ++i)
+    {
         REQUIRE(q.push(i));
+    }
 
     for (int i = 0; i < 5; ++i)
     {
@@ -82,8 +84,9 @@ TEST_CASE("SpscQueue two-thread stress test", "[tsan]")
         for (uint32_t i = 0; i < N; ++i)
         {
             uint32_t item = i;
-            while (!q.push(std::move(item)))
-                ;
+            while (!q.push(item))
+            {
+            }
             sum_produced += i;
         }
     });

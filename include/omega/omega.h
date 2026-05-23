@@ -965,8 +965,8 @@ OMEGA_API omega_status_t omega_tick_to_beat_pos(const omega_engine_t* e,
  *   OMEGA_ERR_INVALID    — e or pos is NULL, or bar/beat is zero, or beat > numerator.
  *   OMEGA_ERR_NO_METER   — session is in freeform mode.
  */
-OMEGA_API omega_status_t omega_beat_pos_to_tick(const omega_engine_t* e,
-                                                const omega_beat_pos_t* pos,
+OMEGA_API omega_status_t omega_beat_pos_to_tick(const omega_engine_t* eng,
+                                                const omega_beat_pos_t* in,
                                                 uint64_t* out);
 
 /*
