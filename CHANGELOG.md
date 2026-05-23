@@ -10,6 +10,22 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **M4.2 — ModulationBus** (sprint 4.2):
+  - `ModulationBus` — 256-channel named float bus; `register_channel()`, `find()`, `get()`, `set()`, `snapshot()`; TSan-clean cross-thread access via `atomic<uint32_t>` bit-cast (sprint 4.2)
+  - `ProcessContext.modulation_bus` — non-owning pointer to the engine's `ModulationBus`; set before every `advance()` call (sprint 4.2)
+  - C API: `omega_mod_register`, `omega_mod_find`, `omega_mod_get`, `omega_mod_set`, `omega_mod_snapshot` (sprint 4.2)
+- **M4.3 — PerformanceContext** (sprint 4.3):
+  - `omega_perf_ctx_t` — shared musical state: scale (root + 12-bit bitmask), chord (root, type, 6 voices), global transpose (±127 semitones), global velocity (0–200), chaos (0–100), groove ID, swing, random seed (sprint 4.3)
+  - `ProcessContext.perf_ctx` — copy of the engine's `PerformanceContext` snapshotted each cycle; readable by any source via `ctx.perf_ctx` (sprint 4.3)
+  - `Engine::ctx_set_scale/chord/transpose/velocity/chaos/groove` — enqueue `SetCtx*` commands; applied atomically on next `process()` cycle (sprint 4.3)
+  - `Engine::ctx_get` — reads last-committed `omega_perf_ctx_t`; must not be called concurrently with `process()` (sprint 4.3)
+  - C API: `omega_ctx_set_scale`, `omega_ctx_set_chord`, `omega_ctx_set_transpose`, `omega_ctx_set_velocity`, `omega_ctx_set_chaos`, `omega_ctx_set_groove`, `omega_ctx_get` (sprint 4.3)
+- **M4.4 — Custom EventSource + TransformSource** (sprint 4.4):
+  - `EventSource::advance()` now receives `ProcessContext&` giving sources access to `InputBus`, `ModulationBus`, and `PerformanceContext` each cycle (sprint 4.4)
+  - `Engine::add_source(source, priority)` / `Engine::remove_source(source)` — register custom sources via SPSC command queue; insertion is sorted by priority so MODULATOR(0) → CONTEXT(1) → PLAYBACK(2) always precedes built-in sources (sprint 4.4)
+  - `TransformSource` — abstract base for composition-based event routing; wraps an upstream `EventSource`, captures its output in a 512-event stack buffer, and re-dispatches transformed events; `ChannelFilterSource` concrete implementation (sprint 4.4)
+  - `MockEventSource` test utility — primes events at specific ticks; dispatches those with `tick <= to_tick` during `advance()`; part of the public test API in `include/omega/test/` (sprint 4.4)
+  - C API: `omega_source_create/destroy`, `omega_engine_add_source`, `omega_engine_remove_source`, `omega_dispatch` (sprint 4.4)
 - **M4.1 — EventInput + InputBus** (sprint 4.1):
   - `EventInput` abstract base — poll-based incoming event source (MIDI, OSC, CV); called each cycle before `EventSource::advance()` (sprint 4.1)
   - `InputDispatcher` — per-cycle helper passed to `EventInput::poll()`; delivers events into the `InputBus` (sprint 4.1)

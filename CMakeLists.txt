@@ -111,6 +111,8 @@ add_library(omega_core STATIC
     src/pattern_library.cpp
     src/song_arrangement_source.cpp
     src/performance_source.cpp
+    src/modulation_bus.cpp
+    src/transform_source.cpp
     src/engine.cpp
 )
 add_library(omega::core ALIAS omega_core)

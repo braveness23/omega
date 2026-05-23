@@ -560,6 +560,302 @@ OMEGA_API uint32_t omega_input_overflow_count(const omega_engine_t* e);
  */
 OMEGA_API void omega_deliver(omega_input_dispatcher_t* dispatcher, const omega_event_t* ev);
 
+/* ── Modulation bus ───────────────────────────────────────────────────────── */
+
+/* Modulation channel index. OMEGA_MOD_INVALID is returned on failure. */
+typedef uint32_t omega_mod_channel_t;
+#define OMEGA_MOD_INVALID 0xFFFFFFFFu
+
+/*
+ * Registers a named modulation channel with an initial value.
+ *
+ * Thread: Mutation thread only, before playback starts.
+ *
+ * Returns: channel index on success, OMEGA_MOD_INVALID if 256 channels
+ * are already registered or e is NULL.
+ */
+OMEGA_API omega_mod_channel_t omega_mod_register(omega_engine_t* e,
+                                                 const char* name,
+                                                 float initial);
+
+/*
+ * Finds a registered channel index by name.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns: channel index, or OMEGA_MOD_INVALID if not found or e is NULL.
+ */
+OMEGA_API omega_mod_channel_t omega_mod_find(omega_engine_t* e, const char* name);
+
+/*
+ * Gets the current value of a modulation channel.
+ * Out-of-range channels return 0.0f.
+ *
+ * Thread: Timing thread only (hot path; no locking).
+ *
+ * Returns: channel value, or 0.0f if e is NULL.
+ */
+OMEGA_API float omega_mod_get(omega_engine_t* e, omega_mod_channel_t channel);
+
+/*
+ * Sets a modulation channel value.
+ * Out-of-range channels are silently ignored.
+ *
+ * Thread: Timing thread only (hot path; no locking).
+ *
+ * Returns:
+ *   OMEGA_OK          — value set.
+ *   OMEGA_ERR_INVALID — e is NULL.
+ */
+OMEGA_API omega_status_t omega_mod_set(omega_engine_t* e, omega_mod_channel_t channel, float value);
+
+/*
+ * Copies up to `count` modulation channel values into `out`.
+ * Values are read atomically; individual values may be stale by one cycle.
+ *
+ * Thread: Any thread.
+ *
+ * Returns:
+ *   OMEGA_OK          — snapshot written.
+ *   OMEGA_ERR_INVALID — e or out is NULL.
+ */
+OMEGA_API omega_status_t omega_mod_snapshot(omega_engine_t* e, float* out, uint32_t count);
+
+/* ── Performance context ──────────────────────────────────────────────────── */
+
+/* Musical scale: chromatic root (0-11) and a 12-bit semitone presence mask. */
+typedef struct
+{
+    uint8_t root;     /* 0-11: chromatic root */
+    uint8_t reserved; /* must be zero */
+    uint16_t bitmask; /* bit i set = scale degree i (0=root) is present */
+} omega_scale_t;
+
+/* Chord descriptor: root, type, and up to six voice pitches (0 = unused). */
+typedef struct
+{
+    uint8_t root;      /* 0-11 */
+    uint8_t type;      /* 0=none, 1=major, 2=minor, 3=dom7, 4=maj7, 5=min7 */
+    uint8_t voices[6]; /* MIDI note numbers (0 = unused slot) */
+} omega_chord_t;
+
+/* Global musical context snapshotted into ProcessContext each cycle. */
+typedef struct
+{
+    omega_scale_t scale;
+    omega_chord_t chord;
+    int8_t global_transpose; /* -24 to +24 semitones */
+    uint8_t global_velocity; /* 0-200, 100 = unity */
+    uint8_t chaos;           /* 0-100 */
+    uint8_t groove_id;
+    float swing; /* 0.0 = straight, 1.0 = full swing */
+    uint32_t random_seed;
+} omega_perf_ctx_t;
+
+/*
+ * Sets the active scale. Applied on the next process() cycle.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e or scale is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_ctx_set_scale(omega_engine_t* e, const omega_scale_t* scale);
+
+/*
+ * Sets the active chord. Applied on the next process() cycle.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e or chord is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_ctx_set_chord(omega_engine_t* e, const omega_chord_t* chord);
+
+/*
+ * Sets the global transpose (-24 to +24 semitones). Applied next cycle.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_ctx_set_transpose(omega_engine_t* e, int8_t semitones);
+
+/*
+ * Sets the global velocity scale (0-200, 100 = unity). Applied next cycle.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_ctx_set_velocity(omega_engine_t* e, uint8_t velocity);
+
+/*
+ * Sets the chaos level (0-100). Applied on the next process() cycle.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_ctx_set_chaos(omega_engine_t* e, uint8_t chaos);
+
+/*
+ * Sets the groove template and swing amount. Applied on the next process() cycle.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_ctx_set_groove(omega_engine_t* e, uint8_t groove_id, float swing);
+
+/*
+ * Returns a snapshot of the current performance context. Values reflect the
+ * last-committed state as of the most recent process() cycle.
+ *
+ * Thread: Mutation thread only. Must not be called concurrently with
+ * omega_engine_process().
+ *
+ * Returns:
+ *   OMEGA_OK          — ctx filled.
+ *   OMEGA_ERR_INVALID — e or ctx is NULL.
+ */
+OMEGA_API omega_status_t omega_ctx_get(omega_engine_t* e, omega_perf_ctx_t* ctx);
+
+/* ── Custom event sources ─────────────────────────────────────────────────── */
+
+typedef struct omega_source_s omega_source_t;
+typedef struct omega_dispatcher_s omega_dispatcher_t;
+typedef struct omega_process_context_s omega_process_context_t;
+
+/*
+ * Source priority buckets. Register MODULATOR (LFO, etc.) before CONTEXT
+ * (chord detector, etc.) and both before PLAYBACK sources.
+ */
+#define OMEGA_SOURCE_PRIORITY_MODULATOR 0u
+#define OMEGA_SOURCE_PRIORITY_CONTEXT 1u
+#define OMEGA_SOURCE_PRIORITY_PLAYBACK 2u
+
+/*
+ * Called from the timing thread each cycle to advance the source.
+ * Must never allocate, block, or lock.
+ */
+typedef void (*omega_source_advance_fn_t)(uint64_t to_tick,
+                                          omega_dispatcher_t* dispatcher,
+                                          omega_process_context_t* ctx,
+                                          void* userdata);
+
+typedef struct
+{
+    omega_source_advance_fn_t advance_fn; /* required; must not be NULL */
+    void* userdata;
+    uint32_t priority; /* OMEGA_SOURCE_PRIORITY_* constant */
+} omega_source_desc_t;
+
+/*
+ * Creates a callback-based EventSource from an advance function and user data.
+ *
+ * Thread: Any thread, before passing to omega_engine_add_source().
+ *
+ * Returns: caller-owned handle; NULL if desc or advance_fn is NULL, or on
+ * allocation failure. Call omega_source_destroy() when done.
+ */
+OMEGA_API omega_source_t* omega_source_create(const omega_source_desc_t* desc);
+
+/*
+ * Destroys an EventSource handle. Must not be called while still registered.
+ *
+ * Thread: Any thread, after omega_engine_remove_source() has been processed.
+ */
+OMEGA_API void omega_source_destroy(omega_source_t* source);
+
+/*
+ * Enqueues a command to register a custom EventSource. The source is added on
+ * the next process() call. The engine holds a non-owning reference; the source
+ * must outlive the engine (or until removed).
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e or source is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_engine_add_source(omega_engine_t* e, omega_source_t* source);
+
+/*
+ * Enqueues a command to deregister a custom EventSource. Removed on the next
+ * process() call.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e or source is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_engine_remove_source(omega_engine_t* e, omega_source_t* source);
+
+/*
+ * Dispatches one event to sinks from within an omega_source_advance_fn_t
+ * callback.
+ *
+ * Thread: Timing thread only (called from within advance_fn).
+ */
+OMEGA_API void omega_dispatch(omega_dispatcher_t* dispatcher, const omega_event_t* ev);
+
+/*
+ * Returns the number of InputBus events available in this cycle, from within
+ * an omega_source_advance_fn_t callback.
+ *
+ * Thread: Timing thread only (called from within advance_fn).
+ *
+ * Returns: 0 if ctx is NULL.
+ */
+OMEGA_API uint32_t omega_ctx_input_count(const omega_process_context_t* ctx);
+
+/*
+ * Returns the event at index `i` in the InputBus for this cycle. Undefined
+ * behaviour if i >= omega_ctx_input_count(ctx).
+ *
+ * Thread: Timing thread only (called from within advance_fn).
+ */
+OMEGA_API const omega_event_t* omega_ctx_input_at(const omega_process_context_t* ctx, uint32_t i);
+
+/*
+ * Gets a modulation channel value from within an advance_fn callback.
+ *
+ * Thread: Timing thread only.
+ *
+ * Returns: channel value, or 0.0f if ctx is NULL.
+ */
+OMEGA_API float omega_ctx_mod_get_ctx(const omega_process_context_t* ctx,
+                                      omega_mod_channel_t channel);
+
+/*
+ * Sets a modulation channel value from within an advance_fn callback.
+ *
+ * Thread: Timing thread only.
+ */
+OMEGA_API void omega_ctx_mod_set_ctx(omega_process_context_t* ctx,
+                                     omega_mod_channel_t channel,
+                                     float value);
+
 #ifdef __cplusplus
 }
 #endif

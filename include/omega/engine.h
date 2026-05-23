@@ -6,8 +6,10 @@
 #include <omega/event_input.h>
 #include <omega/event_source.h>
 #include <omega/input_bus.h>
+#include <omega/modulation_bus.h>
 #include <omega/omega.h>
 #include <omega/pattern_library.h>
+#include <omega/perf_context.h>
 #include <omega/perf_slot.h>
 #include <omega/song_arrangement.h>
 #include <omega/tempo_map.h>
@@ -284,6 +286,84 @@ public:
      */
     [[nodiscard]] uint32_t input_overflow_count() const noexcept;
 
+    /* ── Modulation bus ──────────────────────────────────────────────────────── */
+
+    /*
+     * Returns the engine's ModulationBus for direct C++ access.
+     * Thread: Mutation thread for register_channel/find; Timing thread for get/set.
+     */
+    [[nodiscard]] ModulationBus& modulation_bus() noexcept { return mod_bus_; }
+
+    /* ── Performance context ─────────────────────────────────────────────────── */
+
+    /*
+     * Enqueues a command to set the active scale.
+     * Thread: Mutation thread only.
+     */
+    omega_status_t ctx_set_scale(const omega_scale_t& scale);
+
+    /*
+     * Enqueues a command to set the active chord.
+     * Thread: Mutation thread only.
+     */
+    omega_status_t ctx_set_chord(const omega_chord_t& chord);
+
+    /*
+     * Enqueues a command to set the global transpose (-24 to +24 semitones).
+     * Thread: Mutation thread only.
+     */
+    omega_status_t ctx_set_transpose(int8_t semitones);
+
+    /*
+     * Enqueues a command to set the global velocity scale (0-200, 100 = unity).
+     * Thread: Mutation thread only.
+     */
+    omega_status_t ctx_set_velocity(uint8_t velocity);
+
+    /*
+     * Enqueues a command to set the chaos level (0-100).
+     * Thread: Mutation thread only.
+     */
+    omega_status_t ctx_set_chaos(uint8_t chaos);
+
+    /*
+     * Enqueues a command to set the groove template and swing.
+     * Thread: Mutation thread only.
+     */
+    omega_status_t ctx_set_groove(uint8_t groove_id, float swing);
+
+    /*
+     * Returns a snapshot of the current performance context.
+     * Thread: Mutation thread only. Must not be called concurrently with process().
+     */
+    void ctx_get(omega_perf_ctx_t& out) const noexcept { out = perf_ctx_; }
+
+    /* ── Custom sources ──────────────────────────────────────────────────────── */
+
+    /*
+     * Enqueues a command to register a custom EventSource.
+     * The source is called from process() in priority/registration order,
+     * before the built-in sources (which are always priority PLAYBACK).
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_INVALID    — source is NULL.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t add_source(EventSource* source, uint32_t priority);
+
+    /*
+     * Enqueues a command to deregister a custom EventSource.
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_INVALID    — source is NULL.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t remove_source(EventSource* source);
+
     /* ── Command queue ────────────────────────────────────────────────────── */
 
     /*
@@ -342,6 +422,14 @@ private:
     void apply(const PerfSetRandomBiasCmd& cmd);
     void apply(const AddInputCmd& cmd);
     void apply(const RemoveInputCmd& cmd);
+    void apply(const SetCtxScaleCmd& cmd);
+    void apply(const SetCtxChordCmd& cmd);
+    void apply(const SetCtxTransposeCmd& cmd);
+    void apply(const SetCtxVelocityCmd& cmd);
+    void apply(const SetCtxChaosCmd& cmd);
+    void apply(const SetCtxGrooveCmd& cmd);
+    void apply(const AddSourceCmd& cmd);
+    void apply(const RemoveSourceCmd& cmd);
 
     InternalClock internal_clock_;
     ClockSource* clock_;
@@ -356,6 +444,18 @@ private:
 
     std::vector<EventInput*> inputs_;  // non-owning; modified only from timing thread via queue
     InputBus input_bus_;
+
+    ModulationBus mod_bus_;
+
+    // perf_ctx_: timing-thread-only; snapshotted into ProcessContext each cycle.
+    // omega_ctx_get() reads this from mutation thread — must not be called
+    // concurrently with process().
+    omega_perf_ctx_t perf_ctx_{};
+
+    // custom_sources_: non-owning; sorted by (priority, registration order).
+    // Modified only from timing thread via command queue.
+    // Each entry: {priority, source*}
+    std::vector<std::pair<uint32_t, EventSource*>> custom_sources_;
 
     detail::SpscQueue<Command, 4096> queue_;
     TempoMap tempo_map_;

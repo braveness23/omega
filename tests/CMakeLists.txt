@@ -11,6 +11,9 @@ add_executable(omega_tests
     unit/test_song_arrangement.cpp
     unit/test_performance_source.cpp
     unit/test_event_input.cpp
+    unit/test_modulation_bus.cpp
+    unit/test_perf_context.cpp
+    unit/test_custom_source.cpp
 )
 
 target_link_libraries(omega_tests

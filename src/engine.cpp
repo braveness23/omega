@@ -142,6 +142,54 @@ uint32_t Engine::input_overflow_count() const noexcept
     return input_bus_.overflow_count();
 }
 
+omega_status_t Engine::ctx_set_scale(const omega_scale_t& scale)
+{
+    return enqueue(SetCtxScaleCmd{scale});
+}
+
+omega_status_t Engine::ctx_set_chord(const omega_chord_t& chord)
+{
+    return enqueue(SetCtxChordCmd{chord});
+}
+
+omega_status_t Engine::ctx_set_transpose(int8_t semitones)
+{
+    return enqueue(SetCtxTransposeCmd{semitones});
+}
+
+omega_status_t Engine::ctx_set_velocity(uint8_t velocity)
+{
+    return enqueue(SetCtxVelocityCmd{velocity});
+}
+
+omega_status_t Engine::ctx_set_chaos(uint8_t chaos)
+{
+    return enqueue(SetCtxChaosCmd{chaos});
+}
+
+omega_status_t Engine::ctx_set_groove(uint8_t groove_id, float swing)
+{
+    return enqueue(SetCtxGrooveCmd{groove_id, swing});
+}
+
+omega_status_t Engine::add_source(EventSource* source, uint32_t priority)
+{
+    if (source == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return enqueue(AddSourceCmd{source, priority});
+}
+
+omega_status_t Engine::remove_source(EventSource* source)
+{
+    if (source == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return enqueue(RemoveSourceCmd{source});
+}
+
 omega_status_t Engine::enqueue(Command cmd)
 {
     if (queue_.push(cmd))
@@ -193,6 +241,8 @@ void Engine::apply(const TransportCmd& cmd)
             }
             ProcessContext ctx{};
             ctx.input_bus = &input_bus_;
+            ctx.modulation_bus = &mod_bus_;
+            ctx.perf_ctx = perf_ctx_;
             EventDispatcher dispatcher{sinks_};
             timeline_.on_locate(cmd.locate_tick, dispatcher, ctx);
             song_.on_locate(cmd.locate_tick, dispatcher, ctx);
@@ -270,6 +320,64 @@ void Engine::apply(const RemoveInputCmd& cmd)
     }
 }
 
+void Engine::apply(const SetCtxScaleCmd& cmd)
+{
+    perf_ctx_.scale = cmd.scale;
+}
+
+void Engine::apply(const SetCtxChordCmd& cmd)
+{
+    perf_ctx_.chord = cmd.chord;
+}
+
+void Engine::apply(const SetCtxTransposeCmd& cmd)
+{
+    perf_ctx_.global_transpose = cmd.semitones;
+}
+
+void Engine::apply(const SetCtxVelocityCmd& cmd)
+{
+    perf_ctx_.global_velocity = cmd.velocity;
+}
+
+void Engine::apply(const SetCtxChaosCmd& cmd)
+{
+    perf_ctx_.chaos = cmd.chaos;
+}
+
+void Engine::apply(const SetCtxGrooveCmd& cmd)
+{
+    perf_ctx_.groove_id = cmd.groove_id;
+    perf_ctx_.swing = cmd.swing;
+}
+
+void Engine::apply(const AddSourceCmd& cmd)
+{
+    if (cmd.source == nullptr)
+    {
+        return;
+    }
+    // Insert in priority order; equal priorities maintain registration order.
+    auto it = std::upper_bound(
+        custom_sources_.begin(),
+        custom_sources_.end(),
+        cmd.priority,
+        [](uint32_t pri, const std::pair<uint32_t, EventSource*>& p) { return pri < p.first; });
+    custom_sources_.insert(it, {cmd.priority, cmd.source});
+}
+
+void Engine::apply(const RemoveSourceCmd& cmd)
+{
+    auto it = std::find_if(
+        custom_sources_.begin(),
+        custom_sources_.end(),
+        [&](const std::pair<uint32_t, EventSource*>& p) { return p.second == cmd.source; });
+    if (it != custom_sources_.end())
+    {
+        custom_sources_.erase(it);
+    }
+}
+
 void Engine::process()
 {
     Command cmd;
@@ -339,6 +447,38 @@ void Engine::process()
                 {
                     apply(c);
                 }
+                else if constexpr (std::is_same_v<T, SetCtxScaleCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, SetCtxChordCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, SetCtxTransposeCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, SetCtxVelocityCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, SetCtxChaosCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, SetCtxGrooveCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, AddSourceCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, RemoveSourceCmd>)
+                {
+                    apply(c);
+                }
             },
             cmd);
     }
@@ -363,7 +503,18 @@ void Engine::process()
 
     ProcessContext ctx{};
     ctx.input_bus = &input_bus_;
+    ctx.modulation_bus = &mod_bus_;
+    ctx.perf_ctx = perf_ctx_;
+
     EventDispatcher dispatcher{sinks_};
+
+    // Custom sources run before built-ins, in priority/registration order.
+    for (auto& [pri, src] : custom_sources_)
+    {
+        src->advance(to_tick, dispatcher, ctx);
+    }
+
+    // Built-in PLAYBACK sources always run last (priority 2, registered at engine creation).
     timeline_.advance(to_tick, dispatcher, ctx);
     song_.advance(to_tick, dispatcher, ctx);
     perf_.advance(to_tick, dispatcher, ctx);
