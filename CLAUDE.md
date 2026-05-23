@@ -131,7 +131,9 @@ The SPSC queue is single-producer. Multiple mutation threads must serialize exte
 - 480 PPQN tick resolution (compile-time constant; never hardcode 480 in user code).
 - All internal time is `uint64_t` nanoseconds from session start. All musical time is `uint64_t` ticks. No floating point in the hot path.
 - The `TempoMap` is a sorted list of `TempoPoint{tick, bpm_milli, ns_at_tick}`. `ns_at_tick` is precomputed on insert. BPM is stored as milli-BPM (`uint32_t`): 120 BPM = `120000`.
-- The `TimeSignatureMap` is a sorted list of `TimeSigPoint{tick, numerator, denominator}`, parallel to `TempoMap`. An empty map means freeform mode (no meter). Denominator is the literal note value (4 = quarter note). The non-realtime `MeterCursor` helper converts between ticks and bar/beat positions. `OMEGA_ERR_NO_METER` is returned by any meter-dependent helper when the session is freeform.
+- The `TimeSignatureMap` is a sorted list of `TimeSigPoint{tick, numerator, denominator}`, parallel to `TempoMap`. An empty map means freeform mode (no meter). Denominator is the literal note value (4 = quarter note). `OMEGA_ERR_NO_METER` is returned by any meter-dependent helper when the session is freeform.
+- The optional `SmpteConfig` on `Session` stores frame rate and drop-frame flag for SMPTE timecode. Absent = no video lock. `OMEGA_ERR_NO_SMPTE_CONFIG` is returned by SMPTE helpers when not set.
+- `PositionConverter` is the base class for all coordinate-system helpers (bar/beat, SMPTE, future: samples, feet+frames). `MeterCursor` and `SmpteConverter` both implement it. Neither may be called from the timing thread. Snap-to-grid utilities accept `PositionConverter&` without caring which format is active.
 - The catch-up loop fires all overdue events in order — events are never skipped when cycles run late.
 
 ### Memory

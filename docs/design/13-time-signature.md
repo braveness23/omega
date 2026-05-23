@@ -18,6 +18,8 @@ section for sprint breakdown.
 | What does "no meter" mean to callers? | Helpers return `OMEGA_ERR_NO_METER` | Explicit failure rather than a silent 4/4 fallback |
 | Where do navigation helpers live? | `MeterCursor` in the C++ layer; C API wrappers | Not called from the timing thread |
 | Polymetric patterns? | Already supported via `length_ticks`; no changes needed | Patterns are free-length; session meter is independent |
+| Common interface for all coordinate systems? | `PositionConverter` base class | Snap-to-grid tools work without caring about the format |
+| Where does SMPTE config live? | `SmpteConfig` (optional) on `Session`, independent of `TimeSignatureMap` | SMPTE is a query-layer concern; sessions without video don't need it |
 
 ---
 
@@ -111,8 +113,8 @@ calling `omega_timesig_clear()` or by never calling `omega_timesig_set()` at all
 empty on every new session.
 
 **What changes in freeform mode:**
-- `omega_tick_to_position()` returns `OMEGA_ERR_NO_METER`
-- `omega_position_to_tick()` returns `OMEGA_ERR_NO_METER`
+- `omega_tick_to_beat_pos()` returns `OMEGA_ERR_NO_METER`
+- `omega_beat_pos_to_tick()` returns `OMEGA_ERR_NO_METER`
 - All `MeterCursor` navigation helpers return `OMEGA_ERR_NO_METER`
 - `OMEGA_CUE_BAR` degrades to `OMEGA_CUE_AT_BOUNDARY` (see below)
 - SMF export emits no time-signature meta events
@@ -141,18 +143,18 @@ struct BeatPosition {
     uint32_t subdivision; // ticks past the beat boundary (0..ticks_per_beat - 1)
 };
 
-class MeterCursor {
+class MeterCursor : public PositionConverter {
 public:
     explicit MeterCursor(const TimeSignatureMap& map);
 
     // Convert tick → {bar, beat, subdivision}.
     // Returns OMEGA_ERR_NO_METER if freeform.
-    omega_status_t tick_to_position(uint64_t tick, BeatPosition& out) const;
+    omega_status_t tick_to_beat_pos(uint64_t tick, BeatPosition& out) const;
 
     // Convert {bar, beat, subdivision} → tick.
     // Returns OMEGA_ERR_NO_METER if freeform.
     // Returns OMEGA_ERR_INVALID if beat > numerator at that bar's active meter.
-    omega_status_t position_to_tick(const BeatPosition& pos, uint64_t& out) const;
+    omega_status_t beat_pos_to_tick(const BeatPosition& pos, uint64_t& out) const;
 
     // Tick of the next bar boundary at or after from_tick.
     omega_status_t next_bar_tick(uint64_t from_tick, uint64_t& out) const;
@@ -166,10 +168,14 @@ public:
     // Quantize tick to the nearest subdivision of subdiv_ticks length.
     omega_status_t quantize_to_subdivision(uint64_t tick, uint64_t subdiv_ticks,
                                            uint64_t& out) const;
+
+    // PositionConverter overrides: quantize maps to nearest beat; next_boundary maps to next bar.
+    omega_status_t quantize(uint64_t tick, uint64_t& out) const override;
+    omega_status_t next_boundary(uint64_t from_tick, uint64_t& out) const override;
 };
 ```
 
-**`tick_to_position` implementation sketch:**
+**`tick_to_beat_pos` implementation sketch:**
 ```
 1. If map is freeform → OMEGA_ERR_NO_METER
 2. Walk adjacent TimeSigPoint pairs, accumulating bar count:
@@ -194,6 +200,138 @@ the timing thread.
 
 ---
 
+## Coordinate Systems — Design Principle
+
+**The timing thread knows only ticks and nanoseconds.** All coordinate systems — bar/beat,
+SMPTE timecode, sample count, feet+frames — are a non-realtime query layer. They are never
+consulted inside `process()`.
+
+This means:
+- `MeterCursor`, `SmpteConverter`, and any future converter are constructed on the mutation thread
+  or the UI thread, not held live on the timing thread.
+- Converters read session state (TempoMap, TimeSignatureMap, SmpteConfig) at construction time or
+  via const snapshot; they never block on a lock.
+- The engine's hot path stays pure integers and no coordinate translation.
+
+### Industry Format Table
+
+| Format | Typical use case | v1 support |
+|---|---|---|
+| Bar.Beat.Subdivision | Musical editing, pattern cuing | `MeterCursor` |
+| HH:MM:SS:FF (SMPTE) | Film/TV post, hardware MTC sync | `SmpteConverter` |
+| Samples | Audio plugin host positions | future |
+| Feet+Frames | Film editorial (North America) | future |
+| OSC/NTP timestamp | Network sync, OSC time tags | future |
+| Link beat time | Ableton Link peer sync | future |
+| Wall clock | Human-readable display | trivial via `ns_to_wall()` |
+
+---
+
+## `PositionConverter` — Base Interface
+
+`PositionConverter` is the common base class for all coordinate-system helpers. A generic
+snap-to-grid or quantize function can accept `PositionConverter&` without caring which format
+is active.
+
+```cpp
+class PositionConverter {
+public:
+    virtual ~PositionConverter() = default;
+
+    // Quantize tick to the nearest grid point in this coordinate system.
+    // Returns OMEGA_ERR_NO_METER (or OMEGA_ERR_NO_SMPTE_CONFIG) if the required
+    // session config is absent.
+    virtual omega_status_t quantize(uint64_t tick, uint64_t& out) const = 0;
+
+    // Tick of the next grid boundary at or after from_tick.
+    virtual omega_status_t next_boundary(uint64_t from_tick, uint64_t& out) const = 0;
+};
+```
+
+`MeterCursor` implements `PositionConverter` with bar-aligned grid semantics.
+`SmpteConverter` implements it with frame-aligned grid semantics.
+Both are constructed on the non-realtime thread and are not shared with the timing thread.
+
+---
+
+## `SmpteConfig`
+
+`SmpteConfig` is an optional struct on `Session`. A session without video does not need a
+`SmpteConfig`; SMPTE helpers return `OMEGA_ERR_NO_SMPTE_CONFIG` when it is absent. It is
+independent of `TimeSignatureMap` — a session can have meter without SMPTE, SMPTE without
+meter, both, or neither.
+
+```cpp
+struct SmpteConfig {
+    uint8_t fps;         // nominal frame rate: 24, 25, or 30
+    bool    drop_frame;  // true = 29.97 drop-frame (only valid when fps == 30)
+    bool    is_2997;     // true = 29.97 (1000/1001 actual rate); false = exactly fps
+};
+```
+
+**What 29.97 drop-frame actually means**: SMPTE 29.97 drop-frame does not drop any video
+frames. It drops *frame number labels* — specifically, frames 0 and 1 of the first second of
+every minute, except every tenth minute — so that the running frame counter stays synchronized
+with real elapsed time despite 29.97 ≠ 30. Without drop-frame, a counter running at 30 fps
+labels gains ~2 frames per minute relative to wall clock, accumulating to ~3.6 s per hour. Drop-
+frame corrects this by skipping those two label values at the right moments, keeping
+HH:MM:SS:FF continuously synchronized to real time. The video content is unaffected.
+
+**Serialization**: stored as `"smpte_config"` in the `.omega` file:
+```json
+{ "smpte_config": { "fps": 30, "drop_frame": true, "is_2997": true } }
+```
+Absent key = no SMPTE config (session is not video-locked).
+
+**Mutation**: goes through the command queue via `SetSmpteConfigCmd` / `ClearSmpteConfigCmd`.
+Since SMPTE config is session-wide and rarely changed mid-session, this is a simple
+value-replace command with no undo complexity.
+
+---
+
+## `SmpteConverter`
+
+`SmpteConverter` implements `PositionConverter`. It converts between ticks and SMPTE
+HH:MM:SS:FF timecode.
+
+**Conversion path**: `tick → nanoseconds (via TempoMap) → elapsed frame count → HH:MM:SS:FF`
+
+This is the **query side**, not the MTC clock side. `SmpteConverter` does not generate or
+receive MTC quarter-frame messages — that is an M5 platform integration concern. Its job is
+solely to translate tick positions into human-readable (or machine-readable) SMPTE addresses.
+
+```cpp
+struct SmpteTime {
+    uint8_t hours;
+    uint8_t minutes;
+    uint8_t seconds;
+    uint8_t frames;
+};
+
+class SmpteConverter : public PositionConverter {
+public:
+    // Requires TempoMap for the tick → ns conversion and SmpteConfig for frame rate.
+    SmpteConverter(const TempoMap& tempo_map, const SmpteConfig& config);
+
+    // Convert absolute tick → SMPTE HH:MM:SS:FF.
+    omega_status_t tick_to_smpte(uint64_t tick, SmpteTime& out) const;
+
+    // Convert SMPTE HH:MM:SS:FF → absolute tick.
+    // Returns OMEGA_ERR_INVALID for impossible drop-frame addresses.
+    omega_status_t smpte_to_tick(const SmpteTime& smpte, uint64_t& out) const;
+
+    // PositionConverter overrides: grid unit = one frame.
+    omega_status_t quantize(uint64_t tick, uint64_t& out) const override;
+    omega_status_t next_boundary(uint64_t from_tick, uint64_t& out) const override;
+};
+```
+
+**Drop-frame address arithmetic**: for 29.97 DF, frame addresses 0 and 1 of each minute
+(except minutes 0, 10, 20, 30, 40, 50) are skipped. `smpte_to_tick` rejects those addresses
+with `OMEGA_ERR_INVALID`. `tick_to_smpte` never produces them.
+
+---
+
 ## Session Ownership Update
 
 `TimeSignatureMap` replaces the current `TimeSignature` singleton in `Session`:
@@ -202,6 +340,7 @@ the timing thread.
 Session
 ├── TempoMap                  (unchanged)
 ├── TimeSignatureMap          (replaces single TimeSignature; empty = freeform)
+├── SmpteConfig               (optional; absent = no SMPTE config)
 ├── PatternLibrary            (unchanged)
 │   ...
 ```
@@ -291,13 +430,13 @@ typedef struct {
 
 /* Convert absolute tick → {bar, beat, subdivision}.
    Returns OMEGA_ERR_NO_METER if freeform. */
-omega_status_t omega_tick_to_position(omega_engine_t engine, omega_tick_t tick,
+omega_status_t omega_tick_to_beat_pos(omega_engine_t engine, omega_tick_t tick,
                                        omega_beat_pos_t* out);
 
 /* Convert {bar, beat, subdivision} → absolute tick.
    Returns OMEGA_ERR_NO_METER if freeform.
    Returns OMEGA_ERR_INVALID if beat > numerator at that bar's active meter. */
-omega_status_t omega_position_to_tick(omega_engine_t engine,
+omega_status_t omega_beat_pos_to_tick(omega_engine_t engine,
                                        const omega_beat_pos_t* pos, omega_tick_t* out);
 
 /* Tick of the next bar boundary at or after from_tick.
@@ -309,11 +448,51 @@ omega_status_t omega_next_bar_tick(omega_engine_t engine, omega_tick_t from_tick
    Returns OMEGA_ERR_NO_METER if freeform. */
 omega_status_t omega_quantize_to_beat(omega_engine_t engine, omega_tick_t tick,
                                        omega_tick_t* out);
+
+/* ── SMPTE Config ────────────────────────────────────────────────────── */
+
+typedef struct {
+    uint8_t fps;          /* nominal frame rate: 24, 25, or 30 */
+    int     drop_frame;   /* 1 = 29.97 drop-frame (only valid when fps == 30); 0 otherwise */
+    int     is_2997;      /* 1 = 29.97 actual rate; 0 = exactly fps */
+} omega_smpte_config_t;
+
+/* Set the session SMPTE config. Enqueues via the command queue. */
+omega_status_t omega_smpte_config_set(omega_engine_t engine,
+                                       const omega_smpte_config_t* config);
+
+/* Query the current SMPTE config. Returns OMEGA_ERR_NO_SMPTE_CONFIG if not set. */
+omega_status_t omega_smpte_config_get(omega_engine_t engine, omega_smpte_config_t* out);
+
+/* Clear the SMPTE config, removing video lock from the session. */
+omega_status_t omega_smpte_config_clear(omega_engine_t engine);
+
+/* ── SMPTE Conversion ────────────────────────────────────────────────── */
+/* Do not call from the timing thread.                                    */
+
+typedef struct {
+    uint8_t hours;
+    uint8_t minutes;
+    uint8_t seconds;
+    uint8_t frames;
+} omega_smpte_time_t;
+
+/* Convert absolute tick → SMPTE HH:MM:SS:FF.
+   Returns OMEGA_ERR_NO_SMPTE_CONFIG if smpte_config has not been set. */
+omega_status_t omega_tick_to_smpte(omega_engine_t engine, omega_tick_t tick,
+                                    omega_smpte_time_t* out);
+
+/* Convert SMPTE HH:MM:SS:FF → absolute tick.
+   Returns OMEGA_ERR_NO_SMPTE_CONFIG if not set.
+   Returns OMEGA_ERR_INVALID for impossible drop-frame addresses (e.g., frame 0 of minute 1). */
+omega_status_t omega_smpte_to_tick(omega_engine_t engine,
+                                    const omega_smpte_time_t* smpte, omega_tick_t* out);
 ```
 
-**New status code** (add to `omega_status_t` enum):
+**New status codes** (add to `omega_status_t` enum):
 ```c
-OMEGA_ERR_NO_METER    = -8,   /* operation requires a time signature; session is freeform */
+OMEGA_ERR_NO_METER        = -8,   /* operation requires a time signature; session is freeform */
+OMEGA_ERR_NO_SMPTE_CONFIG = -9,   /* operation requires SmpteConfig; none has been set */
 ```
 
 ---
@@ -401,8 +580,8 @@ Proposed tag: `v0.3.5-alpha`
 ### Sprint 4.5.1 — `TimeSignatureMap` + `MeterCursor`
 
 **Deliverables:**
-- `include/omega/time_signature_map.h` — `TimeSigPoint`, `TimeSignatureMap`, `MeterCursor`,
-  `BeatPosition`
+- `include/omega/time_signature_map.h` — `TimeSigPoint`, `TimeSignatureMap`, `PositionConverter`,
+  `MeterCursor`, `BeatPosition`
 - `src/time_signature_map.cpp`
 - `SetTimeSigCmd`, `RemoveTimeSigCmd`, `ClearTimeSigCmd` added to command variant list in
   `src/engine.cpp`
@@ -411,15 +590,31 @@ Proposed tag: `v0.3.5-alpha`
 
 **Definition of done:**
 - All unit tests pass under ASan + UBSan
-- `tick_to_position → position_to_tick` round-trip is identity for 4/4, 7/8, and 5/4, including
+- `tick_to_beat_pos → beat_pos_to_tick` round-trip is identity for 4/4, 7/8, and 5/4, including
   across a meter change boundary
 
-### Sprint 4.5.2 — C API + `OMEGA_CUE_BAR`
+### Sprint 4.5.2 — `SmpteConverter`
 
 **Deliverables:**
-- All `omega_timesig_*`, `omega_tick_to_position`, `omega_position_to_tick`,
+- `include/omega/smpte_converter.h` — `SmpteConfig`, `SmpteTime`, `SmpteConverter`
+- `src/smpte_converter.cpp`
+- `SetSmpteConfigCmd`, `ClearSmpteConfigCmd` added to command variant list in `src/engine.cpp`
+- `Session`: optional `SmpteConfig` field; serialization as `"smpte_config"` key (absent = not set)
+
+**Definition of done:**
+- All unit tests pass under ASan + UBSan
+- `tick_to_smpte → smpte_to_tick` round-trip is identity for 24fps, 25fps, 30fps NDF, and 29.97 DF
+- 29.97 DF impossible addresses (e.g., frame 0 of minute 1) are rejected with `OMEGA_ERR_INVALID`
+- Accumulated error over a 1-hour session at 29.97 DF does not exceed 1 frame
+
+### Sprint 4.5.3 — C API + `OMEGA_CUE_BAR`
+
+**Deliverables:**
+- All `omega_timesig_*`, `omega_tick_to_beat_pos`, `omega_beat_pos_to_tick`,
   `omega_next_bar_tick`, `omega_quantize_to_beat` functions in `src/omega_c.cpp`
-- `OMEGA_ERR_NO_METER` status code in `include/omega/omega.h`
+- All `omega_smpte_config_*`, `omega_tick_to_smpte`, `omega_smpte_to_tick` functions in
+  `src/omega_c.cpp`
+- `OMEGA_ERR_NO_METER`, `OMEGA_ERR_NO_SMPTE_CONFIG` status codes in `include/omega/omega.h`
 - `OMEGA_CUE_BAR` cue mode with freeform degradation in `PerformanceSource`
 
 **Definition of done:**
@@ -447,3 +642,17 @@ Proposed tag: `v0.3.5-alpha`
 - **MIDI clock and bar sync**: `MidiClockSource` could emit a bar-pulse event when
   `OMEGA_CUE_BAR` is active, allowing external sync to bar boundaries. Deferred to a later M5
   sprint.
+- **Feet+frames**: the North American film editorial format (16 or 35mm, 16 frames per foot at
+  24fps). Implementable as a future `PositionConverter` subclass once `SmpteConverter` is
+  validated; shares the same tick → ns → frame-count path.
+- **Sample-based position**: DAW plugin hosts often express positions as sample offsets at a fixed
+  sample rate. A `SampleConverter(sample_rate, tempo_map)` would implement `PositionConverter`
+  the same way `SmpteConverter` does. Depends on the host providing sample rate at construction
+  time; no session state needed.
+- **SMPTE-division SMF**: SMF headers can encode time code division (`fps` + `ticks per frame`)
+  instead of PPQN. Omega currently assumes PPQN headers. An SMF with SMPTE division header
+  should map its frame-based timing into the Omega tick space at import time. Interaction with
+  `SmpteConfig` needs design; deferred to M5.
+- **OSC/NTP timestamp**: OSC bundles carry NTP timestamps (seconds + fraction since 1900). A
+  future `NtpConverter` would map NTP time to ticks via session start wall-clock offset. Useful
+  for network-synchronized multi-device setups; out of scope for v1.
