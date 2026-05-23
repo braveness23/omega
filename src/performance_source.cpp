@@ -314,8 +314,8 @@ void PerformanceSource::dispatch_slot_events(PerfSlot& slot,
                         {
                             slot.rng_state = slot.rng_state * 1664525u + 1013904223u;
                             int bias_offset = static_cast<int>(slot.rng_state % 11u) - 5;
-                            auto biased =
-                                static_cast<int16_t>(static_cast<int16_t>(ev.data[0]) + bias_offset);
+                            auto biased = static_cast<int16_t>(static_cast<int16_t>(ev.data[0]) +
+                                                               bias_offset);
                             if (biased < 0)
                             {
                                 biased = 0;
