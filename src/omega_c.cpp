@@ -86,12 +86,11 @@ public:
                  omega::EventDispatcher& dispatcher,
                  omega::ProcessContext& ctx) override
     {
-        advance_fn_(to_tick,
-                    reinterpret_cast<omega_dispatcher_t*>(
-                        &dispatcher),  // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
-                    reinterpret_cast<omega_process_context_t*>(
-                        &ctx),  // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
-                    userdata_);
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        auto* d = reinterpret_cast<omega_dispatcher_t*>(&dispatcher);
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        auto* c = reinterpret_cast<omega_process_context_t*>(&ctx);
+        advance_fn_(to_tick, d, c, userdata_);
     }
 
     [[nodiscard]] uint32_t priority() const noexcept { return priority_; }

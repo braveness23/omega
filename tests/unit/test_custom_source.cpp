@@ -311,9 +311,8 @@ TEST_CASE("C API: omega_dispatch delivers event to sink from advance_fn")
 
     // Use a C++ CapturingSink registered directly (opaque cast)
     CapturingSink csink;
-    omega_engine_add_sink(eng,
-                          reinterpret_cast<omega_sink_t*>(
-                              &csink));  // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    omega_engine_add_sink(eng, reinterpret_cast<omega_sink_t*>(&csink));
 
     uint32_t sid = csink.sink_id();
 

@@ -21,14 +21,14 @@ namespace omega::detail
  * full from empty without a separate counter.
  */
 template <typename T, uint32_t Capacity>
-class SpscQueue
+class SpscQueue  // NOLINT(cppcoreguidelines-pro-type-member-init)
 {
     static_assert((Capacity & (Capacity - 1)) == 0, "Capacity must be a power of two");
     static_assert(Capacity >= 2, "Capacity must be at least 2");
 
     alignas(64) std::atomic<uint32_t> tail_{0}; /* write position (producer) */
     alignas(64) std::atomic<uint32_t> head_{0}; /* read position (consumer)  */
-    std::array<T, Capacity> storage_;           // NOLINT(cppcoreguidelines-pro-type-member-init)
+    std::array<T, Capacity> storage_;
 
 public:
     /*

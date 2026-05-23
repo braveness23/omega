@@ -2,6 +2,7 @@
 
 #include <omega/omega.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
