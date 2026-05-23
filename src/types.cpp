@@ -1,21 +1,23 @@
 #include <omega/omega.h>
 
+#include <array>
 #include <cstring>
 
 namespace
 {
 
-const char* const k_status_strings[] = {
-    "ok",            /* OMEGA_OK = 0            */
-    "invalid",       /* OMEGA_ERR_INVALID = -1  */
-    "out of memory", /* OMEGA_ERR_NOMEM = -2    */
-    "not found",     /* OMEGA_ERR_NOT_FOUND = -3 */
-    "queue full",    /* OMEGA_ERR_QUEUE_FULL = -4 */
-    "unsupported",   /* OMEGA_ERR_UNSUPPORTED = -5 */
+const std::array<const char*, 8> k_status_strings = {
+    "ok",              /* OMEGA_OK = 0            */
+    "invalid",         /* OMEGA_ERR_INVALID = -1  */
+    "out of memory",   /* OMEGA_ERR_NOMEM = -2    */
+    "not found",       /* OMEGA_ERR_NOT_FOUND = -3 */
+    "queue full",      /* OMEGA_ERR_QUEUE_FULL = -4 */
+    "unsupported",     /* OMEGA_ERR_UNSUPPORTED = -5 */
+    "no meter",        /* OMEGA_ERR_NO_METER = -6 */
+    "no smpte config", /* OMEGA_ERR_NO_SMPTE_CONFIG = -7 */
 };
 
-constexpr int k_status_count =
-    static_cast<int>(sizeof(k_status_strings) / sizeof(k_status_strings[0]));
+constexpr int k_status_count = static_cast<int>(k_status_strings.size());
 
 }  // namespace
 
@@ -34,7 +36,9 @@ const char* omega_status_string(omega_status_t status)
 {
     int idx = -(int)status;
     if (idx < 0 || idx >= k_status_count)
+    {
         return "unknown";
+    }
     return k_status_strings[idx];
 }
 

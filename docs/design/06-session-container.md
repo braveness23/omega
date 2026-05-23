@@ -10,7 +10,7 @@ The separation of `Engine` (the playback machine) from `Session` (the data) make
 - Implement save-as without side effects
 - Test session data independently of the playback engine
 
-Mode-specific data (track lists, song arrangement, performance slots) is owned by each `EventSource` implementation, not by `Session` directly. `Session` owns only the data shared across multiple sources: `PatternLibrary`, `SinkRegistry`, `TempoMap`.
+Mode-specific data (track lists, song arrangement, performance slots) is owned by each `EventSource` implementation, not by `Session` directly. `Session` owns only the data shared across multiple sources: `PatternLibrary`, `SinkRegistry`, `TempoMap`, `TimeSignatureMap`.
 
 See [07-extensions.md](07-extensions.md) for the `EventSource` interface and the full list of built-in and extension sources.
 
@@ -23,7 +23,8 @@ Session
 ├── PatternLibrary           (shared; owns all Pattern objects, indexed by PatternId)
 ├── SinkRegistry             (named output sinks, registered by the host application)
 ├── TempoMap                 (list of TempoPoints; see timing model)
-├── TimeSignature            (numerator, denominator — display/grid only, not timing)
+├── TimeSignatureMap         (sorted list of TimeSigPoints; empty = freeform mode)
+├── SmpteConfig              (optional; absent = no video lock / SMPTE config)
 ├── LoopRegion               {start_tick, end_tick, enabled}
 ├── Metadata                 {name, author, created_at, modified_at}
 ├── ModulationBus            (256 float channels; written by modulator sources, read by any source)
@@ -82,6 +83,36 @@ public:
 `PatternId`s are never reused within a session. A destroyed pattern's ID is permanently retired. This prevents dangling references from pointing at a reallocated slot.
 
 Internally: `std::pmr::vector<std::optional<Pattern>>`, indexed by ID. The optional is nullopt when a pattern has been destroyed. IDs are assigned sequentially.
+
+---
+
+## TimeSignatureMap
+
+`TimeSignatureMap` is a sorted list of meter change points owned by `Session`, parallel in structure to `TempoMap`. An empty map means the session is in **freeform mode** — no meter is defined.
+
+```cpp
+struct TimeSigPoint {
+    uint64_t tick;        // tick at which this meter takes effect
+    uint8_t  numerator;   // beats per bar (1–99)
+    uint8_t  denominator; // beat unit: 1, 2, 4, 8, 16, or 32 (literal, not exponent)
+};
+
+class TimeSignatureMap {
+public:
+    omega_status_t insert(uint64_t tick, uint8_t numerator, uint8_t denominator);
+    omega_status_t remove(uint64_t tick);
+    void           clear();
+    const TimeSigPoint* at(uint64_t tick) const;
+    bool   is_freeform() const { return points_.empty(); }
+    size_t size() const;
+private:
+    std::vector<TimeSigPoint> points_;  // maintained in tick order
+};
+```
+
+The denominator is stored as the literal note-value (4 = quarter note, 8 = eighth note), not a power-of-2 exponent. SMF encodes it as an exponent; the import layer decodes it. All mutations go through the SPSC command queue via `SetTimeSigCmd`, `RemoveTimeSigCmd`, and `ClearTimeSigCmd` — matching the pattern used by `TempoMap`.
+
+`PerformanceSource` reads `TimeSignatureMap` directly from the timing thread (for `OMEGA_CUE_BAR` boundary calculation) without allocating. The non-realtime `MeterCursor` helper provides bar/beat navigation and implements the `PositionConverter` base interface, which is also implemented by `SmpteConverter` for SMPTE timecode. Neither may be called from the timing thread. See [13-time-signature.md](13-time-signature.md) for the full design including `PositionConverter`, `MeterCursor`, `SmpteConfig`, `SmpteConverter`, freeform mode semantics, and SMF integration.
 
 ---
 
@@ -178,7 +209,8 @@ public:
 
 private:
     std::array<Slot, OMEGA_MAX_SLOTS> slots_;
-    const PatternLibrary* library_;   // non-owning reference
+    const PatternLibrary*      library_;    // non-owning reference
+    const TimeSignatureMap*    timesig_;    // non-owning reference (for OMEGA_CUE_BAR)
 };
 ```
 
@@ -333,7 +365,8 @@ Top-level structure:
   "omega_version": "0.1.0",
   "metadata": { "name": "...", "author": "..." },
   "tempo_map": [ { "tick": 0, "bpm_milli": 120000 } ],
-  "time_signature": { "numerator": 4, "denominator": 4 },
+  "time_signature_map": [ { "tick": 0, "numerator": 4, "denominator": 4 } ],
+  "smpte_config": { "fps": 30, "drop_frame": true, "is_2997": true },
   "pattern_library": [ { "id": 1, "name": "Groove A", "length_ticks": 1920, "events": [...] } ],
   "timeline": { "tracks": [...] },
   "song_arrangement": [ { "pattern_id": 1, "repeat_count": 4 } ],

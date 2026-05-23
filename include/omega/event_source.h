@@ -15,9 +15,9 @@ namespace omega
  * Dispatches events from sources to registered OutputSinks.
  *
  * Constructed by Engine at the start of each process() cycle and passed to
- * every EventSource::advance() call. Looks up sinks by event.sink_id and
- * delivers via OutputSink::send(). Silently drops events whose sink_id is
- * not registered.
+ * every EventSource::advance() call. The default dispatch() looks up the
+ * event's sink_id and delivers via OutputSink::send(). Subclasses may override
+ * dispatch() to intercept, transform, or capture events (e.g. TransformSource).
  *
  * Thread: Timing thread only (created and used within process()).
  */
@@ -27,9 +27,26 @@ public:
     using SinkList = std::vector<std::pair<uint32_t, OutputSink*>>;
 
     explicit EventDispatcher(const SinkList& sinks) noexcept : sinks_{&sinks} {}
+    virtual ~EventDispatcher() = default;
 
-    void dispatch(const Event& event) noexcept
+    EventDispatcher(const EventDispatcher&) = delete;
+    EventDispatcher& operator=(const EventDispatcher&) = delete;
+    EventDispatcher(EventDispatcher&&) = delete;
+    EventDispatcher& operator=(EventDispatcher&&) = delete;
+
+    /*
+     * Dispatches one event. Default implementation looks up the sink by
+     * event.sink_id and calls OutputSink::send(). Silently drops the event
+     * if the sink_id is not registered.
+     *
+     * Thread: Timing thread only. Must never allocate, block, or lock.
+     */
+    virtual void dispatch(const Event& event) noexcept
     {
+        if (sinks_ == nullptr)
+        {
+            return;
+        }
         auto it = std::lower_bound(
             sinks_->begin(),
             sinks_->end(),
@@ -40,6 +57,10 @@ public:
             it->second->send(event);
         }
     }
+
+protected:
+    /* For subclasses that override dispatch() and don't need a SinkList. */
+    EventDispatcher() noexcept : sinks_{nullptr} {}
 
 private:
     const SinkList* sinks_;
@@ -74,7 +95,7 @@ public:
      * their playback position; sources supporting chase may dispatch
      * catch-up events via `chase_out`.
      *
-     * Default: resets playback position to `tick` (no chasing).
+     * Default: no-op.
      * Thread: Timing thread only.
      */
     virtual void on_locate(uint64_t tick, EventDispatcher& /*chase_out*/, ProcessContext& /*ctx*/)

@@ -51,6 +51,8 @@ typedef enum {
     OMEGA_ERR_RANGE       = -5,   /* tick or index out of range */
     OMEGA_ERR_STATE       = -6,   /* invalid state for this operation */
     OMEGA_ERR_IO          = -7,   /* MIDI port or file I/O error */
+    OMEGA_ERR_NO_METER        = -8,   /* operation requires a time signature; session is freeform */
+    OMEGA_ERR_NO_SMPTE_CONFIG = -9,   /* operation requires SmpteConfig; none has been set */
 } omega_status_t;
 
 const char* omega_status_str(omega_status_t status);
@@ -195,6 +197,8 @@ typedef enum {
     OMEGA_CUE_AT_BOUNDARY  = 0,  /* default: start at next loop boundary */
     OMEGA_CUE_IMMEDIATE    = 1,  /* start immediately */
     OMEGA_CUE_QUANTIZED    = 2,  /* start at next beat boundary */
+    OMEGA_CUE_BAR          = 3,  /* start at next bar boundary per TimeSignatureMap;
+                                     degrades to OMEGA_CUE_AT_BOUNDARY if freeform */
 } omega_cue_mode_t;
 
 omega_status_t omega_perf_assign(omega_engine_t engine, omega_slot_id_t slot,
@@ -329,6 +333,106 @@ omega_status_t      omega_mod_set(omega_engine_t engine, omega_mod_channel_t ch,
 
 /* Copy all channel values into caller-owned array — safe to call from the UI thread */
 omega_status_t omega_mod_snapshot(omega_engine_t engine, float* out, uint32_t count);
+
+/* ── Time Signature ──────────────────────────────────────────────────── */
+
+typedef struct {
+    omega_tick_t tick;
+    uint8_t      numerator;
+    uint8_t      denominator;
+} omega_time_sig_point_t;
+
+/* Insert or replace the time signature at tick. tick=0 sets the opening meter.
+   Enqueues via the command queue.
+   Returns OMEGA_ERR_INVALID if denominator is not a power of 2 in [1, 32]. */
+omega_status_t omega_timesig_set(omega_engine_t engine, omega_tick_t tick,
+                                  uint8_t numerator, uint8_t denominator);
+
+/* Remove the time signature point at exactly tick.
+   Returns OMEGA_ERR_NOT_FOUND if no point exists there. */
+omega_status_t omega_timesig_remove(omega_engine_t engine, omega_tick_t tick);
+
+/* Remove all time signature points, entering freeform mode. */
+omega_status_t omega_timesig_clear(omega_engine_t engine);
+
+/* Query the active time signature at tick (the last point at or before it).
+   Returns OMEGA_ERR_NO_METER if the session is freeform.
+   Safe to call from any thread. */
+omega_status_t omega_timesig_at(omega_engine_t engine, omega_tick_t tick,
+                                 omega_time_sig_point_t* out);
+
+/* Returns 1 if the session is freeform (no time signature entries), 0 otherwise. */
+int omega_is_freeform(omega_engine_t engine);
+
+/* ── Bar/Beat Conversion ─────────────────────────────────────────────── */
+/* Do not call from the timing thread.                                    */
+
+typedef struct {
+    uint32_t bar;         /* 1-based */
+    uint8_t  beat;        /* 1-based */
+    uint32_t subdivision; /* ticks past the beat boundary */
+} omega_beat_pos_t;
+
+/* Convert absolute tick → {bar, beat, subdivision}.
+   Returns OMEGA_ERR_NO_METER if freeform. */
+omega_status_t omega_tick_to_beat_pos(omega_engine_t engine, omega_tick_t tick,
+                                       omega_beat_pos_t* out);
+
+/* Convert {bar, beat, subdivision} → absolute tick.
+   Returns OMEGA_ERR_NO_METER if freeform.
+   Returns OMEGA_ERR_INVALID if beat > numerator at that bar's active meter. */
+omega_status_t omega_beat_pos_to_tick(omega_engine_t engine,
+                                       const omega_beat_pos_t* pos, omega_tick_t* out);
+
+/* Tick of the next bar boundary at or after from_tick.
+   Returns OMEGA_ERR_NO_METER if freeform. */
+omega_status_t omega_next_bar_tick(omega_engine_t engine, omega_tick_t from_tick,
+                                    omega_tick_t* out);
+
+/* Quantize tick to the nearest beat (round-half-up).
+   Returns OMEGA_ERR_NO_METER if freeform. */
+omega_status_t omega_quantize_to_beat(omega_engine_t engine, omega_tick_t tick,
+                                       omega_tick_t* out);
+
+/* ── SMPTE Config ────────────────────────────────────────────────────── */
+
+typedef struct {
+    uint8_t fps;          /* nominal frame rate: 24, 25, or 30 */
+    int     drop_frame;   /* 1 = 29.97 drop-frame (only valid when fps == 30); 0 otherwise */
+    int     is_2997;      /* 1 = 29.97 actual rate; 0 = exactly fps */
+} omega_smpte_config_t;
+
+/* Set the session SMPTE config. Enqueues via the command queue. */
+omega_status_t omega_smpte_config_set(omega_engine_t engine,
+                                       const omega_smpte_config_t* config);
+
+/* Query the current SMPTE config.
+   Returns OMEGA_ERR_NO_SMPTE_CONFIG if not set. */
+omega_status_t omega_smpte_config_get(omega_engine_t engine, omega_smpte_config_t* out);
+
+/* Clear the SMPTE config, removing video lock from the session. */
+omega_status_t omega_smpte_config_clear(omega_engine_t engine);
+
+/* ── SMPTE Conversion ────────────────────────────────────────────────── */
+/* Do not call from the timing thread.                                    */
+
+typedef struct {
+    uint8_t hours;
+    uint8_t minutes;
+    uint8_t seconds;
+    uint8_t frames;
+} omega_smpte_time_t;
+
+/* Convert absolute tick → SMPTE HH:MM:SS:FF.
+   Returns OMEGA_ERR_NO_SMPTE_CONFIG if smpte_config has not been set. */
+omega_status_t omega_tick_to_smpte(omega_engine_t engine, omega_tick_t tick,
+                                    omega_smpte_time_t* out);
+
+/* Convert SMPTE HH:MM:SS:FF → absolute tick.
+   Returns OMEGA_ERR_NO_SMPTE_CONFIG if not set.
+   Returns OMEGA_ERR_INVALID for impossible drop-frame addresses. */
+omega_status_t omega_smpte_to_tick(omega_engine_t engine,
+                                    const omega_smpte_time_t* smpte, omega_tick_t* out);
 
 /* ── Performance Context setters ─────────────────────────────────────── */
 

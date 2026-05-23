@@ -1,4 +1,6 @@
 #include <omega/engine.h>
+#include <omega/smpte_converter.h>
+#include <omega/time_signature_map.h>
 
 #include <algorithm>
 #include <type_traits>
@@ -119,6 +121,110 @@ omega_status_t Engine::perf_set_random_bias(SlotId slot, uint8_t bias)
     return enqueue(PerfSetRandomBiasCmd{slot, bias});
 }
 
+omega_status_t Engine::add_input(EventInput* input)
+{
+    if (input == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return enqueue(AddInputCmd{input});
+}
+
+omega_status_t Engine::remove_input(EventInput* input)
+{
+    if (input == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return enqueue(RemoveInputCmd{input});
+}
+
+uint32_t Engine::input_overflow_count() const noexcept
+{
+    return input_bus_.overflow_count();
+}
+
+omega_status_t Engine::ctx_set_scale(const omega_scale_t& scale)
+{
+    return enqueue(SetCtxScaleCmd{scale});
+}
+
+omega_status_t Engine::ctx_set_chord(const omega_chord_t& chord)
+{
+    return enqueue(SetCtxChordCmd{chord});
+}
+
+omega_status_t Engine::ctx_set_transpose(int8_t semitones)
+{
+    return enqueue(SetCtxTransposeCmd{semitones});
+}
+
+omega_status_t Engine::ctx_set_velocity(uint8_t velocity)
+{
+    return enqueue(SetCtxVelocityCmd{velocity});
+}
+
+omega_status_t Engine::ctx_set_chaos(uint8_t chaos)
+{
+    return enqueue(SetCtxChaosCmd{chaos});
+}
+
+omega_status_t Engine::ctx_set_groove(uint8_t groove_id, float swing)
+{
+    return enqueue(SetCtxGrooveCmd{groove_id, swing});
+}
+
+omega_status_t Engine::timesig_set(uint64_t tick, uint8_t numerator, uint8_t denominator)
+{
+    if (!is_valid_timesig_denominator(denominator) || numerator == 0u)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return enqueue(SetTimeSigCmd{tick, numerator, denominator});
+}
+
+omega_status_t Engine::timesig_remove(uint64_t tick)
+{
+    return enqueue(RemoveTimeSigCmd{tick});
+}
+
+omega_status_t Engine::timesig_clear()
+{
+    return enqueue(ClearTimeSigCmd{});
+}
+
+omega_status_t Engine::smpte_config_set(const SmpteConfig& config)
+{
+    if (!is_valid_smpte_config(config))
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return enqueue(SetSmpteConfigCmd{config});
+}
+
+omega_status_t Engine::smpte_config_clear()
+{
+    return enqueue(ClearSmpteConfigCmd{});
+}
+
+omega_status_t Engine::add_source(EventSource* source, uint32_t priority)
+{
+    if (source == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return enqueue(AddSourceCmd{source, priority});
+}
+
+omega_status_t Engine::remove_source(EventSource* source)
+{
+    if (source == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return enqueue(RemoveSourceCmd{source});
+}
+
 omega_status_t Engine::enqueue(Command cmd)
 {
     if (queue_.push(cmd))
@@ -169,6 +275,9 @@ void Engine::apply(const TransportCmd& cmd)
                 session_start_ns_ = clock_->now_ns() - pos;
             }
             ProcessContext ctx{};
+            ctx.input_bus = &input_bus_;
+            ctx.modulation_bus = &mod_bus_;
+            ctx.perf_ctx = perf_ctx_;
             EventDispatcher dispatcher{sinks_};
             timeline_.on_locate(cmd.locate_tick, dispatcher, ctx);
             song_.on_locate(cmd.locate_tick, dispatcher, ctx);
@@ -227,6 +336,106 @@ void Engine::apply(const PerfSetVelocityScaleCmd& cmd)
 void Engine::apply(const PerfSetRandomBiasCmd& cmd)
 {
     perf_.set_random_bias(cmd.slot, cmd.bias);
+}
+
+void Engine::apply(const AddInputCmd& cmd)
+{
+    if (cmd.input != nullptr)
+    {
+        inputs_.push_back(cmd.input);
+    }
+}
+
+void Engine::apply(const RemoveInputCmd& cmd)
+{
+    auto it = std::find(inputs_.begin(), inputs_.end(), cmd.input);
+    if (it != inputs_.end())
+    {
+        inputs_.erase(it);
+    }
+}
+
+void Engine::apply(const SetCtxScaleCmd& cmd)
+{
+    perf_ctx_.scale = cmd.scale;
+}
+
+void Engine::apply(const SetCtxChordCmd& cmd)
+{
+    perf_ctx_.chord = cmd.chord;
+}
+
+void Engine::apply(const SetCtxTransposeCmd& cmd)
+{
+    perf_ctx_.global_transpose = cmd.semitones;
+}
+
+void Engine::apply(const SetCtxVelocityCmd& cmd)
+{
+    perf_ctx_.global_velocity = cmd.velocity;
+}
+
+void Engine::apply(const SetCtxChaosCmd& cmd)
+{
+    perf_ctx_.chaos = cmd.chaos;
+}
+
+void Engine::apply(const SetCtxGrooveCmd& cmd)
+{
+    perf_ctx_.groove_id = cmd.groove_id;
+    perf_ctx_.swing = cmd.swing;
+}
+
+void Engine::apply(const AddSourceCmd& cmd)
+{
+    if (cmd.source == nullptr)
+    {
+        return;
+    }
+    // Insert in priority order; equal priorities maintain registration order.
+    auto it = std::upper_bound(
+        custom_sources_.begin(),
+        custom_sources_.end(),
+        cmd.priority,
+        [](uint32_t pri, const std::pair<uint32_t, EventSource*>& p) { return pri < p.first; });
+    custom_sources_.insert(it, {cmd.priority, cmd.source});
+}
+
+void Engine::apply(const RemoveSourceCmd& cmd)
+{
+    auto it = std::find_if(
+        custom_sources_.begin(),
+        custom_sources_.end(),
+        [&](const std::pair<uint32_t, EventSource*>& p) { return p.second == cmd.source; });
+    if (it != custom_sources_.end())
+    {
+        custom_sources_.erase(it);
+    }
+}
+
+void Engine::apply(const SetTimeSigCmd& cmd)
+{
+    timesig_map_.insert(cmd.tick, cmd.numerator, cmd.denominator);
+}
+
+void Engine::apply(const RemoveTimeSigCmd& cmd)
+{
+    timesig_map_.remove(cmd.tick);
+}
+
+void Engine::apply(const ClearTimeSigCmd& /*cmd*/)
+{
+    timesig_map_.clear();
+}
+
+void Engine::apply(const SetSmpteConfigCmd& cmd)
+{
+    smpte_config_ = cmd.config;
+}
+
+void Engine::apply(const ClearSmpteConfigCmd& /*cmd*/)
+{
+    smpte_config_.reset();
 }
 
 void Engine::process()
@@ -290,6 +499,66 @@ void Engine::process()
                 {
                     apply(c);
                 }
+                else if constexpr (std::is_same_v<T, AddInputCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, RemoveInputCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, SetCtxScaleCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, SetCtxChordCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, SetCtxTransposeCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, SetCtxVelocityCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, SetCtxChaosCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, SetCtxGrooveCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, AddSourceCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, RemoveSourceCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, SetTimeSigCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, RemoveTimeSigCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, ClearTimeSigCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, SetSmpteConfigCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, ClearSmpteConfigCmd>)
+                {
+                    apply(c);
+                }
             },
             cmd);
     }
@@ -299,12 +568,33 @@ void Engine::process()
         return;
     }
 
+    input_bus_.clear();
+    {
+        InputDispatcher input_dispatcher{input_bus_};
+        for (auto* input : inputs_)
+        {
+            input->poll(input_dispatcher);
+        }
+    }
+
     uint64_t now = clock_->now_ns();
     uint64_t position = now - session_start_ns_;
     uint64_t to_tick = tempo_map_.ns_to_ticks(position);
 
     ProcessContext ctx{};
+    ctx.input_bus = &input_bus_;
+    ctx.modulation_bus = &mod_bus_;
+    ctx.perf_ctx = perf_ctx_;
+
     EventDispatcher dispatcher{sinks_};
+
+    // Custom sources run before built-ins, in priority/registration order.
+    for (auto& [pri, src] : custom_sources_)
+    {
+        src->advance(to_tick, dispatcher, ctx);
+    }
+
+    // Built-in PLAYBACK sources always run last (priority 2, registered at engine creation).
     timeline_.advance(to_tick, dispatcher, ctx);
     song_.advance(to_tick, dispatcher, ctx);
     perf_.advance(to_tick, dispatcher, ctx);

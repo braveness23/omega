@@ -9,6 +9,55 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **M4.5 — TimeSignatureMap, SmpteConverter, OMEGA_CUE_BAR** (sprints 4.5.1–4.5.3):
+  - `TimeSignatureMap` — sorted list of `TimeSigPoint{tick, numerator, denominator}`; empty = freeform mode; `insert()` validates denominator (power-of-two 1–32) and replaces any existing point at the same tick; `remove()`; `at()` returns the governing time signature at any tick (sprint 4.5.1)
+  - `MeterCursor` (implements `PositionConverter`) — `tick_to_beat_pos()` / `beat_pos_to_tick()` with bar counting; `next_bar_tick()` / `next_beat_tick()`; `quantize_to_beat()` / `quantize_to_subdivision()` (round-half-up); non-realtime only (sprint 4.5.1)
+  - `PositionConverter` abstract base — `next_boundary()` and `quantize()` virtual interface used by `MeterCursor` and `SmpteConverter` (sprint 4.5.1)
+  - `SmpteConfig` — `{fps, drop_frame, is_2997}`; `is_valid_smpte_config()` validates fps ∈ {24,25,30}, is_2997 requires fps=30, drop_frame requires is_2997 (sprint 4.5.2)
+  - `SmpteConverter` (implements `PositionConverter`) — tick↔HH:MM:SS:FF via `ns_to_frame` (floor) / `frame_to_ns` (ceiling); NDF for 24/25/30fps, drop-frame NTSC 29.97 (17982 frames per 10-min group); `next_boundary()`, `quantize()` (round-half-up); non-realtime only (sprint 4.5.2)
+  - `OMEGA_CUE_BAR = 2` — new cue mode; `PerformanceSource` waits for the next musical bar boundary (uses `TimeSignatureMap::at()` on timing thread, safe); falls back to next-beat in freeform mode (sprint 4.5.3)
+  - `OMEGA_ERR_NO_METER = -6`, `OMEGA_ERR_NO_SMPTE_CONFIG = -7` — new status codes (sprint 4.5.3)
+  - C API: `omega_timesig_set/remove/clear/is_freeform/at`, `omega_tick_to_beat_pos`, `omega_beat_pos_to_tick`, `omega_next_bar_tick`, `omega_quantize_to_beat` (sprint 4.5.3)
+  - C API: `omega_smpte_config_set/clear`, `omega_tick_to_smpte`, `omega_smpte_to_tick` (sprint 4.5.3)
+  - Engine: `timesig_set/remove/clear`, `smpte_config_set/clear`, `tempo_map()` accessor; `SetTimeSigCmd`, `RemoveTimeSigCmd`, `ClearTimeSigCmd`, `SetSmpteConfigCmd`, `ClearSmpteConfigCmd` command variants (sprint 4.5.3)
+- **M4.2 — ModulationBus** (sprint 4.2):
+  - `ModulationBus` — 256-channel named float bus; `register_channel()`, `find()`, `get()`, `set()`, `snapshot()`; TSan-clean cross-thread access via `atomic<uint32_t>` bit-cast (sprint 4.2)
+  - `ProcessContext.modulation_bus` — non-owning pointer to the engine's `ModulationBus`; set before every `advance()` call (sprint 4.2)
+  - C API: `omega_mod_register`, `omega_mod_find`, `omega_mod_get`, `omega_mod_set`, `omega_mod_snapshot` (sprint 4.2)
+- **M4.3 — PerformanceContext** (sprint 4.3):
+  - `omega_perf_ctx_t` — shared musical state: scale (root + 12-bit bitmask), chord (root, type, 6 voices), global transpose (±127 semitones), global velocity (0–200), chaos (0–100), groove ID, swing, random seed (sprint 4.3)
+  - `ProcessContext.perf_ctx` — copy of the engine's `PerformanceContext` snapshotted each cycle; readable by any source via `ctx.perf_ctx` (sprint 4.3)
+  - `Engine::ctx_set_scale/chord/transpose/velocity/chaos/groove` — enqueue `SetCtx*` commands; applied atomically on next `process()` cycle (sprint 4.3)
+  - `Engine::ctx_get` — reads last-committed `omega_perf_ctx_t`; must not be called concurrently with `process()` (sprint 4.3)
+  - C API: `omega_ctx_set_scale`, `omega_ctx_set_chord`, `omega_ctx_set_transpose`, `omega_ctx_set_velocity`, `omega_ctx_set_chaos`, `omega_ctx_set_groove`, `omega_ctx_get` (sprint 4.3)
+- **M4.4 — Custom EventSource + TransformSource** (sprint 4.4):
+  - `EventSource::advance()` now receives `ProcessContext&` giving sources access to `InputBus`, `ModulationBus`, and `PerformanceContext` each cycle (sprint 4.4)
+  - `Engine::add_source(source, priority)` / `Engine::remove_source(source)` — register custom sources via SPSC command queue; insertion is sorted by priority so MODULATOR(0) → CONTEXT(1) → PLAYBACK(2) always precedes built-in sources (sprint 4.4)
+  - `TransformSource` — abstract base for composition-based event routing; wraps an upstream `EventSource`, captures its output in a 512-event stack buffer, and re-dispatches transformed events; `ChannelFilterSource` concrete implementation (sprint 4.4)
+  - `MockEventSource` test utility — primes events at specific ticks; dispatches those with `tick <= to_tick` during `advance()`; part of the public test API in `include/omega/test/` (sprint 4.4)
+  - C API: `omega_source_create/destroy`, `omega_engine_add_source`, `omega_engine_remove_source`, `omega_dispatch` (sprint 4.4)
+- **M4.1 — EventInput + InputBus** (sprint 4.1):
+  - `EventInput` abstract base — poll-based incoming event source (MIDI, OSC, CV); called each cycle before `EventSource::advance()` (sprint 4.1)
+  - `InputDispatcher` — per-cycle helper passed to `EventInput::poll()`; delivers events into the `InputBus` (sprint 4.1)
+  - `InputBus` — fixed-capacity (256 events) per-cycle event buffer; overflow increments a cumulative counter readable via `omega_input_overflow_count()` (sprint 4.1)
+  - `MockEventInput` test utility — primes events to deliver on the next `poll()` call; part of the public test API in `include/omega/test/` (sprint 4.1)
+  - `ProcessContext.input_bus` — pointer to the cycle's InputBus; set before every `advance()` call (sprint 4.1)
+  - C API: `omega_input_create/destroy`, `omega_engine_add_input`, `omega_engine_remove_input`, `omega_input_overflow_count`, `omega_deliver` (sprint 4.1)
+  - `AddInputCmd` / `RemoveInputCmd` — new `Command` variants; input list modified on timing thread via SPSC queue (sprint 4.1)
+
+### Fixed
+- clang-tidy: added `NOLINT` for `clang-analyzer-optin.performance.Padding` on `Engine` (field ordering constrained by initialization-order dependency)
+- clang-tidy: value-initialize `InputBus::events_`, `ModulationBus::bits_to_float` local `f`, `float_to_bits` local `bits`, and `CaptureDispatcher::events` to suppress `cppcoreguidelines-init-variables` / `cppcoreguidelines-pro-type-member-init`
+- clang-tidy: change `ModulationBus::channels_` and `CaptureDispatcher::events` from C-style arrays to `std::array<>` (`cppcoreguidelines-avoid-c-arrays`)
+- clang-tidy: `TransformSource` Rule of 5 — add `= delete` for copy/move; remove redundant `override` on `final` override (`cppcoreguidelines-special-member-functions`, `modernize-use-override`)
+- clang-tidy: remove redundant `inline` specifier from `constexpr` helpers in `time_signature_map.h` and `smpte_converter.h` (`readability-redundant-inline-specifier`)
+- clang-tidy: name anonymous parameters and initialize uninit fields in test structs (`readability-named-parameter`, `cppcoreguidelines-pro-type-member-init`)
+- clang-tidy: replace C-style float arrays with `std::array` in test files; use range-based for where applicable
+- MSVC: initialize `bits_to_float` / `float_to_bits` locals before `memcpy` — fixes MSVC `/RTCu` crash in ModulationBus TSan test
+- MSVC: replace em dash (`—`) with ASCII hyphen in `TEST_CASE` names — fixes CTest filter encoding failure on Windows (`test_modulation_bus`, `test_custom_source`, `test_smpte_converter`)
+- clang-tidy: split comma-separated `uint64_t` declarations in `test_time_signature_map.cpp` (`readability-isolate-declaration`)
+
 <!-- New releases go above this line in the format:
 ## [0.4.0] - YYYY-MM-DD
 ### Added

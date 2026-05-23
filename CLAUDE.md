@@ -80,7 +80,7 @@ Omega is a **C++ sequencer engine** with three public layers:
 
 ### Engine / Session separation
 
-`Engine` is the playback machine. `Session` is the data. They are separate objects. The engine holds a reference to the active session and can swap sessions without reinitializing. Session owns shared data: `PatternLibrary`, `SinkRegistry`, `TempoMap`, `ModulationBus`, `PerformanceContext`, `GrooveLibrary`, `EventSourceRegistry`, and `EventInputRegistry`.
+`Engine` is the playback machine. `Session` is the data. They are separate objects. The engine holds a reference to the active session and can swap sessions without reinitializing. Session owns shared data: `PatternLibrary`, `SinkRegistry`, `TempoMap`, `TimeSignatureMap`, `ModulationBus`, `PerformanceContext`, `GrooveLibrary`, `EventSourceRegistry`, and `EventInputRegistry`.
 
 ### Six extension points
 
@@ -102,7 +102,7 @@ Source registration order convention: **MODULATOR → CONTEXT → PLAYBACK**. Mo
 The three built-in playback sources are registered automatically:
 - **`TimelineSource`** — owns the `Timeline` (tracks + event vectors). Linear multi-track playback. Supports note/CC/program chasing on locate.
 - **`SongArrangementSource`** — owns the `SongArrangement`. Chains patterns with repeat counts.
-- **`PerformanceSource`** — owns 64 performance slots. State machine: EMPTY → IDLE → QUEUED → PLAYING → STOPPING. Per-slot: transpose (±24 semitones), velocity scale (0–200%), random bias (0–100%). Supports phase-resume chasing on locate.
+- **`PerformanceSource`** — owns 64 performance slots. State machine: EMPTY → IDLE → QUEUED → PLAYING → STOPPING. Per-slot: transpose (±24 semitones), velocity scale (0–200%), random bias (0–100%). Supports phase-resume chasing on locate. Cue modes: `OMEGA_CUE_AT_BOUNDARY`, `OMEGA_CUE_IMMEDIATE`, `OMEGA_CUE_QUANTIZED`, `OMEGA_CUE_BAR` (bar-boundary cue via `TimeSignatureMap`; degrades to `OMEGA_CUE_AT_BOUNDARY` in freeform mode).
 
 Custom sources implement `EventSource` and are added via `omega_engine_add_source()`. Custom inputs implement `EventInput` and are added via `omega_engine_add_input()`. `TransformSource` is a provided base class for composition-based routing (wraps an upstream source to transform its output).
 
@@ -131,6 +131,9 @@ The SPSC queue is single-producer. Multiple mutation threads must serialize exte
 - 480 PPQN tick resolution (compile-time constant; never hardcode 480 in user code).
 - All internal time is `uint64_t` nanoseconds from session start. All musical time is `uint64_t` ticks. No floating point in the hot path.
 - The `TempoMap` is a sorted list of `TempoPoint{tick, bpm_milli, ns_at_tick}`. `ns_at_tick` is precomputed on insert. BPM is stored as milli-BPM (`uint32_t`): 120 BPM = `120000`.
+- The `TimeSignatureMap` is a sorted list of `TimeSigPoint{tick, numerator, denominator}`, parallel to `TempoMap`. An empty map means freeform mode (no meter). Denominator is the literal note value (4 = quarter note). `OMEGA_ERR_NO_METER` is returned by any meter-dependent helper when the session is freeform.
+- The optional `SmpteConfig` on `Session` stores frame rate and drop-frame flag for SMPTE timecode. Absent = no video lock. `OMEGA_ERR_NO_SMPTE_CONFIG` is returned by SMPTE helpers when not set.
+- `PositionConverter` is the base class for all coordinate-system helpers (bar/beat, SMPTE, future: samples, feet+frames). `MeterCursor` and `SmpteConverter` both implement it. Neither may be called from the timing thread. Snap-to-grid utilities accept `PositionConverter&` without caring which format is active.
 - The catch-up loop fires all overdue events in order — events are never skipped when cycles run late.
 
 ### Memory

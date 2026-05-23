@@ -61,7 +61,9 @@ uint64_t TempoMap::ticks_to_ns(uint64_t ticks) const
             return t < p.tick;
         });
     if (it != points_.begin())
+    {
         --it;
+    }
 
     return it->ns_at_tick + segment_ticks_to_ns(ticks - it->tick, it->bpm_milli);
 }
@@ -74,7 +76,9 @@ uint64_t TempoMap::ns_to_ticks(uint64_t ns) const
             return n < p.ns_at_tick;
         });
     if (it != points_.begin())
+    {
         --it;
+    }
 
     return it->tick + segment_ns_to_ticks(ns - it->ns_at_tick, it->bpm_milli);
 }

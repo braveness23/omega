@@ -1,9 +1,33 @@
 #include <omega/commands.h>
 #include <omega/engine.h>
+#include <omega/event_input.h>
+#include <omega/event_source.h>
 #include <omega/omega.h>
 #include <omega/perf_slot.h>
 #include <omega/sink.h>
+#include <omega/smpte_converter.h>
+#include <omega/time_signature_map.h>
 #include <omega/types.h>
+
+#include <new>
+
+namespace
+{
+
+omega::CueMode to_cpp_cue_mode(omega_cue_mode_t m) noexcept
+{
+    switch (m)
+    {
+        case OMEGA_CUE_IMMEDIATE:
+            return omega::CueMode::IMMEDIATE;
+        case OMEGA_CUE_BAR:
+            return omega::CueMode::NEXT_BAR;
+        default:
+            return omega::CueMode::NEXT_BEAT;
+    }
+}
+
+}  // namespace
 
 // omega_engine_s is the heap-allocated owner of the C++ Engine.
 // omega_engine_t* (opaque to C callers) points to one of these.
@@ -17,6 +41,65 @@ struct omega_engine_s  // NOLINT(readability-identifier-naming)
 // C++ callers cast OutputSink* to omega_sink_t* and pass it to the C API.
 struct omega_sink_s  // NOLINT(readability-identifier-naming)
 {};
+
+// omega_input_t is the heap-allocated owner of a CEventInput.
+// omega_input_dispatcher_t is an opaque alias for omega::InputDispatcher.
+struct omega_input_dispatcher_s  // NOLINT(readability-identifier-naming)
+{};
+
+// omega_source_t is the heap-allocated owner of a CEventSource.
+// omega_dispatcher_t is an opaque alias for omega::EventDispatcher.
+// omega_process_context_t is an opaque alias for omega::ProcessContext.
+struct omega_source_s  // NOLINT(readability-identifier-naming)
+{};
+struct omega_dispatcher_s  // NOLINT(readability-identifier-naming)
+{};
+struct omega_process_context_s  // NOLINT(readability-identifier-naming)
+{};
+
+class CEventInput : public omega::EventInput
+{
+public:
+    CEventInput(omega_input_poll_fn_t poll_fn, void* userdata) noexcept
+        : poll_fn_{poll_fn}, userdata_{userdata}
+    {}
+
+    void poll(omega::InputDispatcher& dispatcher) override
+    {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        poll_fn_(reinterpret_cast<omega_input_dispatcher_t*>(&dispatcher), userdata_);
+    }
+
+private:
+    omega_input_poll_fn_t poll_fn_;
+    void* userdata_;
+};
+
+class CEventSource : public omega::EventSource
+{
+public:
+    CEventSource(omega_source_advance_fn_t advance_fn, void* userdata, uint32_t priority) noexcept
+        : advance_fn_{advance_fn}, userdata_{userdata}, priority_{priority}
+    {}
+
+    void advance(uint64_t to_tick,
+                 omega::EventDispatcher& dispatcher,
+                 omega::ProcessContext& ctx) override
+    {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        auto* d = reinterpret_cast<omega_dispatcher_t*>(&dispatcher);
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        auto* c = reinterpret_cast<omega_process_context_t*>(&ctx);
+        advance_fn_(to_tick, d, c, userdata_);
+    }
+
+    [[nodiscard]] uint32_t priority() const noexcept { return priority_; }
+
+private:
+    omega_source_advance_fn_t advance_fn_;
+    void* userdata_;
+    uint32_t priority_;
+};
 
 extern "C" {
 
@@ -198,8 +281,7 @@ omega_status_t omega_perf_cue(omega_engine_t* eng, omega_slot_id_t slot, omega_c
     {
         return OMEGA_ERR_INVALID;
     }
-    omega::CueMode cpp_mode =
-        (mode == OMEGA_CUE_IMMEDIATE) ? omega::CueMode::IMMEDIATE : omega::CueMode::NEXT_BEAT;
+    omega::CueMode cpp_mode = to_cpp_cue_mode(mode);
     return eng->engine.perf_cue(slot, cpp_mode);
 }
 
@@ -209,8 +291,7 @@ omega_status_t omega_perf_stop(omega_engine_t* eng, omega_slot_id_t slot, omega_
     {
         return OMEGA_ERR_INVALID;
     }
-    omega::CueMode cpp_mode =
-        (mode == OMEGA_CUE_IMMEDIATE) ? omega::CueMode::IMMEDIATE : omega::CueMode::NEXT_BEAT;
+    omega::CueMode cpp_mode = to_cpp_cue_mode(mode);
     return eng->engine.perf_stop(slot, cpp_mode);
 }
 
@@ -220,8 +301,7 @@ omega_status_t omega_perf_stop_all(omega_engine_t* eng, omega_cue_mode_t mode)
     {
         return OMEGA_ERR_INVALID;
     }
-    omega::CueMode cpp_mode =
-        (mode == OMEGA_CUE_IMMEDIATE) ? omega::CueMode::IMMEDIATE : omega::CueMode::NEXT_BEAT;
+    omega::CueMode cpp_mode = to_cpp_cue_mode(mode);
     return eng->engine.perf_stop_all(cpp_mode);
 }
 
@@ -252,6 +332,475 @@ omega_status_t omega_perf_set_random_bias(omega_engine_t* eng, omega_slot_id_t s
         return OMEGA_ERR_INVALID;
     }
     return eng->engine.perf_set_random_bias(slot, bias);
+}
+
+omega_input_t* omega_input_create(const omega_input_desc_t* desc)
+{
+    if (desc == nullptr || desc->poll_fn == nullptr)
+    {
+        return nullptr;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    auto* p = new (std::nothrow) CEventInput(desc->poll_fn, desc->userdata);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    return reinterpret_cast<omega_input_t*>(p);
+}
+
+void omega_input_destroy(omega_input_t* input)
+{
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory,cppcoreguidelines-pro-type-reinterpret-cast)
+    delete reinterpret_cast<CEventInput*>(input);
+}
+
+omega_status_t omega_engine_add_input(omega_engine_t* eng, omega_input_t* input)
+{
+    if (eng == nullptr || input == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    return eng->engine.add_input(reinterpret_cast<omega::EventInput*>(input));
+}
+
+omega_status_t omega_engine_remove_input(omega_engine_t* eng, omega_input_t* input)
+{
+    if (eng == nullptr || input == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    return eng->engine.remove_input(reinterpret_cast<omega::EventInput*>(input));
+}
+
+uint32_t omega_input_overflow_count(const omega_engine_t* eng)
+{
+    if (eng == nullptr)
+    {
+        return 0;
+    }
+    return eng->engine.input_overflow_count();
+}
+
+void omega_deliver(omega_input_dispatcher_t* dispatcher, const omega_event_t* ev)
+{
+    if (dispatcher == nullptr || ev == nullptr)
+    {
+        return;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    reinterpret_cast<omega::InputDispatcher*>(dispatcher)
+        ->deliver(
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+            *reinterpret_cast<const omega::Event*>(ev));
+}
+
+// ── Modulation bus ────────────────────────────────────────────────────────────
+
+omega_mod_channel_t omega_mod_register(omega_engine_t* eng, const char* name, float initial)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_MOD_INVALID;
+    }
+    return eng->engine.modulation_bus().register_channel(name, initial);
+}
+
+omega_mod_channel_t omega_mod_find(omega_engine_t* eng, const char* name)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_MOD_INVALID;
+    }
+    return eng->engine.modulation_bus().find(name);
+}
+
+float omega_mod_get(omega_engine_t* eng, omega_mod_channel_t channel)
+{
+    if (eng == nullptr)
+    {
+        return 0.0f;
+    }
+    return eng->engine.modulation_bus().get(channel);
+}
+
+omega_status_t omega_mod_set(omega_engine_t* eng, omega_mod_channel_t channel, float value)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    eng->engine.modulation_bus().set(channel, value);
+    return OMEGA_OK;
+}
+
+omega_status_t omega_mod_snapshot(omega_engine_t* eng, float* out, uint32_t count)
+{
+    if (eng == nullptr || out == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    eng->engine.modulation_bus().snapshot(out, count);
+    return OMEGA_OK;
+}
+
+// ── Performance context ───────────────────────────────────────────────────────
+
+omega_status_t omega_ctx_set_scale(omega_engine_t* eng, const omega_scale_t* scale)
+{
+    if (eng == nullptr || scale == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.ctx_set_scale(*scale);
+}
+
+omega_status_t omega_ctx_set_chord(omega_engine_t* eng, const omega_chord_t* chord)
+{
+    if (eng == nullptr || chord == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.ctx_set_chord(*chord);
+}
+
+omega_status_t omega_ctx_set_transpose(omega_engine_t* eng, int8_t semitones)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.ctx_set_transpose(semitones);
+}
+
+omega_status_t omega_ctx_set_velocity(omega_engine_t* eng, uint8_t velocity)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.ctx_set_velocity(velocity);
+}
+
+omega_status_t omega_ctx_set_chaos(omega_engine_t* eng, uint8_t chaos)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.ctx_set_chaos(chaos);
+}
+
+omega_status_t omega_ctx_set_groove(omega_engine_t* eng, uint8_t groove_id, float swing)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.ctx_set_groove(groove_id, swing);
+}
+
+omega_status_t omega_ctx_get(omega_engine_t* eng, omega_perf_ctx_t* ctx)
+{
+    if (eng == nullptr || ctx == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    eng->engine.ctx_get(*ctx);
+    return OMEGA_OK;
+}
+
+// ── Custom event sources ──────────────────────────────────────────────────────
+
+omega_source_t* omega_source_create(const omega_source_desc_t* desc)
+{
+    if (desc == nullptr || desc->advance_fn == nullptr)
+    {
+        return nullptr;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    auto* p = new (std::nothrow) CEventSource(desc->advance_fn, desc->userdata, desc->priority);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    return reinterpret_cast<omega_source_t*>(p);
+}
+
+void omega_source_destroy(omega_source_t* source)
+{
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory,cppcoreguidelines-pro-type-reinterpret-cast)
+    delete reinterpret_cast<CEventSource*>(source);
+}
+
+omega_status_t omega_engine_add_source(omega_engine_t* eng, omega_source_t* source)
+{
+    if (eng == nullptr || source == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto* csrc = reinterpret_cast<CEventSource*>(source);
+    return eng->engine.add_source(csrc, csrc->priority());
+}
+
+omega_status_t omega_engine_remove_source(omega_engine_t* eng, omega_source_t* source)
+{
+    if (eng == nullptr || source == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    return eng->engine.remove_source(reinterpret_cast<omega::EventSource*>(source));
+}
+
+void omega_dispatch(omega_dispatcher_t* dispatcher, const omega_event_t* ev)
+{
+    if (dispatcher == nullptr || ev == nullptr)
+    {
+        return;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    reinterpret_cast<omega::EventDispatcher*>(dispatcher)
+        ->dispatch(
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+            *reinterpret_cast<const omega::Event*>(ev));
+}
+
+uint32_t omega_ctx_input_count(const omega_process_context_t* ctx)
+{
+    if (ctx == nullptr)
+    {
+        return 0;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    const auto* pctx = reinterpret_cast<const omega::ProcessContext*>(ctx);
+    return pctx->input_bus != nullptr ? pctx->input_bus->count() : 0u;
+}
+
+const omega_event_t* omega_ctx_input_at(const omega_process_context_t* ctx, uint32_t i)
+{
+    if (ctx == nullptr)
+    {
+        return nullptr;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    const auto* pctx = reinterpret_cast<const omega::ProcessContext*>(ctx);
+    if (pctx->input_bus == nullptr || i >= pctx->input_bus->count())
+    {
+        return nullptr;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    return reinterpret_cast<const omega_event_t*>(&pctx->input_bus->at(i));
+}
+
+float omega_ctx_mod_get_ctx(const omega_process_context_t* ctx, omega_mod_channel_t channel)
+{
+    if (ctx == nullptr)
+    {
+        return 0.0f;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    const auto* pctx = reinterpret_cast<const omega::ProcessContext*>(ctx);
+    return pctx->modulation_bus != nullptr ? pctx->modulation_bus->get(channel) : 0.0f;
+}
+
+void omega_ctx_mod_set_ctx(omega_process_context_t* ctx, omega_mod_channel_t channel, float value)
+{
+    if (ctx == nullptr)
+    {
+        return;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto* pctx = reinterpret_cast<omega::ProcessContext*>(ctx);
+    if (pctx->modulation_bus != nullptr)
+    {
+        pctx->modulation_bus->set(channel, value);
+    }
+}
+
+// ── Time signature map ────────────────────────────────────────────────────────
+
+omega_status_t omega_timesig_set(omega_engine_t* eng,
+                                 uint64_t tick,
+                                 uint8_t numerator,
+                                 uint8_t denominator)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.timesig_set(tick, numerator, denominator);
+}
+
+omega_status_t omega_timesig_remove(omega_engine_t* eng, uint64_t tick)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.timesig_remove(tick);
+}
+
+omega_status_t omega_timesig_clear(omega_engine_t* eng)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.timesig_clear();
+}
+
+int omega_timesig_is_freeform(const omega_engine_t* eng)
+{
+    if (eng == nullptr)
+    {
+        return -1;
+    }
+    return eng->engine.timesig_map().is_freeform() ? 1 : 0;
+}
+
+omega_status_t omega_timesig_at(const omega_engine_t* eng,
+                                uint64_t tick,
+                                omega_time_sig_point_t* out)
+{
+    if (eng == nullptr || out == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    const omega::TimeSigPoint* pt = eng->engine.timesig_map().at(tick);
+    if (pt == nullptr)
+    {
+        return OMEGA_ERR_NOT_FOUND;
+    }
+    out->tick = pt->tick;
+    out->numerator = pt->numerator;
+    out->denominator = pt->denominator;
+    return OMEGA_OK;
+}
+
+omega_status_t omega_tick_to_beat_pos(const omega_engine_t* eng,
+                                      uint64_t tick,
+                                      omega_beat_pos_t* out)
+{
+    if (eng == nullptr || out == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    omega::MeterCursor cursor(eng->engine.timesig_map());
+    omega::BeatPosition pos{};
+    omega_status_t s = cursor.tick_to_beat_pos(tick, pos);
+    if (s == OMEGA_OK)
+    {
+        out->bar = pos.bar;
+        out->beat = pos.beat;
+        out->subdivision = pos.subdivision;
+    }
+    return s;
+}
+
+omega_status_t omega_beat_pos_to_tick(const omega_engine_t* eng,
+                                      const omega_beat_pos_t* in,
+                                      uint64_t* out)
+{
+    if (eng == nullptr || in == nullptr || out == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    omega::MeterCursor cursor(eng->engine.timesig_map());
+    omega::BeatPosition pos{};
+    pos.bar = in->bar;
+    pos.beat = in->beat;
+    pos.subdivision = in->subdivision;
+    return cursor.beat_pos_to_tick(pos, *out);
+}
+
+omega_status_t omega_next_bar_tick(const omega_engine_t* eng, uint64_t from_tick, uint64_t* out)
+{
+    if (eng == nullptr || out == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    omega::MeterCursor cursor(eng->engine.timesig_map());
+    return cursor.next_bar_tick(from_tick, *out);
+}
+
+omega_status_t omega_quantize_to_beat(const omega_engine_t* eng, uint64_t tick, uint64_t* out)
+{
+    if (eng == nullptr || out == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    omega::MeterCursor cursor(eng->engine.timesig_map());
+    return cursor.quantize_to_beat(tick, *out);
+}
+
+// ── SMPTE config ──────────────────────────────────────────────────────────────
+
+omega_status_t omega_smpte_config_set(omega_engine_t* eng, const omega_smpte_config_t* config)
+{
+    if (eng == nullptr || config == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    omega::SmpteConfig cpp_config;
+    cpp_config.fps = config->fps;
+    cpp_config.drop_frame = (config->drop_frame != 0u);
+    cpp_config.is_2997 = (config->is_2997 != 0u);
+    return eng->engine.smpte_config_set(cpp_config);
+}
+
+omega_status_t omega_smpte_config_clear(omega_engine_t* eng)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.smpte_config_clear();
+}
+
+omega_status_t omega_tick_to_smpte(const omega_engine_t* eng,
+                                   uint64_t tick,
+                                   omega_smpte_time_t* out)
+{
+    if (eng == nullptr || out == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    const auto& cfg_opt = eng->engine.smpte_config();
+    if (!cfg_opt.has_value())
+    {
+        return OMEGA_ERR_NO_SMPTE_CONFIG;
+    }
+    omega::SmpteConverter converter(*cfg_opt, eng->engine.tempo_map());
+    omega::SmpteTime t{};
+    omega_status_t s = converter.tick_to_smpte(tick, t);
+    if (s == OMEGA_OK)
+    {
+        out->hours = t.hours;
+        out->minutes = t.minutes;
+        out->seconds = t.seconds;
+        out->frames = t.frames;
+    }
+    return s;
+}
+
+omega_status_t omega_smpte_to_tick(const omega_engine_t* eng,
+                                   const omega_smpte_time_t* t,
+                                   uint64_t* out)
+{
+    if (eng == nullptr || t == nullptr || out == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    const auto& cfg_opt = eng->engine.smpte_config();
+    if (!cfg_opt.has_value())
+    {
+        return OMEGA_ERR_NO_SMPTE_CONFIG;
+    }
+    omega::SmpteConverter converter(*cfg_opt, eng->engine.tempo_map());
+    omega::SmpteTime smpte{};
+    smpte.hours = t->hours;
+    smpte.minutes = t->minutes;
+    smpte.seconds = t->seconds;
+    smpte.frames = t->frames;
+    return converter.smpte_to_tick(smpte, *out);
 }
 
 }  // extern "C"

@@ -3,18 +3,25 @@
 #include <omega/clock.h>
 #include <omega/commands.h>
 #include <omega/detail/spsc_queue.h>
+#include <omega/event_input.h>
 #include <omega/event_source.h>
+#include <omega/input_bus.h>
+#include <omega/modulation_bus.h>
 #include <omega/omega.h>
 #include <omega/pattern_library.h>
+#include <omega/perf_context.h>
 #include <omega/perf_slot.h>
+#include <omega/smpte_converter.h>
 #include <omega/song_arrangement.h>
 #include <omega/tempo_map.h>
+#include <omega/time_signature_map.h>
 #include <omega/timeline.h>
 #include <omega/types.h>
 
 #include <atomic>
 #include <cstdint>
 #include <memory_resource>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -36,7 +43,7 @@ namespace omega
  * Add sinks and create tracks from the mutation thread before starting
  * playback. Once playback is running, use enqueue() for all mutations.
  */
-class Engine
+class Engine  // NOLINT(clang-analyzer-optin.performance.Padding)
 {
 public:
     /*
@@ -246,6 +253,192 @@ public:
      */
     omega_status_t perf_set_random_bias(SlotId slot, uint8_t bias);
 
+    /* ── Inputs ──────────────────────────────────────────────────────────────── */
+
+    /*
+     * Enqueues a command to register an EventInput. On the next process() call,
+     * the input is added to the polling list.
+     *
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_INVALID    — input is NULL.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t add_input(EventInput* input);
+
+    /*
+     * Enqueues a command to deregister an EventInput. On the next process() call,
+     * the input is removed from the polling list.
+     *
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_INVALID    — input is NULL.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t remove_input(EventInput* input);
+
+    /*
+     * Returns the cumulative number of events dropped due to InputBus overflow.
+     * Never resets; monotonically increasing.
+     *
+     * Thread: Any thread.
+     */
+    [[nodiscard]] uint32_t input_overflow_count() const noexcept;
+
+    /* ── Modulation bus ──────────────────────────────────────────────────────── */
+
+    /*
+     * Returns the engine's ModulationBus for direct C++ access.
+     * Thread: Mutation thread for register_channel/find; Timing thread for get/set.
+     */
+    [[nodiscard]] ModulationBus& modulation_bus() noexcept { return mod_bus_; }
+
+    /* ── Performance context ─────────────────────────────────────────────────── */
+
+    /*
+     * Enqueues a command to set the active scale.
+     * Thread: Mutation thread only.
+     */
+    omega_status_t ctx_set_scale(const omega_scale_t& scale);
+
+    /*
+     * Enqueues a command to set the active chord.
+     * Thread: Mutation thread only.
+     */
+    omega_status_t ctx_set_chord(const omega_chord_t& chord);
+
+    /*
+     * Enqueues a command to set the global transpose (-24 to +24 semitones).
+     * Thread: Mutation thread only.
+     */
+    omega_status_t ctx_set_transpose(int8_t semitones);
+
+    /*
+     * Enqueues a command to set the global velocity scale (0-200, 100 = unity).
+     * Thread: Mutation thread only.
+     */
+    omega_status_t ctx_set_velocity(uint8_t velocity);
+
+    /*
+     * Enqueues a command to set the chaos level (0-100).
+     * Thread: Mutation thread only.
+     */
+    omega_status_t ctx_set_chaos(uint8_t chaos);
+
+    /*
+     * Enqueues a command to set the groove template and swing.
+     * Thread: Mutation thread only.
+     */
+    omega_status_t ctx_set_groove(uint8_t groove_id, float swing);
+
+    /*
+     * Returns a snapshot of the current performance context.
+     * Thread: Mutation thread only. Must not be called concurrently with process().
+     */
+    void ctx_get(omega_perf_ctx_t& out) const noexcept { out = perf_ctx_; }
+
+    /* ── Custom sources ──────────────────────────────────────────────────────── */
+
+    /*
+     * Enqueues a command to register a custom EventSource.
+     * The source is called from process() in priority/registration order,
+     * before the built-in sources (which are always priority PLAYBACK).
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_INVALID    — source is NULL.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t add_source(EventSource* source, uint32_t priority);
+
+    /*
+     * Enqueues a command to deregister a custom EventSource.
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_INVALID    — source is NULL.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t remove_source(EventSource* source);
+
+    /* ── Time signature map ─────────────────────────────────────────────────── */
+
+    /*
+     * Insert or replace a time signature at tick.
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_INVALID    — denominator is not a power of 2 in [1,32] or numerator is zero.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t timesig_set(uint64_t tick, uint8_t numerator, uint8_t denominator);
+
+    /*
+     * Remove the time signature at exactly tick.
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t timesig_remove(uint64_t tick);
+
+    /*
+     * Clear all time signature entries (enter freeform mode).
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t timesig_clear();
+
+    /*
+     * Returns a non-owning reference to the TimeSignatureMap.
+     * Thread: Timing thread for reads from advance(); Mutation thread otherwise.
+     */
+    [[nodiscard]] const TimeSignatureMap& timesig_map() const noexcept { return timesig_map_; }
+    [[nodiscard]] const TempoMap& tempo_map() const noexcept { return tempo_map_; }
+
+    /* ── SMPTE config ────────────────────────────────────────────────────────── */
+
+    /*
+     * Set the SMPTE frame-rate config.
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_INVALID    — config is not valid (see is_valid_smpte_config).
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t smpte_config_set(const SmpteConfig& config);
+
+    /*
+     * Clear the SMPTE config (SmpteConverter calls will return NO_SMPTE_CONFIG).
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t smpte_config_clear();
+
+    /*
+     * Returns a copy of the current SMPTE config, if set.
+     * Thread: Mutation thread only. Must not be called concurrently with process().
+     */
+    [[nodiscard]] const std::optional<SmpteConfig>& smpte_config() const noexcept
+    {
+        return smpte_config_;
+    }
+
     /* ── Command queue ────────────────────────────────────────────────────── */
 
     /*
@@ -302,6 +495,21 @@ private:
     void apply(const PerfSetTransposeCmd& cmd);
     void apply(const PerfSetVelocityScaleCmd& cmd);
     void apply(const PerfSetRandomBiasCmd& cmd);
+    void apply(const AddInputCmd& cmd);
+    void apply(const RemoveInputCmd& cmd);
+    void apply(const SetCtxScaleCmd& cmd);
+    void apply(const SetCtxChordCmd& cmd);
+    void apply(const SetCtxTransposeCmd& cmd);
+    void apply(const SetCtxVelocityCmd& cmd);
+    void apply(const SetCtxChaosCmd& cmd);
+    void apply(const SetCtxGrooveCmd& cmd);
+    void apply(const AddSourceCmd& cmd);
+    void apply(const RemoveSourceCmd& cmd);
+    void apply(const SetTimeSigCmd& cmd);
+    void apply(const RemoveTimeSigCmd& cmd);
+    void apply(const ClearTimeSigCmd& cmd);
+    void apply(const SetSmpteConfigCmd& cmd);
+    void apply(const ClearSmpteConfigCmd& cmd);
 
     InternalClock internal_clock_;
     ClockSource* clock_;
@@ -310,9 +518,29 @@ private:
 
     EventDispatcher::SinkList sinks_;  // sorted by sink_id, non-owning
 
+    // timesig_map_ must be declared before perf_ — perf_ holds a const reference.
+    TimeSignatureMap timesig_map_;
+
     TimelineSource timeline_;
     SongArrangementSource song_{patterns_};
-    PerformanceSource perf_{patterns_};
+    PerformanceSource perf_{patterns_, timesig_map_};
+
+    std::vector<EventInput*> inputs_;  // non-owning; modified only from timing thread via queue
+    InputBus input_bus_;
+
+    ModulationBus mod_bus_;
+
+    // perf_ctx_: timing-thread-only; snapshotted into ProcessContext each cycle.
+    // omega_ctx_get() reads this from mutation thread — must not be called
+    // concurrently with process().
+    omega_perf_ctx_t perf_ctx_{};
+
+    // custom_sources_: non-owning; sorted by (priority, registration order).
+    // Modified only from timing thread via command queue.
+    // Each entry: {priority, source*}
+    std::vector<std::pair<uint32_t, EventSource*>> custom_sources_;
+
+    std::optional<SmpteConfig> smpte_config_;
 
     detail::SpscQueue<Command, 4096> queue_;
     TempoMap tempo_map_;

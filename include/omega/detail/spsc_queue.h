@@ -21,7 +21,7 @@ namespace omega::detail
  * full from empty without a separate counter.
  */
 template <typename T, uint32_t Capacity>
-class SpscQueue
+class SpscQueue  // NOLINT(cppcoreguidelines-pro-type-member-init)
 {
     static_assert((Capacity & (Capacity - 1)) == 0, "Capacity must be a power of two");
     static_assert(Capacity >= 2, "Capacity must be at least 2");
