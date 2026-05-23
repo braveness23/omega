@@ -136,7 +136,7 @@ The engine does not fire events from a timer interrupt. It is called periodicall
 On each engine cycle:
   current_ns = clock.now()
   current_tick = ns_to_ticks(current_ns - session_start_ns, tempo_map)
-  
+
   For each track/pattern:
     While next_event.tick <= current_tick:
       fire(next_event)

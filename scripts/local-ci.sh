@@ -53,11 +53,13 @@ else
     if [[ -z "$TIDY_BUILD" ]]; then
         fail "clang-tidy: no compile_commands.json found — run: cmake -B build_tidy -DOMEGA_BUILD_TESTS=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON && cmake --build build_tidy"
     else
+        # Pass only .cpp/.hpp files: headers analysed standalone give false positives
+        # (no include-path context without a TU); real header violations surface
+        # when their including TUs are processed.
         CHANGED=$(git diff --name-only origin/main...HEAD 2>/dev/null \
-          | grep -E '\.(cpp|h|hpp)$' || true)
+          | grep -E '\.(cpp|hpp)$' || true)
         if [[ -z "$CHANGED" ]]; then
             ok "clang-tidy: no C++ files changed vs origin/main"
-        # Mirror CI: pass all changed files; clang-tidy resolves headers via their TUs.
         elif echo "$CHANGED" | xargs clang-tidy-18 -p "$TIDY_BUILD" --warnings-as-errors='*' 2>&1; then
             ok "clang-tidy clean (using $TIDY_BUILD)"
         else
