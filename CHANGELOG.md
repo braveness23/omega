@@ -10,6 +10,11 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Sprint 5.2 -- SMF import + markers + regions**: `omega_smf_import()` reads Standard MIDI
+  Files (Type 0/1, tempo, time signatures, markers, cue points, non-480 PPQN tick scaling);
+  `MarkerList` and `RegionList` as Session-level data with sorted insertion and find helpers;
+  full C API for marker/region CRUD (`omega_marker_add/remove/count/at/clear`,
+  `omega_region_add/remove/count/at/clear`); `OMEGA_REGION_LOOP/PUNCH/SECTION` constants
 - **Sprint 5.1 -- libremidi MIDI I/O**: `LibremidiSink` wrapping `libremidi::midi_out` and `LibremidiInput`
   wrapping `libremidi::midi_in`; `event_to_midi_bytes()` translation helper; C API
   `omega_sink_create_midi_out()` / `omega_sink_destroy_midi_out()` and

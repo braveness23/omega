@@ -5,12 +5,19 @@
 #include <omega/midi_io.h>
 #include <omega/omega.h>
 #include <omega/perf_slot.h>
+#include <omega/region_list.h>
 #include <omega/sink.h>
 #include <omega/smpte_converter.h>
 #include <omega/time_signature_map.h>
 #include <omega/types.h>
 
 #include <new>
+
+// Forward declaration from src/smf_import.cpp
+namespace omega
+{
+omega_status_t smf_import(Engine& engine, const char* path);
+}  // namespace omega
 
 namespace
 {
@@ -847,6 +854,132 @@ void omega_input_destroy_midi_in(omega_input_t* input)
 {
     // NOLINTNEXTLINE(cppcoreguidelines-owning-memory,cppcoreguidelines-pro-type-reinterpret-cast)
     delete reinterpret_cast<omega::EventInput*>(input);
+}
+
+// ── SMF import ────────────────────────────────────────────────────────────────
+
+omega_status_t omega_smf_import(omega_engine_t* eng, const char* path)
+{
+    if (eng == nullptr || path == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return omega::smf_import(eng->engine, path);
+}
+
+// ── Markers ───────────────────────────────────────────────────────────────────
+
+omega_status_t omega_marker_add(omega_engine_t* eng, const char* name, omega_tick_t tick)
+{
+    if (eng == nullptr || name == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    eng->engine.marker_list().add(name, tick);
+    return OMEGA_OK;
+}
+
+omega_status_t omega_marker_remove(omega_engine_t* eng, uint32_t index)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.marker_list().remove(index);
+}
+
+uint32_t omega_marker_count(const omega_engine_t* eng)
+{
+    if (eng == nullptr)
+    {
+        return 0u;
+    }
+    return eng->engine.marker_list().size();
+}
+
+omega_status_t omega_marker_at(const omega_engine_t* eng, uint32_t index, omega_marker_t* out)
+{
+    if (eng == nullptr || out == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    const omega::Marker* m = eng->engine.marker_list().at(index);
+    if (m == nullptr)
+    {
+        return OMEGA_ERR_NOT_FOUND;
+    }
+    out->name = m->name.c_str();
+    out->tick = m->tick;
+    return OMEGA_OK;
+}
+
+omega_status_t omega_marker_clear(omega_engine_t* eng)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    eng->engine.marker_list().clear();
+    return OMEGA_OK;
+}
+
+// ── Regions ───────────────────────────────────────────────────────────────────
+
+omega_status_t omega_region_add(
+    omega_engine_t* eng, const char* name, omega_tick_t start, omega_tick_t end, uint8_t type)
+{
+    if (eng == nullptr || name == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    auto region_type = static_cast<omega::RegionType>(type);
+    return eng->engine.region_list().add(name, start, end, region_type);
+}
+
+omega_status_t omega_region_remove(omega_engine_t* eng, uint32_t index)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.region_list().remove(index);
+}
+
+uint32_t omega_region_count(const omega_engine_t* eng)
+{
+    if (eng == nullptr)
+    {
+        return 0u;
+    }
+    return eng->engine.region_list().size();
+}
+
+omega_status_t omega_region_at(const omega_engine_t* eng, uint32_t index, omega_region_t* out)
+{
+    if (eng == nullptr || out == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    const omega::Region* r = eng->engine.region_list().at(index);
+    if (r == nullptr)
+    {
+        return OMEGA_ERR_NOT_FOUND;
+    }
+    out->name = r->name.c_str();
+    out->start_tick = r->start_tick;
+    out->end_tick = r->end_tick;
+    out->type = static_cast<uint8_t>(r->type);
+    return OMEGA_OK;
+}
+
+omega_status_t omega_region_clear(omega_engine_t* eng)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    eng->engine.region_list().clear();
+    return OMEGA_OK;
 }
 
 }  // extern "C"

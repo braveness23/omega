@@ -17,12 +17,21 @@ add_executable(omega_tests
     unit/test_time_signature_map.cpp
     unit/test_smpte_converter.cpp
     unit/test_midi_io.cpp
+    unit/test_marker_list.cpp
+    unit/test_region_list.cpp
+    unit/test_smf_import.cpp
 )
 
 target_link_libraries(omega_tests
     PRIVATE
         omega::omega
+        midifile
         Catch2::Catch2WithMain
+)
+
+target_include_directories(omega_tests
+    PRIVATE
+        ${midifile_SOURCE_DIR}/include
 )
 
 include(Catch)

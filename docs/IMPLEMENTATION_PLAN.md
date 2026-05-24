@@ -88,7 +88,7 @@ All planned items were implemented. The following were added beyond the original
 
 ---
 
-## PR 2 / Sprint 5.2 -- MarkerList + RegionList + SMF Import
+## PR 2 / Sprint 5.2 -- MarkerList + RegionList + SMF Import ✅ COMPLETE (PR #13)
 
 **Branch:** `feat/m5.2-smf-import-markers`
 
