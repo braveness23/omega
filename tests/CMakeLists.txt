@@ -20,6 +20,7 @@ add_executable(omega_tests
     unit/test_marker_list.cpp
     unit/test_region_list.cpp
     unit/test_smf_import.cpp
+    unit/test_smf_export.cpp
 )
 
 target_link_libraries(omega_tests

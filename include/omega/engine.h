@@ -411,6 +411,9 @@ public:
     [[nodiscard]] const TempoMap& tempo_map() const noexcept { return tempo_map_; }
     [[nodiscard]] TempoMap& tempo_map() noexcept { return tempo_map_; }
 
+    /* Raw access to the built-in timeline source for serialization (mutation thread only). */
+    [[nodiscard]] const TimelineSource& timeline_source() const noexcept { return timeline_; }
+
     /* ── Markers and regions ─────────────────────────────────────────────────── */
 
     /*

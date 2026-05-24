@@ -73,6 +73,9 @@ public:
      */
     void on_locate(uint64_t tick, EventDispatcher& dispatcher, ProcessContext& ctx) override;
 
+    /* Raw access for serialization (mutation thread only, engine stopped). */
+    [[nodiscard]] const std::vector<Track>& tracks() const noexcept { return tracks_; }
+
 private:
     struct ActiveNote
     {

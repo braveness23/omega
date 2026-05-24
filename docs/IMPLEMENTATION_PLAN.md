@@ -210,57 +210,25 @@ gh pr create --title "feat: SMF import + markers/regions (M5.2)" --body "..."
 
 ---
 
-## PR 3 / Sprint 5.3 -- SMF Export
+## PR 3 / Sprint 5.3 -- SMF Export ✅ COMPLETE (PR #14)
 
 **Branch:** `feat/m5.3-smf-export`
+**Status: COMPLETE** (merged pending) — 2026-05-24
 
-### Files to create
+### What was delivered
 
-- `src/smf_export.cpp`
-- `tests/unit/test_smf_export.cpp`
+All planned items were implemented. One non-obvious fix was required beyond the spec:
 
-### Files to modify
-
-- `CMakeLists.txt` -- add `src/smf_export.cpp`
-- `tests/CMakeLists.txt` -- add `unit/test_smf_export.cpp`
-- `include/omega/omega.h` -- add `omega_smf_export()`
-- `src/omega_c.cpp` -- implement wrapper
-- `CHANGELOG.md`
-
-### Implementation details
-
-`omega_smf_export(omega_engine_t* e, const char* path, int smf_type)`:
-1. `smf::MidiFile mf; mf.setTPQ(OMEGA_PPQN);`
-2. If `smf_type == 0`, merge all tracks into track 0. If `smf_type == 1`, one midifile track per omega track, plus track 0 for tempo/meta.
-3. Export tempo map: iterate `tempo_map_.points()`, compute `usec_per_beat = 60'000'000'000ULL / bpm_milli`, add tempo event
-4. Export time signatures: iterate `timesig_map_.points()`, compute `denom_exponent = log2(denominator)`, add time sig event
-5. Export markers: iterate `marker_list_.points()`, add marker meta-events (FF 06)
-6. Per track: iterate events, convert NOTE_ON to note-on + note-off pair, CC, PROGRAM
-7. `mf.sortTracks(); mf.write(path);`
-8. Return `OMEGA_OK` or `OMEGA_ERR_IO`
-
-### Tests
-
-- Round-trip Type 1: create engine, add 2 tracks with events, export, re-import, verify match
-- Round-trip Type 0: single track
-- Round-trip with tempo changes: 3 tempo changes survive
-- Round-trip markers: add markers, export, re-import, verify
-- Round-trip time signatures: verify preservation
-
-### C API
-
-```c
-omega_status_t omega_smf_export(omega_engine_t* e, const char* path, int smf_type);
-```
-
-### Commit & PR
-
-```bash
-git checkout -b feat/m5.3-smf-export
-git commit -m "feat: add SMF export with marker round-trip (sprint 5.3)"
-git push -u origin feat/m5.3-smf-export
-gh pr create --title "feat: SMF export (M5.3)" --body "..."
-```
+- **Empty-track crash fix**: The midifile library's `write()` calls `back()` on every track's
+  event list to check for an end-of-track message, even when the list is empty (UB → SIGSEGV).
+  After `smf_import` of a Type 1 file, the engine holds one omega track per SMF track including
+  the empty conductor track (track 0). The fix: count only non-empty omega tracks before
+  allocating midifile tracks, and skip empty tracks during event export.
+- **Three new public accessors** added for serialisation: `TempoMap::points()`,
+  `TimelineSource::tracks()`, `Engine::timeline_source()`
+- **7 round-trip tests**: null/bad-path errors, Type 0 single-track, Type 1 import→export→
+  reimport, tempo changes (3 points), markers (3), time signatures (2 changes)
+- **289/289 unit + integration tests pass** (no-san); 7/7 smf_export tests pass under TSan
 
 ---
 

@@ -18,6 +18,13 @@ namespace omega
 class TempoMap
 {
 public:
+    struct TempoPoint
+    {
+        uint64_t tick;
+        uint32_t bpm_milli;
+        uint64_t ns_at_tick; /* precomputed wall-clock ns at this tick */
+    };
+
     TempoMap();
 
     /*
@@ -33,14 +40,10 @@ public:
     /* Convert nanoseconds from session start to absolute ticks. */
     [[nodiscard]] uint64_t ns_to_ticks(uint64_t ns) const;
 
-private:
-    struct TempoPoint
-    {
-        uint64_t tick;
-        uint32_t bpm_milli;
-        uint64_t ns_at_tick; /* precomputed wall-clock ns at this tick */
-    };
+    /* Raw access for serialization (non-timing-thread). */
+    [[nodiscard]] const std::vector<TempoPoint>& points() const noexcept { return points_; }
 
+private:
     static uint64_t segment_ticks_to_ns(uint64_t ticks, uint32_t bpm_milli);
     static uint64_t segment_ns_to_ticks(uint64_t ns, uint32_t bpm_milli);
 

@@ -1131,7 +1131,7 @@ OMEGA_API omega_status_t omega_smpte_to_tick(const omega_engine_t* e,
                                              const omega_smpte_time_t* t,
                                              uint64_t* out);
 
-/* ── SMF import ───────────────────────────────────────────────────────────── */
+/* ── SMF import / export ──────────────────────────────────────────────────── */
 
 /*
  * Imports a Standard MIDI File into the engine session. Reads all tracks,
@@ -1149,6 +1149,26 @@ OMEGA_API omega_status_t omega_smpte_to_tick(const omega_engine_t* e,
  *   OMEGA_ERR_IO      -- file not found, not a valid MIDI file, or read error.
  */
 OMEGA_API omega_status_t omega_smf_import(omega_engine_t* e, const char* path);
+
+/*
+ * Exports the engine session to a Standard MIDI File.
+ * Writes the tempo map, time signature map, markers, and all timeline track
+ * events (note on/off pairs, CC, program change) to the file at path.
+ *
+ * smf_type: 0 = Type 0 (single track), 1 = Type 1 (multi-track).
+ * For Type 1, track 0 carries meta events; each omega track occupies its own
+ * subsequent track. For Type 0, all events are merged into track 0.
+ *
+ * The engine must be stopped before calling this function.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK          -- export succeeded.
+ *   OMEGA_ERR_INVALID -- e or path is NULL.
+ *   OMEGA_ERR_IO      -- could not write file.
+ */
+OMEGA_API omega_status_t omega_smf_export(omega_engine_t* e, const char* path, int smf_type);
 
 /* ── Markers ──────────────────────────────────────────────────────────────── */
 
