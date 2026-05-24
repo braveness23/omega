@@ -9,6 +9,12 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+<!-- New releases go above this line -->
+
+---
+
+## [0.5.0-alpha] - 2026-05-24
+
 ### Added
 - **Sprint 5.4 -- OmegaTimer**: `OmegaTimer` RAII thread wrapper drives `Engine::process()` at
   a configurable interval (default 1 ms); drift-compensating sleep loop using `std::chrono::steady_clock`
@@ -33,8 +39,6 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `omega_input_create_midi_in()` / `omega_input_destroy_midi_in()`; `OMEGA_ERR_IO = -8` status
   code for I/O failures; `OMEGA_PITCH_BEND`, `OMEGA_AFTERTOUCH`, `OMEGA_POLY_AT` C API constants
   with full round-trip serialization/deserialization support
-
-<!-- New releases go above this line -->
 
 ---
 
@@ -163,7 +167,8 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-[Unreleased]: https://github.com/braveness23/omega/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/braveness23/omega/compare/v0.5.0-alpha...HEAD
+[0.5.0-alpha]: https://github.com/braveness23/omega/compare/v0.4.0...v0.5.0-alpha
 [0.4.0]: https://github.com/braveness23/omega/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/braveness23/omega/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/braveness23/omega/compare/v0.1.0...v0.2.0

@@ -324,7 +324,7 @@ gh pr create --title "feat: OmegaTimer (M5.4)" --body "..."
 
 ---
 
-## PR 5 / Version Bump to 0.6.0
+## PR 5 / Version Bump to 0.6.0 ✅ COMPLETE (PR #16)
 
 **Branch:** `chore/bump-v0.6.0`
 

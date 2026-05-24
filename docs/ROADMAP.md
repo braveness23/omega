@@ -15,7 +15,7 @@ Sprint breakdowns are sized for 1–3 focused coding sessions each.
 | M2 | `v0.2.0` | Single-track playback through C API (done 2026-05-21) |
 | M3 | `v0.3.0` | All three built-in sources working (done 2026-05-22) |
 | M4 | `v0.4.0` | Orchestration layer + time signatures, SMPTE, CUE_BAR (done 2026-05-23) |
-| M5 | `v0.5.0-alpha` | Platform integrations (real MIDI I/O, SMF import/export) |
+| M5 | `v0.5.0-alpha` | Platform integrations (real MIDI I/O, SMF import/export) (done 2026-05-24) |
 | M6 | `v0.6.0-beta` | Polish, coverage, valgrind-clean — release candidate |
 | v1.0.0 | `v1.0.0` | ABI-stable public release |
 
@@ -557,10 +557,10 @@ three priority buckets. Custom sources are assigned a priority at registration t
 
 ---
 
-## M5 — Platform Integrations
+## M5 — Platform Integrations (DONE — v0.5.0-alpha)
 
 Real MIDI I/O via libremidi, SMF import/export via midifile. After this milestone the library
-is usable for real musical work.
+is usable for real musical work. Completed 2026-05-24.
 
 ### Sprint 5.1 — libremidi MIDI I/O Sink + Input
 
