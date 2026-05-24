@@ -6,11 +6,13 @@
 #include <omega/event_input.h>
 #include <omega/event_source.h>
 #include <omega/input_bus.h>
+#include <omega/marker_list.h>
 #include <omega/modulation_bus.h>
 #include <omega/omega.h>
 #include <omega/pattern_library.h>
 #include <omega/perf_context.h>
 #include <omega/perf_slot.h>
+#include <omega/region_list.h>
 #include <omega/smpte_converter.h>
 #include <omega/song_arrangement.h>
 #include <omega/tempo_map.h>
@@ -405,7 +407,35 @@ public:
      * Thread: Timing thread for reads from advance(); Mutation thread otherwise.
      */
     [[nodiscard]] const TimeSignatureMap& timesig_map() const noexcept { return timesig_map_; }
+    [[nodiscard]] TimeSignatureMap& timesig_map() noexcept { return timesig_map_; }
     [[nodiscard]] const TempoMap& tempo_map() const noexcept { return tempo_map_; }
+    [[nodiscard]] TempoMap& tempo_map() noexcept { return tempo_map_; }
+
+    /* ── Markers and regions ─────────────────────────────────────────────────── */
+
+    /*
+     * Returns the session marker list.
+     * Thread: Mutation thread only. Must not be called concurrently with process().
+     */
+    [[nodiscard]] MarkerList& marker_list() noexcept { return marker_list_; }
+    [[nodiscard]] const MarkerList& marker_list() const noexcept { return marker_list_; }
+
+    /*
+     * Returns the session region list.
+     * Thread: Mutation thread only. Must not be called concurrently with process().
+     */
+    [[nodiscard]] RegionList& region_list() noexcept { return region_list_; }
+    [[nodiscard]] const RegionList& region_list() const noexcept { return region_list_; }
+
+    /*
+     * Inserts an event directly into a timeline track, bypassing the command queue.
+     * Only safe when the engine is stopped (e.g., during SMF import).
+     *
+     * Thread: Mutation thread only, engine must be stopped.
+     *
+     * Returns OMEGA_ERR_NOT_FOUND if track_id is not registered.
+     */
+    omega_status_t add_track_event(TrackId track_id, const Event& event);
 
     /* ── SMPTE config ────────────────────────────────────────────────────────── */
 
@@ -541,6 +571,9 @@ private:
     std::vector<std::pair<uint32_t, EventSource*>> custom_sources_;
 
     std::optional<SmpteConfig> smpte_config_;
+
+    MarkerList marker_list_;
+    RegionList region_list_;
 
     detail::SpscQueue<Command, 4096> queue_;
     TempoMap tempo_map_;

@@ -56,6 +56,11 @@ omega_status_t Engine::pattern_set_length(PatternId id, uint64_t length_ticks)
     return patterns_.set_length(id, length_ticks);
 }
 
+omega_status_t Engine::add_track_event(TrackId track_id, const Event& event)
+{
+    return timeline_.add_event(track_id, event);
+}
+
 PatternLibrary& Engine::pattern_library() noexcept
 {
     return patterns_;

@@ -1131,6 +1131,165 @@ OMEGA_API omega_status_t omega_smpte_to_tick(const omega_engine_t* e,
                                              const omega_smpte_time_t* t,
                                              uint64_t* out);
 
+/* ── SMF import ───────────────────────────────────────────────────────────── */
+
+/*
+ * Imports a Standard MIDI File into the engine session. Reads all tracks,
+ * imports tempo changes into TempoMap, time signatures into TimeSignatureMap,
+ * marker meta-events into MarkerList, and note/CC/program events into new
+ * timeline tracks. Non-480 PPQN files are tick-scaled automatically.
+ *
+ * The engine must be stopped before calling this function.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK          -- import succeeded.
+ *   OMEGA_ERR_INVALID -- e or path is NULL.
+ *   OMEGA_ERR_IO      -- file not found, not a valid MIDI file, or read error.
+ */
+OMEGA_API omega_status_t omega_smf_import(omega_engine_t* e, const char* path);
+
+/* ── Markers ──────────────────────────────────────────────────────────────── */
+
+typedef struct
+{
+    const char* name;
+    omega_tick_t tick;
+} omega_marker_t;
+
+#define OMEGA_REGION_LOOP 0u
+#define OMEGA_REGION_PUNCH 1u
+#define OMEGA_REGION_SECTION 2u
+
+typedef struct
+{
+    const char* name;
+    omega_tick_t start_tick;
+    omega_tick_t end_tick;
+    uint8_t type;
+} omega_region_t;
+
+/*
+ * Adds a named marker at the given tick.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK          -- marker added.
+ *   OMEGA_ERR_INVALID -- e or name is NULL.
+ */
+OMEGA_API omega_status_t omega_marker_add(omega_engine_t* e, const char* name, omega_tick_t tick);
+
+/*
+ * Removes the marker at the given index.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK            -- marker removed.
+ *   OMEGA_ERR_INVALID   -- e is NULL.
+ *   OMEGA_ERR_NOT_FOUND -- index >= marker count.
+ */
+OMEGA_API omega_status_t omega_marker_remove(omega_engine_t* e, uint32_t index);
+
+/*
+ * Returns the number of markers in the session.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns: count, or 0 if e is NULL.
+ */
+OMEGA_API uint32_t omega_marker_count(const omega_engine_t* e);
+
+/*
+ * Fills *out with the marker at index.
+ * The name pointer is valid until the marker list is modified.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK            -- out filled.
+ *   OMEGA_ERR_INVALID   -- e or out is NULL.
+ *   OMEGA_ERR_NOT_FOUND -- index >= marker count.
+ */
+OMEGA_API omega_status_t omega_marker_at(const omega_engine_t* e,
+                                         uint32_t index,
+                                         omega_marker_t* out);
+
+/*
+ * Clears all markers.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK          -- cleared.
+ *   OMEGA_ERR_INVALID -- e is NULL.
+ */
+OMEGA_API omega_status_t omega_marker_clear(omega_engine_t* e);
+
+/* ── Regions ──────────────────────────────────────────────────────────────── */
+
+/*
+ * Adds a named region [start_tick, end_tick) of the given type.
+ * Type must be one of OMEGA_REGION_LOOP, OMEGA_REGION_PUNCH, OMEGA_REGION_SECTION.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK          -- region added.
+ *   OMEGA_ERR_INVALID -- e or name is NULL, or start_tick >= end_tick.
+ */
+OMEGA_API omega_status_t omega_region_add(
+    omega_engine_t* e, const char* name, omega_tick_t start, omega_tick_t end, uint8_t type);
+
+/*
+ * Removes the region at the given index.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK            -- region removed.
+ *   OMEGA_ERR_INVALID   -- e is NULL.
+ *   OMEGA_ERR_NOT_FOUND -- index >= region count.
+ */
+OMEGA_API omega_status_t omega_region_remove(omega_engine_t* e, uint32_t index);
+
+/*
+ * Returns the number of regions in the session.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns: count, or 0 if e is NULL.
+ */
+OMEGA_API uint32_t omega_region_count(const omega_engine_t* e);
+
+/*
+ * Fills *out with the region at index.
+ * The name pointer is valid until the region list is modified.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK            -- out filled.
+ *   OMEGA_ERR_INVALID   -- e or out is NULL.
+ *   OMEGA_ERR_NOT_FOUND -- index >= region count.
+ */
+OMEGA_API omega_status_t omega_region_at(const omega_engine_t* e,
+                                         uint32_t index,
+                                         omega_region_t* out);
+
+/*
+ * Clears all regions.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK          -- cleared.
+ *   OMEGA_ERR_INVALID -- e is NULL.
+ */
+OMEGA_API omega_status_t omega_region_clear(omega_engine_t* e);
+
 #ifdef __cplusplus
 }
 #endif

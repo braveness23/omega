@@ -115,6 +115,9 @@ add_library(omega_core STATIC
     src/performance_source.cpp
     src/modulation_bus.cpp
     src/transform_source.cpp
+    src/marker_list.cpp
+    src/region_list.cpp
+    src/smf_import.cpp
     src/libremidi_sink.cpp
     src/libremidi_input.cpp
     src/engine.cpp
@@ -143,6 +146,12 @@ target_compile_definitions(omega_core PUBLIC OMEGA_STATIC_LIBRARY)
 target_link_libraries(omega_core
     PRIVATE
         libremidi
+        midifile
+)
+
+target_include_directories(omega_core
+    PRIVATE
+        ${midifile_SOURCE_DIR}/include
 )
 
 if(OMEGA_WITH_LINK)
@@ -181,7 +190,7 @@ include(CMakePackageConfigHelpers)
 set(OMEGA_INSTALL_CMAKEDIR "lib/cmake/omega"
     CACHE PATH "Installation directory for CMake package config files")
 
-install(TARGETS omega_core omega
+install(TARGETS omega_core omega midifile
     EXPORT OmegaTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
