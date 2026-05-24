@@ -45,7 +45,7 @@ TEST_CASE("SMF import: Type 0 - single track created", "[smf_import]")
     mf.addNoteOn(0, 480, 0, 60, 100);
     mf.addNoteOff(0, 960, 0, 60, 0);
     mf.sortTracks();
-    REQUIRE(mf.write(path.c_str()) != 0);
+    REQUIRE(mf.write(path) != 0);
 
     omega::Engine engine;
     REQUIRE(omega::smf_import(engine, path.c_str()) == OMEGA_OK);
@@ -63,7 +63,7 @@ TEST_CASE("SMF import: non-480 PPQN tick scaling via markers", "[smf_import]")
     mf.addTempo(0, 0, 120.0);
     mf.addMarker(0, 240, "beat1");  // SMF tick 240 -> omega tick 480
     mf.sortTracks();
-    REQUIRE(mf.write(path.c_str()) != 0);
+    REQUIRE(mf.write(path) != 0);
 
     omega::Engine engine;
     REQUIRE(omega::smf_import(engine, path.c_str()) == OMEGA_OK);
@@ -85,7 +85,7 @@ TEST_CASE("SMF import: tempo changes imported into TempoMap", "[smf_import]")
     mf.addTempo(0, 0, 120.0);     // 120 BPM at tick 0   = 500000 us/beat
     mf.addTempo(0, 1920, 150.0);  // 150 BPM at tick 1920 = 400000 us/beat
     mf.sortTracks();
-    REQUIRE(mf.write(path.c_str()) != 0);
+    REQUIRE(mf.write(path) != 0);
 
     omega::Engine engine;
     REQUIRE(omega::smf_import(engine, path.c_str()) == OMEGA_OK);
@@ -110,7 +110,7 @@ TEST_CASE("SMF import: markers populated into MarkerList", "[smf_import]")
     mf.addMarker(0, 0, "intro");
     mf.addMarker(0, 1920, "verse");
     mf.sortTracks();
-    REQUIRE(mf.write(path.c_str()) != 0);
+    REQUIRE(mf.write(path) != 0);
 
     omega::Engine engine;
     REQUIRE(omega::smf_import(engine, path.c_str()) == OMEGA_OK);
@@ -139,7 +139,7 @@ TEST_CASE("SMF import: time signatures imported into TimeSignatureMap", "[smf_im
     mf.addTimeSignature(0, 0, 4, 4);     // 4/4 at tick 0
     mf.addTimeSignature(0, 1920, 3, 4);  // 3/4 at tick 1920
     mf.sortTracks();
-    REQUIRE(mf.write(path.c_str()) != 0);
+    REQUIRE(mf.write(path) != 0);
 
     omega::Engine engine;
     REQUIRE(omega::smf_import(engine, path.c_str()) == OMEGA_OK);

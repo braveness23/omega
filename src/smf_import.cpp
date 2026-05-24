@@ -50,7 +50,7 @@ omega_status_t smf_import(Engine& engine, const char* path)
                 int usec = ev.getTempoMicroseconds();
                 if (usec > 0)
                 {
-                    uint32_t bpm_milli =
+                    auto bpm_milli =
                         static_cast<uint32_t>(60'000'000'000ULL / static_cast<uint64_t>(usec));
                     engine.tempo_map().insert(omega_tick, bpm_milli);
                 }
@@ -60,8 +60,8 @@ omega_status_t smf_import(Engine& engine, const char* path)
                 // FF 58 04 <num> <denom-log2> <clocks> <32nds>
                 if (ev.size() == 7)
                 {
-                    uint8_t num = static_cast<uint8_t>(ev[3]);
-                    uint8_t denom = static_cast<uint8_t>(1 << ev[4]);
+                    auto num = static_cast<uint8_t>(ev[3]);
+                    auto denom = static_cast<uint8_t>(1 << ev[4]);
                     engine.timesig_map().insert(omega_tick, num, denom);
                 }
             }
@@ -73,19 +73,19 @@ omega_status_t smf_import(Engine& engine, const char* path)
                     std::string name = ev.getMetaContent();
                     if (meta_type == 0x07)
                     {
-                        name = "[cue] " + name;
+                        name.insert(0, "[cue] ");
                     }
                     engine.marker_list().add(std::move(name), omega_tick);
                 }
             }
             else if (ev.isNoteOn())
             {
-                uint8_t channel = static_cast<uint8_t>(ev[0] & 0x0Fu);
-                uint8_t note = static_cast<uint8_t>(ev.getP1());
-                uint8_t velocity = static_cast<uint8_t>(ev.getP2());
+                auto channel = static_cast<uint8_t>(ev[0] & 0x0Fu);
+                auto note = static_cast<uint8_t>(ev.getP1());
+                auto velocity = static_cast<uint8_t>(ev.getP2());
 
                 uint32_t duration = 0u;
-                if (ev.isLinked())
+                if (ev.isLinked() != 0)
                 {
                     int smf_dur = ev.getTickDuration();
                     if (smf_dur > 0)
@@ -109,9 +109,9 @@ omega_status_t smf_import(Engine& engine, const char* path)
             }
             else if (ev.isController())
             {
-                uint8_t channel = static_cast<uint8_t>(ev[0] & 0x0Fu);
-                uint8_t controller = static_cast<uint8_t>(ev.getP1());
-                uint8_t value = static_cast<uint8_t>(ev.getP2());
+                auto channel = static_cast<uint8_t>(ev[0] & 0x0Fu);
+                auto controller = static_cast<uint8_t>(ev.getP1());
+                auto value = static_cast<uint8_t>(ev.getP2());
 
                 Event cc_ev{};
                 cc_ev.tick = omega_tick;
@@ -125,8 +125,8 @@ omega_status_t smf_import(Engine& engine, const char* path)
             }
             else if (ev.isPatchChange())
             {
-                uint8_t channel = static_cast<uint8_t>(ev[0] & 0x0Fu);
-                uint8_t program = static_cast<uint8_t>(ev.getP1());
+                auto channel = static_cast<uint8_t>(ev[0] & 0x0Fu);
+                auto program = static_cast<uint8_t>(ev.getP1());
 
                 Event prog_ev{};
                 prog_ev.tick = omega_tick;
