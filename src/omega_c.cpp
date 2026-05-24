@@ -1006,8 +1006,8 @@ omega_timer_t* omega_timer_create(omega_engine_t* eng, uint32_t interval_us)
     {
         return nullptr;
     }
-    return new (std::nothrow)
-        omega_timer_s(eng->engine, interval_us);  // NOLINT(cppcoreguidelines-owning-memory)
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    return new (std::nothrow) omega_timer_s(eng->engine, interval_us);
 }
 
 void omega_timer_destroy(omega_timer_t* timer)
