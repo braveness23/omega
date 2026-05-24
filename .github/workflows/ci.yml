@@ -128,6 +128,10 @@ jobs:
           CC: ${{ matrix.cc }}
           CXX: ${{ matrix.cxx }}
         run: |
+          NO_ALSA=""
+          if [ "${{ runner.os }}" == "Linux" ]; then
+            NO_ALSA="-DLIBREMIDI_NO_ALSA=ON"
+          fi
           cmake -B build \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
             -DCMAKE_CXX_STANDARD=${{ matrix.std }} \
@@ -136,7 +140,8 @@ jobs:
             -DOMEGA_WITH_LINK=OFF \
             "-DFETCHCONTENT_BASE_DIR=$GITHUB_WORKSPACE/.cache/fetchcontent" \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
-            -G Ninja
+            -G Ninja \
+            $NO_ALSA
 
       - name: Build
         run: cmake --build build --parallel
@@ -175,6 +180,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Debug \
             -DOMEGA_BUILD_TESTS=ON \
             -DOMEGA_WITH_SANITIZERS=ON \
+            -DLIBREMIDI_NO_ALSA=ON \
             -DFETCHCONTENT_BASE_DIR=${{ github.workspace }}/.cache/fetchcontent \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
             -G Ninja
@@ -219,6 +225,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Debug \
             -DOMEGA_BUILD_TESTS=ON \
             -DOMEGA_WITH_TSAN=ON \
+            -DLIBREMIDI_NO_ALSA=ON \
             -DFETCHCONTENT_BASE_DIR=${{ github.workspace }}/.cache/fetchcontent \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
             -G Ninja
