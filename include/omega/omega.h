@@ -86,10 +86,13 @@ OMEGA_API const char* omega_status_string(omega_status_t status);
 /* ── Events ───────────────────────────────────────────────────────────────── */
 
 /* payload_tag discriminants */
-#define OMEGA_NOTE_ON 0x00u  /* data[0]=note, data[1]=vel, data[2-5]=duration_ticks */
-#define OMEGA_NOTE_OFF 0x01u /* data[0]=note, data[1]=vel */
-#define OMEGA_CC 0x02u       /* data[0]=controller, data[1]=value */
-#define OMEGA_PROGRAM 0x03u  /* data[0]=program */
+#define OMEGA_NOTE_ON 0x00u    /* data[0]=note, data[1]=vel, data[2-5]=duration_ticks */
+#define OMEGA_NOTE_OFF 0x01u   /* data[0]=note, data[1]=vel */
+#define OMEGA_CC 0x02u         /* data[0]=controller, data[1]=value */
+#define OMEGA_PROGRAM 0x03u    /* data[0]=program */
+#define OMEGA_PITCH_BEND 0x04u /* data[0]=LSB (7-bit), data[1]=MSB (7-bit); center=0x40,0x00 */
+#define OMEGA_AFTERTOUCH 0x05u /* data[0]=pressure (0-127) */
+#define OMEGA_POLY_AT 0x06u    /* data[0]=note, data[1]=pressure (0-127) */
 
 typedef struct
 {

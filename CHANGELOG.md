@@ -14,7 +14,8 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   wrapping `libremidi::midi_in`; `event_to_midi_bytes()` translation helper; C API
   `omega_sink_create_midi_out()` / `omega_sink_destroy_midi_out()` and
   `omega_input_create_midi_in()` / `omega_input_destroy_midi_in()`; `OMEGA_ERR_IO = -8` status
-  code for I/O failures
+  code for I/O failures; `OMEGA_PITCH_BEND`, `OMEGA_AFTERTOUCH`, `OMEGA_POLY_AT` C API constants
+  with full round-trip serialization/deserialization support
 
 <!-- New releases go above this line -->
 

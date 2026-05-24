@@ -84,6 +84,38 @@ bool midi_bytes_to_event(const libremidi::message& msg,
             out.data[0] = msg.bytes[1];
             return true;
         }
+        case 0xE0u:
+        {
+            if (msg.bytes.size() < 3u)
+            {
+                return false;
+            }
+            out.payload_tag = static_cast<uint8_t>(PayloadTag::PITCH_BEND);
+            out.data[0] = msg.bytes[1] & 0x7Fu;  // LSB
+            out.data[1] = msg.bytes[2] & 0x7Fu;  // MSB
+            return true;
+        }
+        case 0xD0u:
+        {
+            if (msg.bytes.size() < 2u)
+            {
+                return false;
+            }
+            out.payload_tag = static_cast<uint8_t>(PayloadTag::AFTERTOUCH);
+            out.data[0] = msg.bytes[1] & 0x7Fu;
+            return true;
+        }
+        case 0xA0u:
+        {
+            if (msg.bytes.size() < 3u)
+            {
+                return false;
+            }
+            out.payload_tag = static_cast<uint8_t>(PayloadTag::POLY_AT);
+            out.data[0] = msg.bytes[1] & 0x7Fu;  // note
+            out.data[1] = msg.bytes[2] & 0x7Fu;  // pressure
+            return true;
+        }
         default:
             return false;
     }

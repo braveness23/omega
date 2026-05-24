@@ -98,6 +98,58 @@ TEST_CASE("LibremidiSink - unsupported event returns 0 bytes", "[midi_io]")
     CHECK(n == 0u);
 }
 
+TEST_CASE("LibremidiSink - translates PITCH_BEND to correct bytes", "[midi_io]")
+{
+    std::array<uint8_t, 3> buf{};
+
+    omega::Event e{};
+    e.payload_tag = OMEGA_PITCH_BEND;
+    e.channel = 1u;
+    e.data[0] = 0x00u;  // LSB — center low byte
+    e.data[1] = 0x40u;  // MSB — center high byte (8192 = 0x2000; LSB=0x00, MSB=0x40)
+
+    const std::size_t n = omega::event_to_midi_bytes(e, buf.data());
+
+    REQUIRE(n == 3u);
+    CHECK(buf[0] == (0xE0u | 1u));
+    CHECK(buf[1] == 0x00u);  // LSB
+    CHECK(buf[2] == 0x40u);  // MSB
+}
+
+TEST_CASE("LibremidiSink - translates AFTERTOUCH to correct bytes", "[midi_io]")
+{
+    std::array<uint8_t, 3> buf{};
+
+    omega::Event e{};
+    e.payload_tag = OMEGA_AFTERTOUCH;
+    e.channel = 0u;
+    e.data[0] = 64u;
+
+    const std::size_t n = omega::event_to_midi_bytes(e, buf.data());
+
+    REQUIRE(n == 2u);
+    CHECK(buf[0] == 0xD0u);
+    CHECK(buf[1] == 64u);
+}
+
+TEST_CASE("LibremidiSink - translates POLY_AT to correct bytes", "[midi_io]")
+{
+    std::array<uint8_t, 3> buf{};
+
+    omega::Event e{};
+    e.payload_tag = OMEGA_POLY_AT;
+    e.channel = 2u;
+    e.data[0] = 60u;  // note
+    e.data[1] = 80u;  // pressure
+
+    const std::size_t n = omega::event_to_midi_bytes(e, buf.data());
+
+    REQUIRE(n == 3u);
+    CHECK(buf[0] == (0xA0u | 2u));
+    CHECK(buf[1] == 60u);
+    CHECK(buf[2] == 80u);
+}
+
 TEST_CASE("LibremidiSink - channel clamped to low nibble", "[midi_io]")
 {
     std::array<uint8_t, 3> buf{};

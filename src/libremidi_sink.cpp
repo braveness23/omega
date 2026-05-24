@@ -36,6 +36,20 @@ std::size_t event_to_midi_bytes(const Event& e, uint8_t* out) noexcept
             out[0] = static_cast<uint8_t>(0xC0u | ch);
             out[1] = e.data[0] & 0x7Fu;
             return 2;
+        case PayloadTag::PITCH_BEND:
+            out[0] = static_cast<uint8_t>(0xE0u | ch);
+            out[1] = e.data[0] & 0x7Fu;  // LSB
+            out[2] = e.data[1] & 0x7Fu;  // MSB
+            return 3;
+        case PayloadTag::AFTERTOUCH:
+            out[0] = static_cast<uint8_t>(0xD0u | ch);
+            out[1] = e.data[0] & 0x7Fu;
+            return 2;
+        case PayloadTag::POLY_AT:
+            out[0] = static_cast<uint8_t>(0xA0u | ch);
+            out[1] = e.data[0] & 0x7Fu;  // note
+            out[2] = e.data[1] & 0x7Fu;  // pressure
+            return 3;
         default:
             return 0;
     }
