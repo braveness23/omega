@@ -119,6 +119,8 @@ add_library(omega_core STATIC
     src/transform_source.cpp
     src/marker_list.cpp
     src/region_list.cpp
+    src/anchor_point.cpp
+    src/event_anchor_table.cpp
     src/smf_import.cpp
     src/smf_export.cpp
     src/libremidi_sink.cpp

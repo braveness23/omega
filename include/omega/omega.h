@@ -1310,6 +1310,102 @@ OMEGA_API omega_status_t omega_region_at(const omega_engine_t* e,
  */
 OMEGA_API omega_status_t omega_region_clear(omega_engine_t* e);
 
+/* ── Anchors ──────────────────────────────────────────────────────────────── */
+
+/* AnchorPoint flag bits. Flags may be combined (e.g., OMEGA_ANCHOR_SNAP | OMEGA_ANCHOR_CUE). */
+#define OMEGA_ANCHOR_SNAP 0x01u /* snap reference point */
+#define OMEGA_ANCHOR_WARP 0x02u /* stretch/warp boundary */
+#define OMEGA_ANCHOR_CUE 0x04u  /* cue launch point */
+
+/*
+ * Adds a named anchor to a pattern's intrinsic AnchorList.
+ * Anchors are sorted by offset_ticks on insertion.
+ *
+ * Thread: Mutation thread only, before playback starts.
+ *
+ * Returns:
+ *   OMEGA_OK            -- anchor added.
+ *   OMEGA_ERR_INVALID   -- e or name is NULL.
+ *   OMEGA_ERR_NOT_FOUND -- pid is not a valid pattern.
+ */
+OMEGA_API omega_status_t omega_pattern_add_anchor(omega_engine_t* e,
+                                                  omega_pattern_id_t pid,
+                                                  const char* name,
+                                                  omega_tick_t offset,
+                                                  uint32_t flags);
+
+/*
+ * Removes the first anchor with the given name from the pattern's AnchorList.
+ *
+ * Thread: Mutation thread only, before playback starts.
+ *
+ * Returns:
+ *   OMEGA_OK            -- anchor removed.
+ *   OMEGA_ERR_INVALID   -- e or name is NULL.
+ *   OMEGA_ERR_NOT_FOUND -- pid is not a valid pattern, or name not found.
+ */
+OMEGA_API omega_status_t omega_pattern_remove_anchor(omega_engine_t* e,
+                                                     omega_pattern_id_t pid,
+                                                     const char* name);
+
+/*
+ * Returns the number of anchors in a pattern's AnchorList.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns: count, or 0 if e is NULL or pid is not found.
+ */
+OMEGA_API uint32_t omega_pattern_anchor_count(const omega_engine_t* e, omega_pattern_id_t pid);
+
+/*
+ * Sets the active snap anchor for a pattern by index.
+ * The anchor at index must have the OMEGA_ANCHOR_SNAP flag set.
+ *
+ * Thread: Mutation thread only, before playback starts.
+ *
+ * Returns:
+ *   OMEGA_OK            -- active snap set.
+ *   OMEGA_ERR_INVALID   -- e is NULL, or anchor lacks OMEGA_ANCHOR_SNAP flag.
+ *   OMEGA_ERR_NOT_FOUND -- pid is not a valid pattern, or index >= anchor count.
+ */
+OMEGA_API omega_status_t omega_pattern_set_active_snap(omega_engine_t* e,
+                                                       omega_pattern_id_t pid,
+                                                       uint32_t index);
+
+/*
+ * Adds a named anchor to the event side table for a given track and event index.
+ * The EventAnchorTable is a sparse side table; events without anchors have no
+ * entry and events remain exactly 24 bytes.
+ *
+ * Thread: Mutation thread only, before playback starts.
+ *
+ * Returns:
+ *   OMEGA_OK          -- anchor added.
+ *   OMEGA_ERR_INVALID -- e or name is NULL.
+ */
+OMEGA_API omega_status_t omega_event_add_anchor(omega_engine_t* e,
+                                                omega_track_id_t track,
+                                                uint32_t event_index,
+                                                const char* name,
+                                                omega_tick_t offset,
+                                                uint32_t flags);
+
+/*
+ * Removes the first anchor with the given name from the event side table entry
+ * for (track, event_index).
+ *
+ * Thread: Mutation thread only, before playback starts.
+ *
+ * Returns:
+ *   OMEGA_OK            -- anchor removed.
+ *   OMEGA_ERR_INVALID   -- e or name is NULL.
+ *   OMEGA_ERR_NOT_FOUND -- no anchor entry for (track, event_index), or name not found.
+ */
+OMEGA_API omega_status_t omega_event_remove_anchor(omega_engine_t* e,
+                                                   omega_track_id_t track,
+                                                   uint32_t event_index,
+                                                   const char* name);
+
 /* ── Timer ────────────────────────────────────────────────────────────────── */
 
 typedef struct omega_timer_s omega_timer_t;

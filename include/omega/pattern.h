@@ -1,5 +1,6 @@
 #pragma once
 
+#include <omega/anchor_point.h>
 #include <omega/types.h>
 
 #include <cstdint>
@@ -27,6 +28,7 @@ struct Pattern
     std::string name;
     uint64_t length_ticks{0};
     std::pmr::vector<Event> events;
+    AnchorList anchors;
 
     Pattern(PatternId id_,
             std::string name_,
