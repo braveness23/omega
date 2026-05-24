@@ -51,7 +51,7 @@ struct omega_engine_s  // NOLINT(readability-identifier-naming)
 struct omega_timer_s  // NOLINT(readability-identifier-naming)
 {
     omega::OmegaTimer timer;
-    explicit omega_timer_s(omega::Engine& e, uint32_t us) : timer(e, us ? us : 1000u) {}
+    explicit omega_timer_s(omega::Engine& e, uint32_t us) : timer(e, us != 0u ? us : 1000u) {}
 };
 
 // omega_sink_t is an opaque alias for omega::OutputSink.
@@ -1006,7 +1006,8 @@ omega_timer_t* omega_timer_create(omega_engine_t* eng, uint32_t interval_us)
     {
         return nullptr;
     }
-    return new (std::nothrow) omega_timer_s(eng->engine, interval_us);
+    return new (std::nothrow)
+        omega_timer_s(eng->engine, interval_us);  // NOLINT(cppcoreguidelines-owning-memory)
 }
 
 void omega_timer_destroy(omega_timer_t* timer)

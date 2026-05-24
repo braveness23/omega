@@ -3,13 +3,16 @@
 #include <chrono>
 #include <cstdint>
 
+// clang-format off
 #if defined(_WIN32)
-    #define WIN32_LEAN_AND_MEAN
-    #include <timeapi.h>
-    #include <windows.h>
+// WIN32_LEAN_AND_MEAN is intentionally omitted: timeapi.h needs multimedia
+// types from mmsystem.h which lean mode strips. windows.h must come first.
+#include <windows.h>  // NOLINT(llvm-include-order)
+#include <timeapi.h>  // NOLINT(llvm-include-order)
 #else
-    #include <time.h>
+#include <ctime>
 #endif
+// clang-format on
 
 namespace omega
 {

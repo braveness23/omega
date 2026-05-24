@@ -96,11 +96,13 @@ TEST_CASE("OmegaTimer respects custom interval_us parameter")
     // With a 2ms interval over a 40ms window we expect ~20 cycles.
     // We can't count process() calls directly, so just verify that
     // transport position advances proportionally more with a shorter interval.
-    Engine engine1, engine2;
+    Engine engine1;
+    Engine engine2;
     REQUIRE(engine1.enqueue(TransportCmd{TransportAction::PLAY, 0u}) == OMEGA_OK);
     REQUIRE(engine2.enqueue(TransportCmd{TransportAction::PLAY, 0u}) == OMEGA_OK);
 
-    uint64_t pos1_end{}, pos2_end{};
+    uint64_t pos1_end{};
+    uint64_t pos2_end{};
 
     {
         OmegaTimer t1(engine1, 500);   // 0.5ms
