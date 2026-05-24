@@ -8,7 +8,7 @@ A C++ sequencing engine and MIDI library. The foundation for building serious mu
 
 Omega is a library, not an application. It handles timing, event scheduling, multi-track and pattern sequencing, and live performance control — with no opinion about what the interface looks like or what protocols it speaks.
 
-**Current status**: Active development — M4 complete (v0.4.0). M5 (MIDI I/O, SMF import/export) in progress. See [docs/STATUS.md](docs/STATUS.md).
+**Current status**: Active development — M5.5 complete (anchors, snap, MIDI I/O, SMF). M6 polish in progress. See [docs/STATUS.md](docs/STATUS.md).
 
 ---
 
@@ -68,6 +68,50 @@ Optional Ableton Link support (changes license to GPL v2+):
 ```bash
 cmake -B build -DOMEGA_WITH_LINK=ON
 ```
+
+---
+
+## Quick Start
+
+```cpp
+#include <omega/engine.h>
+#include <omega/commands.h>
+#include <omega/test/mock_clock.h>
+#include <omega/test/capturing_sink.h>
+#include <cassert>
+
+int main()
+{
+    // 1. Create an engine with a manually-advanced clock (use InternalClock for production).
+    omega::MockClock clock;
+    omega::Engine engine(&clock);
+
+    // 2. Register an output sink (replace with a real MIDI sink in production).
+    omega::CapturingSink sink;
+    engine.add_sink(&sink);
+
+    // 3. Add a track and route it to the sink.
+    omega::TrackId track = engine.add_track("bass");
+    engine.set_track_sink(track, sink.sink_id());
+
+    // 4. Schedule a note: C4, velocity 100, duration 1 beat (480 ticks).
+    omega::Event note = omega_make_note_on(0u, sink.sink_id(), 0, 60, 100, 480);
+    engine.enqueue(omega::AddEventCmd{track, note});
+
+    // 5. Start playback and advance one cycle past tick 0.
+    engine.enqueue(omega::TransportCmd{omega::TransportAction::PLAY, 0u});
+    clock.advance_ticks(1u);
+    engine.process();
+
+    // 6. The note fired — verify it.
+    assert(sink.has_note_on(60, 0));
+    return 0;
+}
+```
+
+The C API version of the same example is in `cmake/smoke_test/main.cpp`.
+Full API reference is in `include/omega/omega.h`; every function documents its thread
+requirement, return values, and error codes.
 
 ---
 

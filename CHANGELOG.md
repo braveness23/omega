@@ -9,7 +9,13 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **Sprint 6.4 -- benchmarks**: four Catch2 `BENCHMARK` cases measuring `engine.process()` idle cycle, SPSC `push()`/`pop()` throughput, `TempoMap::ns_to_ticks()` with a 16-point map, and dispatch of 1000 events in a single cycle; benchmark target (`omega_benchmarks`) excluded from default `ctest` run, invoked explicitly via `ctest -R bench_`
+- **Sprint 6.3 -- ABI baseline**: `abi/v0.6.0.dump` generated from `libomega_core` `RelWithDebInfo` objects via `abi-dumper`; `abi/PLACEHOLDER` removed; baseline committed to track future ABI compatibility with `abi-compliance-checker`
+
 ### Changed
+- **Sprint 6.5 -- docs polish**: `README.md` quick-start example verified compilable; `docs/ARCHITECTURE.md`, `docs/STATUS.md`, and `docs/ROADMAP.md` updated to reflect M5/M5.5/M6 completion
+- **Sprint 6.2 -- sanitizer verification**: confirmed zero ASan/UBSan and TSan failures across all 388 tests on the M6 codebase
 - **Sprint 6.1 -- coverage to 80%**: added integration tests covering the full C API surface for SMF import/export, markers, regions, pattern anchors, event anchors, timer, and snap; two new integration test files (`test_c_api_smf.cpp`, `test_c_api_markers.cpp`) with 27 new test cases; line coverage raised from 78% to 83%
 
 ### Added

@@ -54,6 +54,7 @@ Start here if you're new to the codebase:
 11. [Orchestration Layer](design/11-orchestration-layer.md) — EventInput, TransformSource routing, ModulationBus, PerformanceContext, chasing
 12. [Library Foundation](design/12-library-foundation.md) — build system, versioning, ABI policy, CI quality gates, release process, header conventions
 13. [Time Signature Support](design/13-time-signature.md) — TimeSignatureMap, MeterCursor, SmpteConverter, PositionConverter, OMEGA_CUE_BAR, freeform mode
+14. [Markers, Regions, and Anchors](design/14-markers-regions-anchors.md) — MarkerList, RegionList, AnchorPoint, EventAnchorTable, snap framework
 
 ## Key Decisions at a Glance
 
@@ -79,6 +80,10 @@ Start here if you're new to the codebase:
 | Coordinate interface | PositionConverter base class | [13](design/13-time-signature.md) |
 | MIDI I/O | libremidi (MIT) | [09](design/09-prior-art.md) |
 | SMF parsing | midifile/Stanford (BSD) | [09](design/09-prior-art.md) |
+| Markers/regions | MarkerList + RegionList (session-level) | [14](design/14-markers-regions-anchors.md) |
+| Anchors | AnchorPoint + EventAnchorTable (sparse side table) | [14](design/14-markers-regions-anchors.md) |
+| Snap | snap_to_nearest() with grid/marker/region/anchor targets | [14](design/14-markers-regions-anchors.md) |
+| Timer thread | OmegaTimer (RAII, drift-compensating) | [02](design/02-thread-model.md) |
 | Native format | JSON (v1) | [06](design/06-session-container.md) |
 | Undo/redo | Command pattern | [07](design/07-extensions.md) |
 | Core license | MIT | LICENSE |
