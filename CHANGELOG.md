@@ -10,6 +10,7 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Sprint 5.5.2 -- snap framework**: `snap_to_nearest()` with `SnapConfig{targets, grid_subdiv_ticks, tolerance_ticks}` and `SnapResult{snapped_tick, source, did_snap}`; target flags `SNAP_GRID`, `SNAP_MARKERS`, `SNAP_REGIONS`, `SNAP_ANCHORS`; GRID target supports explicit subdivision (integer math) or `PositionConverter`-based meter/SMPTE grid; ANCHORS target applies the anchor-aware formula (`next_grid(tick + anchor.offset) - anchor.offset`); C API `omega_snap()` with `omega_snap_config_t` / `omega_snap_result_t`
 - **Sprint 5.5.1 -- anchors + event side table**: `AnchorPoint{name, offset_ticks, flags}` with
   `OMEGA_ANCHOR_SNAP`, `OMEGA_ANCHOR_WARP`, `OMEGA_ANCHOR_CUE` flag constants; `AnchorList`
   sorted by `offset_ticks` with `add/remove/at/find_by_name/snap_anchors/set_active_snap/

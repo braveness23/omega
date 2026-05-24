@@ -1432,6 +1432,60 @@ OMEGA_API omega_timer_t* omega_timer_create(omega_engine_t* e, uint32_t interval
  */
 OMEGA_API void omega_timer_destroy(omega_timer_t* timer);
 
+/* ── Snap ─────────────────────────────────────────────────────────────────── */
+
+/* Enabled snap target bits (combinable). */
+#define OMEGA_SNAP_GRID 0x01u
+#define OMEGA_SNAP_MARKERS 0x02u
+#define OMEGA_SNAP_REGIONS 0x04u
+#define OMEGA_SNAP_ANCHORS 0x08u
+
+/*
+ * Snap configuration passed to omega_snap().
+ *
+ *   targets           -- bitfield of OMEGA_SNAP_* flags.
+ *   grid_subdiv_ticks -- grid subdivision in ticks; 0 = derive from engine meter.
+ *   tolerance_ticks   -- maximum snap distance; 0 = unlimited.
+ */
+typedef struct
+{
+    uint8_t targets;
+    omega_tick_t grid_subdiv_ticks;
+    omega_tick_t tolerance_ticks;
+} omega_snap_config_t;
+
+/*
+ * Result returned by omega_snap().
+ *
+ *   snapped_tick -- the snapped position (equals input tick when did_snap == 0).
+ *   source       -- which OMEGA_SNAP_* target provided the winning candidate.
+ *   did_snap     -- 1 if a snap occurred, 0 if no candidate was within tolerance.
+ */
+typedef struct
+{
+    omega_tick_t snapped_tick;
+    uint8_t source;
+    int did_snap;
+} omega_snap_result_t;
+
+/*
+ * Snap tick to the nearest candidate from the enabled target sets.
+ *
+ * When OMEGA_SNAP_GRID is set and the engine has no time signature (freeform
+ * mode) and grid_subdiv_ticks is 0, returns OMEGA_ERR_NO_METER.
+ *
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ *
+ * Returns:
+ *   OMEGA_OK            -- out filled; check did_snap to see if a snap occurred.
+ *   OMEGA_ERR_INVALID   -- e, config, or out is NULL.
+ *   OMEGA_ERR_NO_METER  -- OMEGA_SNAP_GRID requested, freeform mode, no subdiv given.
+ */
+OMEGA_API omega_status_t omega_snap(const omega_engine_t* e,
+                                    omega_tick_t tick,
+                                    const omega_snap_config_t* config,
+                                    omega_snap_result_t* out);
+
 #ifdef __cplusplus
 }
 #endif

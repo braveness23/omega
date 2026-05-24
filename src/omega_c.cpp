@@ -10,6 +10,7 @@
 #include <omega/region_list.h>
 #include <omega/sink.h>
 #include <omega/smpte_converter.h>
+#include <omega/snap.h>
 #include <omega/time_signature_map.h>
 #include <omega/timer.h>
 #include <omega/types.h>
@@ -1115,6 +1116,35 @@ omega_timer_t* omega_timer_create(omega_engine_t* eng, uint32_t interval_us)
 void omega_timer_destroy(omega_timer_t* timer)
 {
     delete timer;  // NOLINT(cppcoreguidelines-owning-memory)
+}
+
+omega_status_t omega_snap(const omega_engine_t* eng,
+                          omega_tick_t tick,
+                          const omega_snap_config_t* config,
+                          omega_snap_result_t* out)
+{
+    if (eng == nullptr || config == nullptr || out == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    // GRID with freeform engine and no explicit subdivision is not supported.
+    if ((config->targets & OMEGA_SNAP_GRID) != 0u && config->grid_subdiv_ticks == 0u &&
+        eng->engine.timesig_map().is_freeform())
+    {
+        return OMEGA_ERR_NO_METER;
+    }
+
+    omega::MeterCursor cursor(eng->engine.timesig_map());
+    omega::SnapConfig cpp_config{
+        config->targets, config->grid_subdiv_ticks, config->tolerance_ticks};
+
+    omega::SnapResult result = omega::snap_to_nearest(
+        tick, cpp_config, cursor, eng->engine.marker_list(), eng->engine.region_list(), nullptr);
+
+    out->snapped_tick = result.snapped_tick;
+    out->source = static_cast<uint8_t>(result.source);
+    out->did_snap = result.did_snap ? 1 : 0;
+    return OMEGA_OK;
 }
 
 }  // extern "C"
