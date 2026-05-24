@@ -10,6 +10,12 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Sprint 5.3 -- SMF export**: `omega_smf_export()` writes Standard MIDI Files (Type 0 or
+  Type 1) from the engine's active session; exports tempo map, time signatures, markers, and
+  all track events (note on/off with duration, CC, program change); empty tracks are
+  automatically skipped so the midifile library never encounters a zero-event track list;
+  7 round-trip tests covering null/bad-path errors, Type 0 single-track, Type 1 two-track
+  import→export→reimport, tempo changes, markers, and time signatures
 - **Sprint 5.2 -- SMF import + markers + regions**: `omega_smf_import()` reads Standard MIDI
   Files (Type 0/1, tempo, time signatures, markers, cue points, non-480 PPQN tick scaling);
   `MarkerList` and `RegionList` as Session-level data with sorted insertion and find helpers;

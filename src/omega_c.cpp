@@ -13,10 +13,11 @@
 
 #include <new>
 
-// Forward declaration from src/smf_import.cpp
+// Forward declarations from src/smf_import.cpp and src/smf_export.cpp
 namespace omega
 {
 omega_status_t smf_import(Engine& engine, const char* path);
+omega_status_t smf_export(Engine& engine, const char* path, int smf_type);
 }  // namespace omega
 
 namespace
@@ -856,7 +857,7 @@ void omega_input_destroy_midi_in(omega_input_t* input)
     delete reinterpret_cast<omega::EventInput*>(input);
 }
 
-// ── SMF import ────────────────────────────────────────────────────────────────
+// ── SMF import / export ───────────────────────────────────────────────────────
 
 omega_status_t omega_smf_import(omega_engine_t* eng, const char* path)
 {
@@ -865,6 +866,15 @@ omega_status_t omega_smf_import(omega_engine_t* eng, const char* path)
         return OMEGA_ERR_INVALID;
     }
     return omega::smf_import(eng->engine, path);
+}
+
+omega_status_t omega_smf_export(omega_engine_t* eng, const char* path, int smf_type)
+{
+    if (eng == nullptr || path == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return omega::smf_export(eng->engine, path, smf_type);
 }
 
 // ── Markers ───────────────────────────────────────────────────────────────────

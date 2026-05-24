@@ -210,7 +210,7 @@ gh pr create --title "feat: SMF import + markers/regions (M5.2)" --body "..."
 
 ---
 
-## PR 3 / Sprint 5.3 -- SMF Export
+## PR 3 / Sprint 5.3 -- SMF Export ✅ COMPLETE
 
 **Branch:** `feat/m5.3-smf-export`
 
