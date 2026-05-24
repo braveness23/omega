@@ -1,5 +1,7 @@
+#include <omega/anchor_point.h>
 #include <omega/commands.h>
 #include <omega/engine.h>
+#include <omega/event_anchor_table.h>
 #include <omega/event_input.h>
 #include <omega/event_source.h>
 #include <omega/midi_io.h>
@@ -13,6 +15,7 @@
 #include <omega/types.h>
 
 #include <new>
+#include <string>
 
 // Forward declarations from src/smf_import.cpp and src/smf_export.cpp
 namespace omega
@@ -998,6 +1001,105 @@ omega_status_t omega_region_clear(omega_engine_t* eng)
     }
     eng->engine.region_list().clear();
     return OMEGA_OK;
+}
+
+// ── Anchors ───────────────────────────────────────────────────────────────────
+
+omega_status_t omega_pattern_add_anchor(omega_engine_t* eng,
+                                        omega_pattern_id_t pid,
+                                        const char* name,
+                                        omega_tick_t offset,
+                                        uint32_t flags)
+{
+    if (eng == nullptr || name == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    omega::Pattern* pat = eng->engine.pattern_library().get(pid);
+    if (pat == nullptr)
+    {
+        return OMEGA_ERR_NOT_FOUND;
+    }
+    pat->anchors.add(name, offset, flags);
+    return OMEGA_OK;
+}
+
+omega_status_t omega_pattern_remove_anchor(omega_engine_t* eng,
+                                           omega_pattern_id_t pid,
+                                           const char* name)
+{
+    if (eng == nullptr || name == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    omega::Pattern* pat = eng->engine.pattern_library().get(pid);
+    if (pat == nullptr)
+    {
+        return OMEGA_ERR_NOT_FOUND;
+    }
+    return pat->anchors.remove(std::string(name));
+}
+
+uint32_t omega_pattern_anchor_count(const omega_engine_t* eng, omega_pattern_id_t pid)
+{
+    if (eng == nullptr)
+    {
+        return 0u;
+    }
+    const omega::Pattern* pat = eng->engine.pattern_library().get(pid);
+    if (pat == nullptr)
+    {
+        return 0u;
+    }
+    return pat->anchors.size();
+}
+
+omega_status_t omega_pattern_set_active_snap(omega_engine_t* eng,
+                                             omega_pattern_id_t pid,
+                                             uint32_t index)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    omega::Pattern* pat = eng->engine.pattern_library().get(pid);
+    if (pat == nullptr)
+    {
+        return OMEGA_ERR_NOT_FOUND;
+    }
+    return pat->anchors.set_active_snap(index);
+}
+
+omega_status_t omega_event_add_anchor(omega_engine_t* eng,
+                                      omega_track_id_t track,
+                                      uint32_t event_index,
+                                      const char* name,
+                                      omega_tick_t offset,
+                                      uint32_t flags)
+{
+    if (eng == nullptr || name == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    eng->engine.event_anchors().get_or_create(track, event_index).add(name, offset, flags);
+    return OMEGA_OK;
+}
+
+omega_status_t omega_event_remove_anchor(omega_engine_t* eng,
+                                         omega_track_id_t track,
+                                         uint32_t event_index,
+                                         const char* name)
+{
+    if (eng == nullptr || name == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    omega::AnchorList* al = eng->engine.event_anchors().get(track, event_index);
+    if (al == nullptr)
+    {
+        return OMEGA_ERR_NOT_FOUND;
+    }
+    return al->remove(std::string(name));
 }
 
 omega_timer_t* omega_timer_create(omega_engine_t* eng, uint32_t interval_us)

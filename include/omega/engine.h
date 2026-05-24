@@ -3,6 +3,7 @@
 #include <omega/clock.h>
 #include <omega/commands.h>
 #include <omega/detail/spsc_queue.h>
+#include <omega/event_anchor_table.h>
 #include <omega/event_input.h>
 #include <omega/event_source.h>
 #include <omega/input_bus.h>
@@ -431,6 +432,13 @@ public:
     [[nodiscard]] const RegionList& region_list() const noexcept { return region_list_; }
 
     /*
+     * Returns the session event anchor table.
+     * Thread: Mutation thread only. Must not be called concurrently with process().
+     */
+    [[nodiscard]] EventAnchorTable& event_anchors() noexcept { return event_anchors_; }
+    [[nodiscard]] const EventAnchorTable& event_anchors() const noexcept { return event_anchors_; }
+
+    /*
      * Inserts an event directly into a timeline track, bypassing the command queue.
      * Only safe when the engine is stopped (e.g., during SMF import).
      *
@@ -577,6 +585,7 @@ private:
 
     MarkerList marker_list_;
     RegionList region_list_;
+    EventAnchorTable event_anchors_;
 
     detail::SpscQueue<Command, 4096> queue_;
     TempoMap tempo_map_;

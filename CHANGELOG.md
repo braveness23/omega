@@ -9,6 +9,16 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **Sprint 5.5.1 -- anchors + event side table**: `AnchorPoint{name, offset_ticks, flags}` with
+  `OMEGA_ANCHOR_SNAP`, `OMEGA_ANCHOR_WARP`, `OMEGA_ANCHOR_CUE` flag constants; `AnchorList`
+  sorted by `offset_ticks` with `add/remove/at/find_by_name/snap_anchors/set_active_snap/
+  active_snap`; `EventAnchorTable` sparse side table keyed by `(container_id, event_index)` so
+  events remain 24 bytes; `Pattern::anchors` for per-pattern intrinsic anchors; `Engine::
+  event_anchors()` accessor for the session-level side table; full C API
+  (`omega_pattern_add_anchor`, `omega_pattern_remove_anchor`, `omega_pattern_anchor_count`,
+  `omega_pattern_set_active_snap`, `omega_event_add_anchor`, `omega_event_remove_anchor`)
+
 <!-- New releases go above this line -->
 
 ---

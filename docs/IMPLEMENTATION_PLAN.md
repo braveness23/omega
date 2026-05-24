@@ -352,7 +352,7 @@ No CHANGELOG lint needed (chore: prefix).
 
 ---
 
-## PR 6 / Sprint 5.5.1 -- AnchorPoint + Pattern Anchors + Event Side Table
+## PR 6 / Sprint 5.5.1 -- AnchorPoint + Pattern Anchors + Event Side Table ✅ COMPLETE (PR #17)
 
 **Branch:** `feat/m5.5-anchors`
 
