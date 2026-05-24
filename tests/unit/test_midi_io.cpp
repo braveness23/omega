@@ -2,6 +2,7 @@
 #include <omega/omega.h>
 #include <omega/types.h>
 
+#include <array>
 #include <catch2/catch_test_macros.hpp>
 #include <cstdint>
 
@@ -18,7 +19,7 @@ TEST_CASE("LibremidiSink - construction with no ports does not crash", "[midi_io
 
 TEST_CASE("LibremidiSink - translates NOTE_ON to correct bytes", "[midi_io]")
 {
-    uint8_t buf[3] = {};
+    std::array<uint8_t, 3> buf{};
 
     omega::Event e{};
     e.payload_tag = OMEGA_NOTE_ON;
@@ -26,7 +27,7 @@ TEST_CASE("LibremidiSink - translates NOTE_ON to correct bytes", "[midi_io]")
     e.data[0] = 60u;   // note
     e.data[1] = 100u;  // velocity
 
-    const std::size_t n = omega::event_to_midi_bytes(e, buf);
+    const std::size_t n = omega::event_to_midi_bytes(e, buf.data());
 
     REQUIRE(n == 3u);
     CHECK(buf[0] == (0x90u | 3u));  // NOTE_ON, channel 3
@@ -36,7 +37,7 @@ TEST_CASE("LibremidiSink - translates NOTE_ON to correct bytes", "[midi_io]")
 
 TEST_CASE("LibremidiSink - translates NOTE_OFF to correct bytes", "[midi_io]")
 {
-    uint8_t buf[3] = {};
+    std::array<uint8_t, 3> buf{};
 
     omega::Event e{};
     e.payload_tag = OMEGA_NOTE_OFF;
@@ -44,7 +45,7 @@ TEST_CASE("LibremidiSink - translates NOTE_OFF to correct bytes", "[midi_io]")
     e.data[0] = 64u;
     e.data[1] = 0u;
 
-    const std::size_t n = omega::event_to_midi_bytes(e, buf);
+    const std::size_t n = omega::event_to_midi_bytes(e, buf.data());
 
     REQUIRE(n == 3u);
     CHECK(buf[0] == 0x80u);
@@ -54,7 +55,7 @@ TEST_CASE("LibremidiSink - translates NOTE_OFF to correct bytes", "[midi_io]")
 
 TEST_CASE("LibremidiSink - translates CC to correct bytes", "[midi_io]")
 {
-    uint8_t buf[3] = {};
+    std::array<uint8_t, 3> buf{};
 
     omega::Event e{};
     e.payload_tag = OMEGA_CC;
@@ -62,7 +63,7 @@ TEST_CASE("LibremidiSink - translates CC to correct bytes", "[midi_io]")
     e.data[0] = 7u;    // controller (volume)
     e.data[1] = 100u;  // value
 
-    const std::size_t n = omega::event_to_midi_bytes(e, buf);
+    const std::size_t n = omega::event_to_midi_bytes(e, buf.data());
 
     REQUIRE(n == 3u);
     CHECK(buf[0] == (0xB0u | 5u));
@@ -72,14 +73,14 @@ TEST_CASE("LibremidiSink - translates CC to correct bytes", "[midi_io]")
 
 TEST_CASE("LibremidiSink - translates PROGRAM to correct bytes", "[midi_io]")
 {
-    uint8_t buf[3] = {};
+    std::array<uint8_t, 3> buf{};
 
     omega::Event e{};
     e.payload_tag = OMEGA_PROGRAM;
     e.channel = 2u;
     e.data[0] = 42u;  // program
 
-    const std::size_t n = omega::event_to_midi_bytes(e, buf);
+    const std::size_t n = omega::event_to_midi_bytes(e, buf.data());
 
     REQUIRE(n == 2u);
     CHECK(buf[0] == (0xC0u | 2u));
@@ -88,18 +89,18 @@ TEST_CASE("LibremidiSink - translates PROGRAM to correct bytes", "[midi_io]")
 
 TEST_CASE("LibremidiSink - unsupported event returns 0 bytes", "[midi_io]")
 {
-    uint8_t buf[3] = {};
+    std::array<uint8_t, 3> buf{};
 
     omega::Event e{};
     e.payload_tag = 0xFFu;  // CUSTOM / unsupported
 
-    const std::size_t n = omega::event_to_midi_bytes(e, buf);
+    const std::size_t n = omega::event_to_midi_bytes(e, buf.data());
     CHECK(n == 0u);
 }
 
 TEST_CASE("LibremidiSink - channel clamped to low nibble", "[midi_io]")
 {
-    uint8_t buf[3] = {};
+    std::array<uint8_t, 3> buf{};
 
     omega::Event e{};
     e.payload_tag = OMEGA_NOTE_ON;
@@ -107,7 +108,7 @@ TEST_CASE("LibremidiSink - channel clamped to low nibble", "[midi_io]")
     e.data[0] = 60u;
     e.data[1] = 80u;
 
-    omega::event_to_midi_bytes(e, buf);
+    omega::event_to_midi_bytes(e, buf.data());
     CHECK((buf[0] & 0xF0u) == 0x90u);
     CHECK((buf[0] & 0x0Fu) == 0x0Fu);  // only low nibble
 }
