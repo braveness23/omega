@@ -1,8 +1,8 @@
 # Omega — Development Status
 
-## Current Milestone: M6 — Polish (Beta)
+## Current Milestone: M6 Complete — v0.6.0-beta (Beta Release Candidate)
 
-Goal: Coverage to 80%, valgrind-clean, ABI dump, API documentation, benchmark baselines.
+Goal: Polish, coverage >= 80%, ABI dump, API documentation, benchmark baselines. All done.
 
 ---
 
@@ -17,5 +17,7 @@ Goal: Coverage to 80%, valgrind-clean, ABI dump, API documentation, benchmark ba
 | M4 | v0.4.0 | Orchestration layer — EventInput, ModulationBus, PerformanceContext, TransformSource (done 2026-05-23) |
 | M4.5 | v0.4.0 | TimeSignatureMap, MeterCursor, SmpteConverter, OMEGA_CUE_BAR (done 2026-05-23, included in v0.4.0) |
 | M5 | v0.5.0-alpha | Platform integrations — libremidi MIDI I/O, SMF import/export, OmegaTimer (done 2026-05-24) |
+| M5.5 | — | Markers, regions, anchors, snap framework (done 2026-05-24, included in v0.5.x branch) |
+| M6 | v0.6.0-beta | Polish — coverage 83%, ABI dump, API docs, benchmark baselines (done 2026-05-24) |
 
 See `docs/ROADMAP.md` for full sprint specs and definitions of done.

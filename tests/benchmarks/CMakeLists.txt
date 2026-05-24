@@ -1,5 +1,8 @@
 add_executable(omega_benchmarks
-    bench_placeholder.cpp
+    bench_process_cycle.cpp
+    bench_command_enqueue.cpp
+    bench_tempo_lookup.cpp
+    bench_dispatch_1k.cpp
 )
 
 target_link_libraries(omega_benchmarks

@@ -16,7 +16,8 @@ Sprint breakdowns are sized for 1–3 focused coding sessions each.
 | M3 | `v0.3.0` | All three built-in sources working (done 2026-05-22) |
 | M4 | `v0.4.0` | Orchestration layer + time signatures, SMPTE, CUE_BAR (done 2026-05-23) |
 | M5 | `v0.5.0-alpha` | Platform integrations (real MIDI I/O, SMF import/export) (done 2026-05-24) |
-| M6 | `v0.6.0-beta` | Polish, coverage, valgrind-clean — release candidate |
+| M5.5 | — | Markers, regions, anchors, snap framework (done 2026-05-24) |
+| M6 | `v0.6.0-beta` | Polish, coverage, valgrind-clean — release candidate (done 2026-05-24) |
 | v1.0.0 | `v1.0.0` | ABI-stable public release |
 
 ---
