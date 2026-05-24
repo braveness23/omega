@@ -93,6 +93,17 @@ uint64_t PerformanceSource::next_bar_boundary(uint64_t current_tick,
     return global_boundary(current_tick, loop_len);
 }
 
+// Queues a slot for playback according to the given cue mode.
+//
+// Valid state transitions (see docs/design/05-pattern-state-machine.md):
+//   IDLE     → QUEUED    : schedules the assigned pattern at the boundary tick
+//   QUEUED   → QUEUED    : updates the pending pattern; recalculates boundary
+//   PLAYING  → STOPPING  : schedules stop (± restart if assigned != playing)
+//   STOPPING → STOPPING  : updates the pending pattern for after the stop
+//   EMPTY    — no-op     : slot has no pattern; nothing to cue
+//
+// IMMEDIATE mode bypasses boundary calculation: the slot transitions directly
+// to PLAYING at next_tick_ with no QUEUED/STOPPING intermediate state.
 void PerformanceSource::cue(SlotId slot_id, CueMode mode, uint64_t current_tick)
 {
     if (slot_id >= PERF_MAX_SLOTS)
@@ -314,6 +325,12 @@ void PerformanceSource::dispatch_slot_events(PerfSlot& slot,
         return;
     }
 
+    // Walk through loop iterations that overlap [from, to_tick].
+    //   loop_idx   — which repetition of the pattern we're examining (0-based)
+    //   iter_start — absolute tick where this repetition begins
+    //   iter_end   — absolute tick where this repetition ends (exclusive)
+    //   window_*   — intersection of [from, to_tick] with [iter_start, iter_end-1]
+    //   pat_*      — same window expressed as offsets within the pattern
     uint64_t loop_idx = (from - S) / len;
 
     while (true)
@@ -369,12 +386,17 @@ void PerformanceSource::dispatch_slot_events(PerfSlot& slot,
 
                     if (slot.random_bias > 0u)
                     {
+                        // LCG step (Knuth Vol.2: multiplier 1664525, addend 1013904223).
+                        // Advance the state, then map the upper 31 bits to [0, 1) to get
+                        // a uniform float. If it falls below the bias probability threshold,
+                        // advance again and apply a pitch offset in [-5, +5] semitones.
                         slot.rng_state = slot.rng_state * 1664525u + 1013904223u;
                         float frac =
                             static_cast<float>(slot.rng_state >> 1u) * (1.0F / 2147483648.0F);
                         if (frac < static_cast<float>(slot.random_bias) * 0.01F)
                         {
                             slot.rng_state = slot.rng_state * 1664525u + 1013904223u;
+                            // rng_state % 11 gives 0–10; subtracting 5 gives -5 to +5.
                             int bias_offset = static_cast<int>(slot.rng_state % 11u) - 5;
                             auto biased = static_cast<int16_t>(static_cast<int16_t>(ev.data[0]) +
                                                                bias_offset);

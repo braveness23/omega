@@ -88,6 +88,9 @@ void TimelineSource::advance(uint64_t to_tick, EventDispatcher& dispatcher, Proc
 
             if (pos->payload_tag == OMEGA_NOTE_ON)
             {
+                // NOTE_ON events store a 4-byte duration at data[2..5] (see omega_make_note_on
+                // in types.cpp). A non-zero duration means we must synthesise the matching
+                // NOTE_OFF; track it in active_notes_ rather than the event stream.
                 uint32_t duration = 0;
                 std::memcpy(&duration, &pos->data[2], sizeof(duration));
                 if (duration > 0)
@@ -100,6 +103,10 @@ void TimelineSource::advance(uint64_t to_tick, EventDispatcher& dispatcher, Proc
         }
     }
 
+    // Emit any pending note-offs whose off_tick has arrived.
+    // active_notes_ is a separate table from the event stream; notes are added
+    // here when a NOTE_ON with a non-zero duration is dispatched, and removed
+    // once the corresponding NOTE_OFF has been sent.
     for (auto pos = active_notes_.begin(); pos != active_notes_.end();)
     {
         if (pos->off_tick <= to_tick)

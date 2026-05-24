@@ -41,6 +41,9 @@ omega_status_t smf_import(Engine& engine, const char* path)
         for (int e = 0; e < mf[t].size(); ++e)
         {
             const smf::MidiEvent& ev = mf[t][e];
+            // Scale SMF ticks to omega ticks: omega_tick = smf_tick * OMEGA_PPQN / smf_ppqn.
+            // This is a linear interpolation between resolutions. Integer division truncates,
+            // which is acceptable — the rounding error is sub-tick at any musical tempo.
             uint64_t omega_tick =
                 (static_cast<uint64_t>(ev.tick) * static_cast<uint64_t>(OMEGA_PPQN)) /
                 static_cast<uint64_t>(smf_ppqn);
@@ -68,6 +71,9 @@ omega_status_t smf_import(Engine& engine, const char* path)
             else if (ev.isMeta())
             {
                 int meta_type = ev.getMetaType();
+                // 0x06 = Marker (FF 06) — a named position marker in the SMF.
+                // 0x07 = Cue Point (FF 07) — like a marker but intended for synchronisation cues.
+                // Both are imported as omega markers; cue points get a "[cue] " prefix.
                 if (meta_type == 0x06 || meta_type == 0x07)
                 {
                     std::string name = ev.getMetaContent();
@@ -80,10 +86,14 @@ omega_status_t smf_import(Engine& engine, const char* path)
             }
             else if (ev.isNoteOn())
             {
+                // The low nibble of the MIDI status byte (ev[0]) holds the channel (0–15).
                 auto channel = static_cast<uint8_t>(ev[0] & 0x0Fu);
                 auto note = static_cast<uint8_t>(ev.getP1());
                 auto velocity = static_cast<uint8_t>(ev.getP2());
 
+                // getTickDuration() returns the SMF tick distance to the linked note-off
+                // (populated by mf.linkNotePairs()). Apply the same PPQN scaling as for
+                // note ticks so the duration is expressed in omega ticks.
                 uint32_t duration = 0u;
                 if (ev.isLinked() != 0)
                 {
