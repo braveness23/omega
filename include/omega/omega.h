@@ -71,6 +71,7 @@ typedef enum
     OMEGA_ERR_UNSUPPORTED = -5,     /* operation not supported in current state */
     OMEGA_ERR_NO_METER = -6,        /* no time signature map defined (freeform mode) */
     OMEGA_ERR_NO_SMPTE_CONFIG = -7, /* SmpteConfig not set on the session */
+    OMEGA_ERR_IO = -8,              /* MIDI I/O failure (port not open or send error) */
 } omega_status_t;
 
 /*
@@ -85,10 +86,13 @@ OMEGA_API const char* omega_status_string(omega_status_t status);
 /* ── Events ───────────────────────────────────────────────────────────────── */
 
 /* payload_tag discriminants */
-#define OMEGA_NOTE_ON 0x00u  /* data[0]=note, data[1]=vel, data[2-5]=duration_ticks */
-#define OMEGA_NOTE_OFF 0x01u /* data[0]=note, data[1]=vel */
-#define OMEGA_CC 0x02u       /* data[0]=controller, data[1]=value */
-#define OMEGA_PROGRAM 0x03u  /* data[0]=program */
+#define OMEGA_NOTE_ON 0x00u    /* data[0]=note, data[1]=vel, data[2-5]=duration_ticks */
+#define OMEGA_NOTE_OFF 0x01u   /* data[0]=note, data[1]=vel */
+#define OMEGA_CC 0x02u         /* data[0]=controller, data[1]=value */
+#define OMEGA_PROGRAM 0x03u    /* data[0]=program */
+#define OMEGA_PITCH_BEND 0x04u /* data[0]=LSB (7-bit), data[1]=MSB (7-bit); center=0x40,0x00 */
+#define OMEGA_AFTERTOUCH 0x05u /* data[0]=pressure (0-127) */
+#define OMEGA_POLY_AT 0x06u    /* data[0]=note, data[1]=pressure (0-127) */
 
 typedef struct
 {
@@ -839,6 +843,58 @@ OMEGA_API uint32_t omega_ctx_input_count(const omega_process_context_t* ctx);
  * Thread: Timing thread only (called from within advance_fn).
  */
 OMEGA_API const omega_event_t* omega_ctx_input_at(const omega_process_context_t* ctx, uint32_t i);
+
+/* ── MIDI I/O ─────────────────────────────────────────────────────────────── */
+
+/*
+ * Creates an OutputSink backed by a real MIDI output port via libremidi.
+ *
+ * port_name:
+ *   NULL — open the first available output port.
+ *   ""   — open a virtual output port named "Omega Out".
+ *   other — match by display name or port name (first match wins).
+ *
+ * Returns a caller-owned sink handle on success. If no matching port exists,
+ * construction still succeeds but send() will silently return OMEGA_ERR_IO.
+ * Returns NULL only on allocation failure. Call omega_engine_add_sink() then
+ * use omega_sink_id(sink) to route events to it.
+ * Destroy with omega_sink_destroy_midi_out() — do NOT pass to omega_sink_destroy().
+ *
+ * Thread: Any thread, before playback starts.
+ */
+OMEGA_API omega_sink_t* omega_sink_create_midi_out(const char* port_name);
+
+/*
+ * Destroys a MIDI output sink created with omega_sink_create_midi_out().
+ * Must not be called while the sink is still registered with an engine.
+ *
+ * Thread: Any thread, after playback is stopped and sink is deregistered.
+ */
+OMEGA_API void omega_sink_destroy_midi_out(omega_sink_t* sink);
+
+/*
+ * Creates an EventInput backed by a real MIDI input port via libremidi.
+ *
+ * port_name:
+ *   NULL — open the first available input port.
+ *   ""   — open a virtual input port named "Omega In".
+ *   other — match by display name or port name (first match wins).
+ *
+ * Returns a caller-owned input handle. If no port is available, construction
+ * still succeeds but poll() delivers no events. Returns NULL on allocation failure.
+ * Destroy with omega_input_destroy_midi_in() — do NOT pass to omega_input_destroy().
+ *
+ * Thread: Any thread, before omega_engine_add_input().
+ */
+OMEGA_API omega_input_t* omega_input_create_midi_in(const char* port_name);
+
+/*
+ * Destroys a MIDI input created with omega_input_create_midi_in().
+ * Must not be called while the input is still registered with an engine.
+ *
+ * Thread: Any thread, after omega_engine_remove_input() has been processed.
+ */
+OMEGA_API void omega_input_destroy_midi_in(omega_input_t* input);
 
 /*
  * Gets a modulation channel value from within an advance_fn callback.

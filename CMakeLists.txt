@@ -115,6 +115,8 @@ add_library(omega_core STATIC
     src/performance_source.cpp
     src/modulation_bus.cpp
     src/transform_source.cpp
+    src/libremidi_sink.cpp
+    src/libremidi_input.cpp
     src/engine.cpp
 )
 add_library(omega::core ALIAS omega_core)

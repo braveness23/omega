@@ -2,6 +2,7 @@
 #include <omega/engine.h>
 #include <omega/event_input.h>
 #include <omega/event_source.h>
+#include <omega/midi_io.h>
 #include <omega/omega.h>
 #include <omega/perf_slot.h>
 #include <omega/sink.h>
@@ -99,6 +100,18 @@ private:
     omega_source_advance_fn_t advance_fn_;
     void* userdata_;
     uint32_t priority_;
+};
+
+// Owns a LibremidiInput and exposes it as an omega::EventInput (for the C API).
+// Returned by omega_input_create_midi_in(); destroyed by omega_input_destroy_midi_in().
+class MidiInputHolder : public omega::EventInput
+{
+public:
+    explicit MidiInputHolder(const char* port_name) noexcept : input_{port_name} {}
+    void poll(omega::InputDispatcher& dispatcher) override { input_.poll(dispatcher); }
+
+private:
+    omega::LibremidiInput input_;
 };
 
 extern "C" {
@@ -801,6 +814,39 @@ omega_status_t omega_smpte_to_tick(const omega_engine_t* eng,
     smpte.seconds = t->seconds;
     smpte.frames = t->frames;
     return converter.smpte_to_tick(smpte, *out);
+}
+
+// ── MIDI I/O ──────────────────────────────────────────────────────────────────
+
+omega_sink_t* omega_sink_create_midi_out(const char* port_name)
+{
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    auto* p = new (std::nothrow) omega::LibremidiSink{port_name};
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    return reinterpret_cast<omega_sink_t*>(p);
+}
+
+void omega_sink_destroy_midi_out(omega_sink_t* sink)
+{
+    // omega_sink_t* aliases omega::OutputSink*; LibremidiSink has virtual dtor.
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory,cppcoreguidelines-pro-type-reinterpret-cast)
+    delete reinterpret_cast<omega::LibremidiSink*>(sink);
+}
+
+omega_input_t* omega_input_create_midi_in(const char* port_name)
+{
+    // MidiInputHolder owns a LibremidiInput and implements EventInput::poll().
+    // omega_engine_add_input() casts omega_input_t* → omega::EventInput* (by layout).
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    auto* holder = new (std::nothrow) MidiInputHolder{port_name};
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    return reinterpret_cast<omega_input_t*>(holder);
+}
+
+void omega_input_destroy_midi_in(omega_input_t* input)
+{
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory,cppcoreguidelines-pro-type-reinterpret-cast)
+    delete reinterpret_cast<omega::EventInput*>(input);
 }
 
 }  // extern "C"

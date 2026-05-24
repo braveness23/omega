@@ -16,6 +16,7 @@ add_executable(omega_tests
     unit/test_custom_source.cpp
     unit/test_time_signature_map.cpp
     unit/test_smpte_converter.cpp
+    unit/test_midi_io.cpp
 )
 
 target_link_libraries(omega_tests
