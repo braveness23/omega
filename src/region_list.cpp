@@ -1,6 +1,7 @@
 #include <omega/region_list.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <utility>
 
 namespace omega

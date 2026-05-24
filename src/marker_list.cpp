@@ -1,6 +1,7 @@
 #include <omega/marker_list.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <utility>
 
 namespace omega

@@ -5,6 +5,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <cstdio>
+#include <filesystem>
 #include <string>
 
 #include "MidiFile.h"
@@ -17,7 +18,8 @@ omega_status_t smf_import(Engine& engine, const char* path);
 
 static std::string tmp_path(const char* suffix)
 {
-    return std::string("/tmp/omega_smf_test_") + suffix + ".mid";
+    auto name = std::string("omega_smf_test_") + suffix + ".mid";
+    return (std::filesystem::temp_directory_path() / name).string();
 }
 
 TEST_CASE("SMF import: null path returns OMEGA_ERR_INVALID", "[smf_import]")
