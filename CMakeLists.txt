@@ -75,6 +75,8 @@ endif()
 
 FetchContent_MakeAvailable(libremidi midifile)
 
+find_package(Threads REQUIRED)
+
 # Ableton Link (GPL v2+) — optional
 if(OMEGA_WITH_LINK)
     FetchContent_Declare(ableton_link
@@ -121,6 +123,7 @@ add_library(omega_core STATIC
     src/smf_export.cpp
     src/libremidi_sink.cpp
     src/libremidi_input.cpp
+    src/timer.cpp
     src/engine.cpp
 )
 add_library(omega::core ALIAS omega_core)
@@ -148,6 +151,7 @@ target_link_libraries(omega_core
     PRIVATE
         libremidi
         midifile
+        Threads::Threads
 )
 
 target_include_directories(omega_core

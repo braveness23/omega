@@ -9,6 +9,7 @@
 #include <omega/sink.h>
 #include <omega/smpte_converter.h>
 #include <omega/time_signature_map.h>
+#include <omega/timer.h>
 #include <omega/types.h>
 
 #include <new>
@@ -44,6 +45,13 @@ struct omega_engine_s  // NOLINT(readability-identifier-naming)
 {
     omega::Engine engine;
     omega_engine_s() {}  // NOLINT(modernize-use-equals-default) — prevents aggregate init
+};
+
+// omega_timer_s owns the OmegaTimer.
+struct omega_timer_s  // NOLINT(readability-identifier-naming)
+{
+    omega::OmegaTimer timer;
+    explicit omega_timer_s(omega::Engine& e, uint32_t us) : timer(e, us != 0u ? us : 1000u) {}
 };
 
 // omega_sink_t is an opaque alias for omega::OutputSink.
@@ -990,6 +998,21 @@ omega_status_t omega_region_clear(omega_engine_t* eng)
     }
     eng->engine.region_list().clear();
     return OMEGA_OK;
+}
+
+omega_timer_t* omega_timer_create(omega_engine_t* eng, uint32_t interval_us)
+{
+    if (eng == nullptr)
+    {
+        return nullptr;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    return new (std::nothrow) omega_timer_s(eng->engine, interval_us);
+}
+
+void omega_timer_destroy(omega_timer_t* timer)
+{
+    delete timer;  // NOLINT(cppcoreguidelines-owning-memory)
 }
 
 }  // extern "C"

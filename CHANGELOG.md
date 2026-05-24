@@ -10,6 +10,12 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Sprint 5.4 -- OmegaTimer**: `OmegaTimer` RAII thread wrapper drives `Engine::process()` at
+  a configurable interval (default 1 ms); drift-compensating sleep loop using `std::chrono::steady_clock`
+  with `nanosleep` on POSIX and `timeBeginPeriod(1)` + `Sleep` on Windows; `~OmegaTimer()` signals
+  stop, joins the thread, then calls `process()` one final time; 5 tests covering clean
+  construction/destruction, position advancement, TSan-validated concurrent `enqueue()` from a
+  mutation thread, and custom interval parameter
 - **Sprint 5.3 -- SMF export**: `omega_smf_export()` writes Standard MIDI Files (Type 0 or
   Type 1) from the engine's active session; exports tempo map, time signatures, markers, and
   all track events (note on/off with duration, CC, program change); empty tracks are

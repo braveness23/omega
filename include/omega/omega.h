@@ -1310,6 +1310,32 @@ OMEGA_API omega_status_t omega_region_at(const omega_engine_t* e,
  */
 OMEGA_API omega_status_t omega_region_clear(omega_engine_t* e);
 
+/* ── Timer ────────────────────────────────────────────────────────────────── */
+
+typedef struct omega_timer_s omega_timer_t;
+
+/*
+ * Creates an OmegaTimer that drives engine->process() at interval_us
+ * microseconds. Starts the internal thread immediately.
+ *
+ * interval_us == 0 uses the default of 1000 µs (1 ms).
+ *
+ * Thread: Mutation thread only, before starting the timer loop.
+ *
+ * Returns:
+ *   Non-NULL -- timer started.
+ *   NULL     -- e is NULL or allocation failed.
+ */
+OMEGA_API omega_timer_t* omega_timer_create(omega_engine_t* e, uint32_t interval_us);
+
+/*
+ * Stops and joins the timer thread, calls process() one final time,
+ * and frees the timer object.
+ *
+ * Thread: Mutation thread only.
+ */
+OMEGA_API void omega_timer_destroy(omega_timer_t* timer);
+
 #ifdef __cplusplus
 }
 #endif

@@ -5,6 +5,7 @@ include(CMakeFindDependencyMacro)
 # FetchContent is a build-time concept; installed consumers use find_dependency.
 # If libremidi ships no CMake config file, provide cmake/FindLibremidi.cmake
 # and install it alongside OmegaTargets.cmake.
+find_dependency(Threads REQUIRED)
 find_dependency(libremidi REQUIRED)
 
 include("${CMAKE_CURRENT_LIST_DIR}/OmegaTargets.cmake")
