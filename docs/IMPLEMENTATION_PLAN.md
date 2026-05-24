@@ -460,7 +460,7 @@ gh pr create --title "feat: anchors + event side table (M5.5.1)" --body "..."
 
 ---
 
-## PR 7 / Sprint 5.5.2 -- Snap Framework
+## PR 7 / Sprint 5.5.2 -- Snap Framework ✅ COMPLETE (PR #18)
 
 **Branch:** `feat/m5.5-snap-framework`
 
