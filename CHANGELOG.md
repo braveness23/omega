@@ -9,6 +9,13 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **Sprint 5.1 -- libremidi MIDI I/O**: `LibremidiSink` wrapping `libremidi::midi_out` and `LibremidiInput`
+  wrapping `libremidi::midi_in`; `event_to_midi_bytes()` translation helper; C API
+  `omega_sink_create_midi_out()` / `omega_sink_destroy_midi_out()` and
+  `omega_input_create_midi_in()` / `omega_input_destroy_midi_in()`; `OMEGA_ERR_IO = -8` status
+  code for I/O failures
+
 <!-- New releases go above this line -->
 
 ---
