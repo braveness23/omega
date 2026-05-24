@@ -47,6 +47,8 @@ add_executable(omega_integration_tests
     integration/test_c_api_playback.cpp
     integration/test_c_api_patterns.cpp
     integration/test_c_api_timesig.cpp
+    integration/test_c_api_smf.cpp
+    integration/test_c_api_markers.cpp
 )
 
 target_link_libraries(omega_integration_tests

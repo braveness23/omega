@@ -9,6 +9,9 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- **Sprint 6.1 -- coverage to 80%**: added integration tests covering the full C API surface for SMF import/export, markers, regions, pattern anchors, event anchors, timer, and snap; two new integration test files (`test_c_api_smf.cpp`, `test_c_api_markers.cpp`) with 27 new test cases; line coverage raised from 78% to 83%
+
 ### Added
 - **Sprint 5.5.2 -- snap framework**: `snap_to_nearest()` with `SnapConfig{targets, grid_subdiv_ticks, tolerance_ticks}` and `SnapResult{snapped_tick, source, did_snap}`; target flags `SNAP_GRID`, `SNAP_MARKERS`, `SNAP_REGIONS`, `SNAP_ANCHORS`; GRID target supports explicit subdivision (integer math) or `PositionConverter`-based meter/SMPTE grid; ANCHORS target applies the anchor-aware formula (`next_grid(tick + anchor.offset) - anchor.offset`); C API `omega_snap()` with `omega_snap_config_t` / `omega_snap_result_t`
 - **Sprint 5.5.1 -- anchors + event side table**: `AnchorPoint{name, offset_ticks, flags}` with
