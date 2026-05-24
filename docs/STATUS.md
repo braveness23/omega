@@ -1,8 +1,8 @@
 # Omega — Development Status
 
-## Current Milestone: M5 — SMF Import/Export
+## Current Milestone: M6 — Polish (Beta)
 
-Goal: Standard MIDI File read/write support.
+Goal: Coverage to 80%, valgrind-clean, ABI dump, API documentation, benchmark baselines.
 
 ---
 
@@ -16,5 +16,6 @@ Goal: Standard MIDI File read/write support.
 | M3 | v0.3.0 | All three built-in sources (done 2026-05-22) |
 | M4 | v0.4.0 | Orchestration layer — EventInput, ModulationBus, PerformanceContext, TransformSource (done 2026-05-23) |
 | M4.5 | v0.4.0 | TimeSignatureMap, MeterCursor, SmpteConverter, OMEGA_CUE_BAR (done 2026-05-23, included in v0.4.0) |
+| M5 | v0.5.0-alpha | Platform integrations — libremidi MIDI I/O, SMF import/export, OmegaTimer (done 2026-05-24) |
 
 See `docs/ROADMAP.md` for full sprint specs and definitions of done.

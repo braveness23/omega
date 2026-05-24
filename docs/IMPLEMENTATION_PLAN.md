@@ -232,7 +232,7 @@ All planned items were implemented. One non-obvious fix was required beyond the 
 
 ---
 
-## PR 4 / Sprint 5.4 -- OmegaTimer
+## PR 4 / Sprint 5.4 -- OmegaTimer (COMPLETE)
 
 **Branch:** `feat/m5.4-omega-timer`
 
@@ -311,6 +311,16 @@ git commit -m "feat: add OmegaTimer RAII thread wrapper (sprint 5.4)"
 git push -u origin feat/m5.4-omega-timer
 gh pr create --title "feat: OmegaTimer (M5.4)" --body "..."
 ```
+
+### Completion summary (2026-05-24)
+
+- `include/omega/timer.h` + `src/timer.cpp`: `OmegaTimer` with drift-compensating sleep loop
+  (`nanosleep` on POSIX, `timeBeginPeriod(1)`+`Sleep` on Windows); `~OmegaTimer` signals stop,
+  joins thread, calls `process()` one final time
+- C API: `omega_timer_create()` / `omega_timer_destroy()` in `omega.h` + `omega_c.cpp`
+- `tests/unit/test_timer.cpp`: 5 tests — clean start/stop, position advancement, concurrent
+  enqueue (TSan), custom interval; **all 5 pass under ASan+UBSan and TSan**
+- `find_package(Threads REQUIRED)` + `Threads::Threads` added to `omega_core`
 
 ---
 
