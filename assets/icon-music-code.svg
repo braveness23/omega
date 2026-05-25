@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="bg2" cx="50%" cy="40%" r="55%">
+      <stop offset="0%" stop-color="#1e2a4a"/>
+      <stop offset="100%" stop-color="#0d1117"/>
+    </radialGradient>
+    <filter id="glow2">
+      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background circle -->
+  <circle cx="256" cy="256" r="248" fill="url(#bg2)" stroke="#2a3a5c" stroke-width="2"/>
+
+  <g filter="url(#glow2)" fill="none" stroke="#4a9eff" stroke-linecap="round" stroke-linejoin="round">
+
+    <!-- Eighth note: stem -->
+    <line x1="210" y1="170" x2="210" y2="330" stroke-width="22"/>
+
+    <!-- Eighth note: flag -->
+    <path d="M 210,170 C 260,190 280,220 240,260"
+          stroke-width="18" fill="none"/>
+
+    <!-- Eighth note: filled note head (ellipse) -->
+    <ellipse cx="192" cy="335" rx="38" ry="26" transform="rotate(-20,192,335)"
+             fill="#4a9eff" stroke="none"/>
+
+    <!-- Code bracket < on the left -->
+    <polyline points="110,210 70,256 110,302" stroke-width="22" fill="none"
+              opacity="0.75"/>
+
+    <!-- Code bracket > on the right -->
+    <polyline points="355,210 395,256 355,302" stroke-width="22" fill="none"
+              opacity="0.75"/>
+
+  </g>
+</svg>

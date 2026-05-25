@@ -37,6 +37,17 @@ Omega is organized in three layers: a C++ core, a stable C API, and optional pla
 └──────────────────────────────────────────────────────────────┘
 ```
 
+## Diagrams
+
+Interactive Mermaid diagrams (rendered by GitHub):
+
+- [Architecture Layers](diagrams/architecture.md) — three-layer stack and responsibilities
+- [engine.process() Flow](diagrams/process_loop.md) — full timing-thread execution sequence
+- [PerformanceSource State Machine](diagrams/perf_state_machine.md) — slot states and all transitions
+- [Class Relationships](diagrams/class_diagram.md) — key classes, inheritance, and ownership
+
+---
+
 ## Design Documents
 
 Start here if you're new to the codebase:
