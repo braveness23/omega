@@ -28,6 +28,8 @@ uint64_t SmpteConverter::ns_to_frame(uint64_t ns) const noexcept
     if (config_.is_2997)
     {
         // 30000/1001 fps
+        // k_safe_ns: largest ns value for which ns*30000 fits in 64 bits (~6.2 hours at 29.97).
+        // Above this threshold we fall back to 128-bit arithmetic (or double on MSVC).
         constexpr uint64_t k_safe_ns = 0xFFFFFFFFFFFFFFFFULL / 30000u;
         if (ns <= k_safe_ns)
         {
@@ -122,17 +124,20 @@ void SmpteConverter::frame_to_smpte_df(uint64_t frame, SmpteTime& out) noexcept
 
     if (r < 1800u)
     {
-        // First minute of the group: no frames dropped
+        // First minute of the 10-minute group: no frames are dropped, so it
+        // contains a full 1800 frames (30 fps × 60 s).
         secs = static_cast<uint32_t>(r / 30u);
         f = static_cast<uint8_t>(r % 30u);
     }
     else
     {
+        // Remaining 9 minutes each contain 1798 frames (2 labels dropped at s=0).
         r -= 1800u;
         total_minutes += r / 1798u + 1u;
         uint64_t r2 = r % 1798u;
-        // Frames 0 and 1 are skipped at start of each non-round minute, so
-        // the first frame is labelled 2. Offset by 2 to get the frame label.
+        // Frame labels 0 and 1 are skipped at the start of every non-round minute.
+        // Adding 2 to r2 before the division/modulo effectively reinserts those
+        // two missing labels so the arithmetic produces the correct HH:MM:SS:FF address.
         secs = static_cast<uint32_t>((r2 + 2u) / 30u);
         f = static_cast<uint8_t>((r2 + 2u) % 30u);
     }

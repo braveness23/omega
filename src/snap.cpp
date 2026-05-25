@@ -52,7 +52,10 @@ SnapResult snap_to_nearest(uint64_t tick,
         }
     };
 
-    // GRID target
+    // GRID target: two paths depending on how the grid is specified.
+    //   grid_subdiv_ticks > 0 — fixed tick interval; prev/next multiples are the candidates.
+    //   grid_subdiv_ticks == 0 — delegate to the PositionConverter, which may use meter-based
+    //     beat/bar boundaries (MeterCursor) or SMPTE frame boundaries (SmpteConverter).
     if ((config.targets & SNAP_GRID) != 0u)
     {
         if (config.grid_subdiv_ticks > 0u)
@@ -116,8 +119,11 @@ SnapResult snap_to_nearest(uint64_t tick,
             {
                 continue;
             }
+            // Step 1: shift tick forward by the anchor's offset so the grid
+            //         alignment is measured from the anchor's reference point.
             uint64_t adjusted = tick + a->offset_ticks;
             uint64_t snapped_adjusted = 0;
+            // Step 2: find the nearest grid point at or after the shifted tick.
             if (config.grid_subdiv_ticks > 0u)
             {
                 snapped_adjusted = next_multiple(adjusted, config.grid_subdiv_ticks);
@@ -129,6 +135,9 @@ SnapResult snap_to_nearest(uint64_t tick,
                     continue;
                 }
             }
+            // Step 3: shift the result back by the offset to get the candidate in
+            //         session-tick space. The underflow guard prevents wrap-around
+            //         when snapped_adjusted < offset_ticks (pathological anchor).
             if (snapped_adjusted >= a->offset_ticks)
             {
                 consider(snapped_adjusted - a->offset_ticks, SnapTarget::ANCHORS);

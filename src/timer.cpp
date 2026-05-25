@@ -22,6 +22,8 @@ namespace
 void platform_sleep_ns(uint64_t ns)
 {
 #if defined(_WIN32)
+    // Convert ns to whole milliseconds, rounding up (ceiling division) so we never
+    // return early. Sleep(0) is a yield, not a sleep, so clamp to at least 1 ms.
     DWORD ms = static_cast<DWORD>((ns + 999'999ULL) / 1'000'000ULL);
     if (ms == 0)
         ms = 1;
