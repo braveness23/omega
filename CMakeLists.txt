@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(omega
-    VERSION 0.6.0
+    VERSION 1.0.0
     DESCRIPTION "A C++ sequencing engine and MIDI library"
     HOMEPAGE_URL "https://github.com/braveness23/omega"
     LANGUAGES CXX C
@@ -15,7 +15,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # ── ABI versioning ───────────────────────────────────────────────────────────
 # SOVERSION increments only on ABI-breaking changes; never automatically.
 # Starts at 0 and is bumped manually as part of the release process.
-set(OMEGA_SOVERSION 0)
+set(OMEGA_SOVERSION 1)
 
 # ── Build options ────────────────────────────────────────────────────────────
 option(OMEGA_BUILD_TESTS       "Build the test suite"                         ON)
