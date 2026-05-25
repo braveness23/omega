@@ -10,6 +10,17 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Sprint 7.2 -- getting started guide**: `docs/GETTING_STARTED.md` covering CMake FetchContent install, two working examples (MockClock/CapturingSink and LibremidiSink/OmegaTimer), core concepts, thread model, and six extension points
+- **Sprint 7.2 -- diagrams**: four Mermaid diagrams in `docs/diagrams/` — architecture layers, `engine.process()` flowchart, PerformanceSource state machine, and class relationships; linked from `docs/ARCHITECTURE.md`
+- **Sprint 7.2 -- icons**: three SVG icon variants in `assets/` — omega symbol, music+code hybrid, and geometric three-arc design
+- **Sprint 7.1 -- comment remediation**: doc comments added to all 30 `commands.h` structs; inline algorithmic comments added to `performance_source.cpp` (LCG RNG, state machine), `smpte_converter.cpp` (drop-frame math), `timeline.cpp` (duration encoding, active-notes table), `smf_import.cpp` (tick scaling, MIDI meta types), `timer.cpp` (ceiling sleep), and `snap.cpp` (grid paths, anchor offset algorithm)
+
+### Changed
+- **Sprint 7.2 -- migration guide**: `docs/migration/v0-to-v1.md` filled in — ABI stability contract, no breaking changes from v0.6.0-beta, feature-by-version table, known limitations
+- **Sprint 7.2 -- README**: added icon, version badge, Getting Started / API / Architecture quick links, v1.0.0 stable-release callout
+- **Sprint 7.2 -- archive**: `docs/IMPLEMENTATION_PLAN.md`, `docs/ROADMAP.md`, and dev-phase `docs/STATUS.md` moved to `docs/archive/`; `docs/STATUS.md` replaced with stable-release stub
+
+### Added
 - **Sprint 6.4 -- benchmarks**: four Catch2 `BENCHMARK` cases measuring `engine.process()` idle cycle, SPSC `push()`/`pop()` throughput, `TempoMap::ns_to_ticks()` with a 16-point map, and dispatch of 1000 events in a single cycle; benchmark target (`omega_benchmarks`) excluded from default `ctest` run, invoked explicitly via `ctest -R bench_`
 - **Sprint 6.3 -- ABI baseline**: `abi/v0.6.0.dump` generated from `libomega_core` `RelWithDebInfo` objects via `abi-dumper`; `abi/PLACEHOLDER` removed; baseline committed to track future ABI compatibility with `abi-compliance-checker`
 
