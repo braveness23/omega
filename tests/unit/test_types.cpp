@@ -10,11 +10,14 @@ TEST_CASE("Event struct is 24 bytes")
     REQUIRE(sizeof(omega::Event) == 24u);
 }
 
-TEST_CASE("omega_version returns 0.1.0")
+TEST_CASE("omega_version returns 1.0.0")
 {
     omega_version_t v = omega_version();
-    REQUIRE(v.major == 0);
-    REQUIRE(v.minor == 1);
+    REQUIRE(v.major == OMEGA_VERSION_MAJOR);
+    REQUIRE(v.minor == OMEGA_VERSION_MINOR);
+    REQUIRE(v.patch == OMEGA_VERSION_PATCH);
+    REQUIRE(v.major == 1);
+    REQUIRE(v.minor == 0);
     REQUIRE(v.patch == 0);
 }
 

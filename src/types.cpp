@@ -26,9 +26,9 @@ extern "C" {
 omega_version_t omega_version(void)
 {
     omega_version_t v;
-    v.major = 0;
-    v.minor = 1;
-    v.patch = 0;
+    v.major = OMEGA_VERSION_MAJOR;
+    v.minor = OMEGA_VERSION_MINOR;
+    v.patch = OMEGA_VERSION_PATCH;
     return v;
 }
 

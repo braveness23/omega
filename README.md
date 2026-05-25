@@ -1,14 +1,22 @@
 # Omega
 
+<p align="center">
+  <img src="assets/icon-omega-symbol.svg" alt="Omega" width="96" height="96"/>
+</p>
+
 [![CI](https://github.com/braveness23/omega/actions/workflows/ci.yml/badge.svg)](https://github.com/braveness23/omega/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![C++17](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://en.cppreference.com/w/cpp/17)
+[![Version](https://img.shields.io/badge/version-1.0.0-brightgreen.svg)](CHANGELOG.md)
 
 A C++ sequencing engine and MIDI library. The foundation for building serious music software.
 
 Omega is a library, not an application. It handles timing, event scheduling, multi-track and pattern sequencing, and live performance control — with no opinion about what the interface looks like or what protocols it speaks.
 
-**Current status**: Active development — M5.5 complete (anchors, snap, MIDI I/O, SMF). M6 polish in progress. See [docs/STATUS.md](docs/STATUS.md).
+> **v1.0.0 — stable release.** The C API (`omega.h`) is ABI-stable within a major version.
+> See [CHANGELOG.md](CHANGELOG.md) for the full release history.
+
+**[→ Getting Started](docs/GETTING_STARTED.md)** · **[→ API Reference](include/omega/omega.h)** · **[→ Architecture](docs/ARCHITECTURE.md)**
 
 ---
 
@@ -33,6 +41,7 @@ Beyond the three built-in modes, Omega's orchestration layer enables the full ra
 ## Design
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full architecture overview and links to all design documents.
+Visual diagrams are in [docs/diagrams/](docs/diagrams/) — architecture layers, `process()` flow, performance slot state machine, and class relationships.
 
 See [PROPOSAL.md](PROPOSAL.md) for the original vision document.
 
