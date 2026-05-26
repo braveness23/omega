@@ -4,7 +4,7 @@
  * An 8-track, 8-bar looping MIDI sequencer with a tapedeck-style transport.
  * All 8 tracks output to the same MIDI port on channels 1-8.
  *
- * Main screen controls:
+ * Main screen:
  *   UP / DOWN   — Select track
  *   m           — Toggle mute on selected track
  *   s           — Toggle solo on selected track
@@ -13,9 +13,23 @@
  *   ESC         — Rewind to start (stops if playing)
  *   q           — Exit
  *
- * Track detail controls:
- *   UP / DOWN   — Scroll event list
- *   ESC         — Back to main screen
+ * Track detail screen:
+ *   UP / DOWN   — Select event
+ *   n           — Edit track name
+ *   Enter       — Edit selected event
+ *   ESC         — Back to main
+ *
+ * Name edit screen:
+ *   Type        — Enter characters
+ *   Backspace   — Delete last character
+ *   Enter       — Save
+ *   ESC         — Cancel
+ *
+ * Note edit screen:
+ *   TAB         — Cycle field (Note → Velocity → Duration)
+ *   LEFT / RIGHT — Decrease / increase current field
+ *   Enter       — Save
+ *   ESC         — Cancel
  */
 
 #include <omega/commands.h>
@@ -85,11 +99,12 @@ static void setup_terminal()
 static constexpr int KEY_NONE = 0;
 static constexpr int KEY_UP = 256;
 static constexpr int KEY_DOWN = 257;
+static constexpr int KEY_LEFT = 258;
+static constexpr int KEY_RIGHT = 259;
 static constexpr int KEY_ENTER = 13;
+static constexpr int KEY_TAB = 9;
+static constexpr int KEY_BACKSPACE = 127;
 
-// Read one key (or escape sequence) non-blocking.
-// Returns KEY_NONE if no input, KEY_UP/KEY_DOWN for arrow keys,
-// KEY_ENTER for Return, '\x1b' for bare ESC, or the ASCII value otherwise.
 static int read_input()
 {
     char c = 0;
@@ -99,13 +114,12 @@ static int read_input()
     if (c != '\x1b')
         return static_cast<unsigned char>(c);
 
-    // Peek for an escape sequence within 10 ms.
     struct timeval tv = {0, 10000};
     fd_set fds;
     FD_ZERO(&fds);
     FD_SET(STDIN_FILENO, &fds);
     if (select(STDIN_FILENO + 1, &fds, nullptr, nullptr, &tv) <= 0)
-        return '\x1b';  // bare ESC
+        return '\x1b';
 
     char seq[4] = {};
     ssize_t nr = read(STDIN_FILENO, seq, sizeof(seq));
@@ -115,24 +129,20 @@ static int read_input()
             return KEY_UP;
         if (seq[1] == 'B')
             return KEY_DOWN;
+        if (seq[1] == 'C')
+            return KEY_RIGHT;
+        if (seq[1] == 'D')
+            return KEY_LEFT;
     }
-    return KEY_NONE;  // unknown escape sequence
+    return KEY_NONE;
 }
 
 // ─── Activity-tracking sink ───────────────────────────────────────────────────
-//
-// Wraps LibremidiSink, records the timestamp of the most recent note-on per
-// MIDI channel, and enforces per-channel mute/solo. Note-ons for muted or
-// non-soloed channels are suppressed; note-offs and CC always pass through so
-// that in-flight notes release cleanly.
-//
-// Called from both the timing thread (send) and the display/mutation thread
-// (toggle_mute, toggle_solo, channel_active). All shared state is atomic.
 
 class ActivitySink : public OutputSink
 {
 public:
-    static constexpr uint64_t ACTIVE_NS = 150'000'000ULL;  // 150 ms hold time
+    static constexpr uint64_t ACTIVE_NS = 150'000'000ULL;
 
     explicit ActivitySink(LibremidiSink& inner) noexcept : inner_(inner) {}
 
@@ -219,15 +229,16 @@ private:
     std::atomic<bool> any_soloed_{false};
 };
 
-// ─── Pattern content ──────────────────────────────────────────────────────────
+// ─── Track metadata ───────────────────────────────────────────────────────────
 
 struct TrackMeta
 {
-    const char* name;
+    char name[32];
     bool has_content;
 };
 
-static constexpr TrackMeta TRACKS[NUM_TRACKS] = {
+// Mutable so names can be edited at runtime.
+static TrackMeta TRACKS[NUM_TRACKS] = {
     {"Bass", true},
     {"Pad", true},
     {"Melody", true},
@@ -237,6 +248,8 @@ static constexpr TrackMeta TRACKS[NUM_TRACKS] = {
     {"(empty)", false},
     {"(empty)", false},
 };
+
+// ─── Pattern content ──────────────────────────────────────────────────────────
 
 static void add_note(Engine& eng,
                      PatternId pid,
@@ -253,11 +266,10 @@ static void add_note(Engine& eng,
 
 static void populate_pattern(Engine& eng, PatternId pid, uint32_t sid)
 {
-    const uint64_t BAR = BEATS_PER_BAR * PPQN;  // 1920
-    const uint64_t BEAT = PPQN;                 // 480
-    const uint64_t E8 = PPQN / 2;               // 240
+    const uint64_t BAR = BEATS_PER_BAR * PPQN;
+    const uint64_t BEAT = PPQN;
+    const uint64_t E8 = PPQN / 2;
 
-    // ── Ch 0: Bass (C minor, 2-bar phrase × 4) ───────────────────────────
     for (uint32_t b = 0; b < BARS; ++b)
     {
         uint64_t o = b * BAR;
@@ -266,7 +278,6 @@ static void populate_pattern(Engine& eng, PatternId pid, uint32_t sid)
 
         if (b % 2 == 0)
         {
-            // Cm root feel: C2 – G2 – Eb2 – C2 – Bb1
             add_note(eng, pid, sid, o + 0 * BEAT, 0, 36, 100, qn);
             add_note(eng, pid, sid, o + 1 * BEAT, 0, 43, 80, en);
             add_note(eng, pid, sid, o + 1 * BEAT + E8, 0, 39, 72, en);
@@ -275,7 +286,6 @@ static void populate_pattern(Engine& eng, PatternId pid, uint32_t sid)
         }
         else
         {
-            // Fm / G walk: F2 – G2 – F2 – G2 – C2
             add_note(eng, pid, sid, o + 0 * BEAT, 0, 41, 100, qn);
             add_note(eng, pid, sid, o + 1 * BEAT, 0, 43, 80, en);
             add_note(eng, pid, sid, o + 1 * BEAT + E8, 0, 41, 72, en);
@@ -284,7 +294,6 @@ static void populate_pattern(Engine& eng, PatternId pid, uint32_t sid)
         }
     }
 
-    // ── Ch 1: Pad chords (whole-bar sustains, alternating Cm / Fm) ───────
     for (uint32_t b = 0; b < BARS; ++b)
     {
         uint64_t o = b * BAR;
@@ -292,21 +301,18 @@ static void populate_pattern(Engine& eng, PatternId pid, uint32_t sid)
 
         if ((b / 2) % 2 == 0)
         {
-            // Cm = C3 Eb3 G3
             add_note(eng, pid, sid, o, 1, 48, 65, dur);
             add_note(eng, pid, sid, o, 1, 51, 60, dur);
             add_note(eng, pid, sid, o, 1, 55, 55, dur);
         }
         else
         {
-            // Fm = F3 Ab3 C4
             add_note(eng, pid, sid, o, 1, 53, 65, dur);
             add_note(eng, pid, sid, o, 1, 56, 60, dur);
             add_note(eng, pid, sid, o, 1, 60, 55, dur);
         }
     }
 
-    // ── Ch 2: Lead melody (C minor pentatonic, 8 eighth-notes per bar) ───
     static const uint8_t PHRASE_A[8] = {60, 63, 65, 67, 65, 63, 60, 58};
     static const uint8_t PHRASE_B[8] = {58, 60, 63, 65, 67, 65, 63, 60};
 
@@ -327,31 +333,26 @@ static void populate_pattern(Engine& eng, PatternId pid, uint32_t sid)
         }
     }
 
-    // ── Ch 3: Accent (G4 / F4 on beats 1 & 3) ────────────────────────────
     for (uint32_t b = 0; b < BARS; ++b)
     {
         uint64_t o = b * BAR;
         add_note(eng, pid, sid, o + 0 * BEAT, 3, 67, 92, static_cast<uint32_t>(E8));
         add_note(eng, pid, sid, o + 2 * BEAT, 3, 65, 80, static_cast<uint32_t>(E8));
     }
-
-    // Channels 4-7 are left empty.
 }
 
-// ─── Note naming ─────────────────────────────────────────────────────────────
+// ─── Note / position helpers ──────────────────────────────────────────────────
 
-static const char* NOTE_NAMES[12] = {
+static const char* const NOTE_NAMES[12] = {
     "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
 
-// Returns e.g. "C4", "G#2", "A#-1"
-static void format_note(uint8_t midi_note, char* out, int out_size)
+static void format_note(uint8_t midi_note, char* out, size_t out_size)
 {
     int octave = static_cast<int>(midi_note / 12) - 1;
-    snprintf(out, static_cast<size_t>(out_size), "%s%d", NOTE_NAMES[midi_note % 12], octave);
+    snprintf(out, out_size, "%s%d", NOTE_NAMES[midi_note % 12], octave);
 }
 
-// Returns e.g. "1:2" (bar 1, beat 2) or "1:2.240" if sub-beat ticks exist.
-static void format_pos(uint64_t tick, char* out, int out_size)
+static void format_pos(uint64_t tick, char* out, size_t out_size)
 {
     const uint64_t ticks_per_bar = BEATS_PER_BAR * PPQN;
     uint64_t bar = tick / ticks_per_bar + 1;
@@ -359,18 +360,28 @@ static void format_pos(uint64_t tick, char* out, int out_size)
     uint64_t sub = tick % PPQN;
 
     if (sub == 0)
-        snprintf(out,
-                 static_cast<size_t>(out_size),
-                 "%llu:%llu",
-                 (unsigned long long)bar,
-                 (unsigned long long)beat);
+        snprintf(out, out_size, "%llu:%llu", (unsigned long long)bar, (unsigned long long)beat);
     else
         snprintf(out,
-                 static_cast<size_t>(out_size),
+                 out_size,
                  "%llu:%llu.%llu",
                  (unsigned long long)bar,
                  (unsigned long long)beat,
                  (unsigned long long)sub);
+}
+
+// Count note-on events for a given MIDI channel in the pattern.
+static int count_channel_events(const Engine& engine, PatternId pat_id, uint32_t track)
+{
+    const Pattern* pat = engine.pattern_library().get(pat_id);
+    if (!pat)
+        return 0;
+    int n = 0;
+    auto ch = static_cast<uint8_t>(track);
+    for (const auto& e : pat->events)
+        if (e.channel == ch && e.payload_tag == OMEGA_NOTE_ON)
+            ++n;
+    return n;
 }
 
 // ─── Display: main screen ─────────────────────────────────────────────────────
@@ -391,16 +402,13 @@ static void draw_main(const Engine& eng,
     auto beat = static_cast<uint32_t>(fmod(beat_in, BEATS_PER_BAR)) + 1;
 
     uint64_t total_s = pos_ns / 1'000'000'000ULL;
-    uint64_t mins = total_s / 60;
-    uint64_t secs = total_s % 60;
-    uint64_t tenths = (pos_ns % 1'000'000'000ULL) / 100'000'000ULL;
     char time_str[16];
     snprintf(time_str,
              sizeof(time_str),
              "%llu:%02llu.%llu",
-             (unsigned long long)mins,
-             (unsigned long long)secs,
-             (unsigned long long)tenths);
+             (unsigned long long)(total_s / 60),
+             (unsigned long long)(total_s % 60),
+             (unsigned long long)((pos_ns % 1'000'000'000ULL) / 100'000'000ULL));
 
     char bar_ind[9];
     bar_ind[8] = '\0';
@@ -465,7 +473,6 @@ static void draw_main(const Engine& eng,
 
         if (selected)
             printf("\033[0m");
-
         printf("\n");
     }
 
@@ -483,25 +490,28 @@ static void draw_main(const Engine& eng,
     fflush(stdout);
 }
 
-// ─── Display: track edit screen ───────────────────────────────────────────────
+// ─── Display: track detail screen ────────────────────────────────────────────
 
-static constexpr int EDIT_VISIBLE = 16;  // event rows shown at once
+static constexpr int EDIT_VISIBLE = 16;
 
 static void draw_track_edit(const Engine& engine,
                             const ActivitySink& activity,
                             PatternId pat_id,
                             uint32_t track,
-                            int scroll_offset)
+                            int scroll_offset,
+                            int event_cursor)
 {
     const Pattern* pat = engine.pattern_library().get(pat_id);
-
-    // Count events for this channel.
     auto ch = static_cast<uint8_t>(track);
+
     int total = 0;
     if (pat)
         for (const auto& e : pat->events)
             if (e.channel == ch && e.payload_tag == OMEGA_NOTE_ON)
                 ++total;
+
+    int max_offset = std::max(0, total - EDIT_VISIBLE);
+    int offset = std::min(scroll_offset, max_offset);
 
     printf("\033[H");
     printf("=================================================================\n");
@@ -515,10 +525,6 @@ static void draw_track_edit(const Engine& engine,
     printf("=================================================================\n");
     printf("    #    Tick     Position    Note     Vel   Dur (ticks)\n");
     printf("  ---   ------   ----------  ------   ---   -----------\n");
-
-    // Clamp scroll so we never show an empty page when events exist.
-    int max_offset = std::max(0, total - EDIT_VISIBLE);
-    int offset = std::min(scroll_offset, max_offset);
 
     if (total == 0 || !pat)
     {
@@ -535,8 +541,10 @@ static void draw_track_edit(const Engine& engine,
             if (e.channel != ch || e.payload_tag != OMEGA_NOTE_ON)
                 continue;
 
+            bool selected = (event_num == event_cursor);
             ++event_num;
-            if (event_num <= offset)
+
+            if (event_num - 1 < offset)
                 continue;
             if (shown >= EDIT_VISIBLE)
                 break;
@@ -550,13 +558,21 @@ static void draw_track_edit(const Engine& engine,
             char pos_str[32];
             format_pos(e.tick, pos_str, sizeof(pos_str));
 
-            printf("  %3d   %6llu   %-10s  %-6s   %3u   %u\n",
+            if (selected)
+                printf("\033[7m");
+
+            printf("  %3d   %6llu   %-10s  %-6s   %3u   %u",
                    event_num,
                    (unsigned long long)e.tick,
                    pos_str,
                    note_str,
                    e.data[1],
                    dur);
+
+            if (selected)
+                printf("\033[0m");
+
+            printf("\n");
             ++shown;
         }
 
@@ -565,11 +581,78 @@ static void draw_track_edit(const Engine& engine,
     }
 
     int first = (total > 0) ? offset + 1 : 0;
-    int last = (total > 0) ? std::min(offset + EDIT_VISIBLE, total) : 0;
+    int last_shown = (total > 0) ? std::min(offset + EDIT_VISIBLE, total) : 0;
     printf("-----------------------------------------------------------------\n");
-    printf("  Showing %d–%d of %d events\n", first, last, total);
+    printf("  Showing %d–%d of %d events\n", first, last_shown, total);
     printf("=================================================================\n");
-    printf("  UP/DOWN: Scroll   ESC: Back\n");
+    printf("  UP/DOWN: Select event   n: Edit name   Enter: Edit event\n");
+    printf("  ESC: Back\n");
+    printf("=================================================================\n");
+    fflush(stdout);
+}
+
+// ─── Display: name edit screen ────────────────────────────────────────────────
+
+static void draw_name_edit(uint32_t track, const char* name_buf)
+{
+    printf("\033[H");
+    printf("=================================================================\n");
+    printf("  Edit Track Name — Track %u\n", track + 1);
+    printf("=================================================================\n");
+    printf("\n");
+    printf("  Current name:  %s\n", TRACKS[track].name);
+    printf("\n");
+    printf("  New name:      %s_\n", name_buf);
+    printf("\n");
+    printf("  Type to edit, Backspace to delete\n");
+    printf("=================================================================\n");
+    printf("  Enter: Save   ESC: Cancel\n");
+    printf("=================================================================\n");
+    fflush(stdout);
+}
+
+// ─── Display: note edit screen ────────────────────────────────────────────────
+
+static void draw_note_edit(uint32_t track, int event_num, const Event& ev, int field)
+{
+    uint32_t dur = 0;
+    std::memcpy(&dur, ev.data + 2, sizeof(dur));
+
+    char note_str[8];
+    format_note(ev.data[0], note_str, sizeof(note_str));
+
+    char pos_str[32];
+    format_pos(ev.tick, pos_str, sizeof(pos_str));
+
+    printf("\033[H");
+    printf("=================================================================\n");
+    printf("  Edit Event — Track %u: %s   Event %d   Pos: %s\n",
+           track + 1,
+           TRACKS[track].name,
+           event_num,
+           pos_str);
+    printf("=================================================================\n");
+    printf("\n");
+    printf("  Playback stopped. Press SPACE to resume when done.\n");
+    printf("\n");
+    printf("     Field       Value      LEFT / RIGHT\n");
+    printf("  ---------    --------    ----------------------------\n");
+
+    // Each row: show `>>` for the selected field, ` ` otherwise.
+    const char* s0 = (field == 0) ? "\033[7m" : "";
+    const char* e0 = (field == 0) ? "\033[0m" : "";
+    const char* s1 = (field == 1) ? "\033[7m" : "";
+    const char* e1 = (field == 1) ? "\033[0m" : "";
+    const char* s2 = (field == 2) ? "\033[7m" : "";
+    const char* e2 = (field == 2) ? "\033[0m" : "";
+
+    printf("  %s  Note        %-8s   ±1 semitone (0–127)%s\n", s0, note_str, e0);
+    printf("  %s  Velocity    %-8u   ±1 (1–127)%s\n", s1, ev.data[1], e1);
+    printf("  %s  Duration    %-8u   ±120 ticks (~1/4 beat)%s\n", s2, dur, e2);
+
+    printf("\n");
+    printf("=================================================================\n");
+    printf("  TAB: Next field   Enter: Save   ESC: Cancel\n");
     printf("=================================================================\n");
     fflush(stdout);
 }
@@ -579,32 +662,28 @@ static void draw_track_edit(const Engine& engine,
 enum class Screen
 {
     MAIN,
-    TRACK_EDIT
+    TRACK_EDIT,
+    NAME_EDIT,
+    NOTE_EDIT
 };
 
 int main()
 {
     setup_terminal();
 
-    // ── Engine & MIDI sinks ──────────────────────────────────────────────────
     Engine engine;
-
     LibremidiSink midi_sink(nullptr);
     ActivitySink activity(midi_sink);
     engine.add_sink(&activity);
     const uint32_t sid = activity.sink_id();
 
-    // ── Tempo & time signature (direct, before timer) ────────────────────────
     engine.tempo_map().insert(0, BPM_MILLI);
     engine.timesig_map().insert(0, BEATS_PER_BAR, 4);
 
-    // ── Build the 8-bar pattern ──────────────────────────────────────────────
     PatternId pat = engine.create_pattern("8-bar loop", PATTERN_LEN);
     populate_pattern(engine, pat, sid);
-
     engine.enqueue(PerfAssignCmd{0, pat});
 
-    // ── Start timing thread ──────────────────────────────────────────────────
     OmegaTimer timer(engine, 1000);
 
     // ── UI state ─────────────────────────────────────────────────────────────
@@ -614,31 +693,174 @@ int main()
     uint32_t loop_count = 0;
     uint64_t last_loop_idx = 0;
     uint32_t selected_track = 0;
+    int event_cursor = 0;
     int scroll_offset = 0;
+    int edit_field = 0;
+    int edit_raw_idx = -1;
+    Event edit_event = {};
+    int edit_event_num = 0;  // 1-based, for display
+    char name_buf[32] = {};
 
     printf("\033[2J");
     draw_main(engine, activity, playing, loop_count, selected_track);
 
-    // ── Main loop ────────────────────────────────────────────────────────────
     while (!g_quit.load(std::memory_order_relaxed))
     {
         int key = read_input();
 
-        if (screen == Screen::TRACK_EDIT)
+        // ── Screen-specific key handling ──────────────────────────────────────
+        if (screen == Screen::NAME_EDIT)
+        {
+            if (key == '\x1b')
+            {
+                screen = Screen::TRACK_EDIT;
+                printf("\033[2J");
+            }
+            else if (key == KEY_ENTER)
+            {
+                std::strncpy(TRACKS[selected_track].name, name_buf, 31);
+                TRACKS[selected_track].name[31] = '\0';
+                screen = Screen::TRACK_EDIT;
+                printf("\033[2J");
+            }
+            else if (key == KEY_BACKSPACE || key == 8)
+            {
+                int len = static_cast<int>(std::strlen(name_buf));
+                if (len > 0)
+                    name_buf[len - 1] = '\0';
+            }
+            else if (key >= 32 && key < 127)
+            {
+                int len = static_cast<int>(std::strlen(name_buf));
+                if (len < 31)
+                {
+                    name_buf[len] = static_cast<char>(key);
+                    name_buf[len + 1] = '\0';
+                }
+            }
+        }
+        else if (screen == Screen::NOTE_EDIT)
+        {
+            if (key == '\x1b')
+            {
+                screen = Screen::TRACK_EDIT;
+                printf("\033[2J");
+            }
+            else if (key == KEY_ENTER)
+            {
+                // Apply the edit. Transport is already stopped; timing thread
+                // is not advancing the pattern, so direct write is safe.
+                Pattern* ppat = engine.pattern_library().get(pat);
+                if (ppat && edit_raw_idx >= 0 &&
+                    edit_raw_idx < static_cast<int>(ppat->events.size()))
+                {
+                    ppat->events[static_cast<size_t>(edit_raw_idx)] = edit_event;
+                }
+                screen = Screen::TRACK_EDIT;
+                printf("\033[2J");
+            }
+            else if (key == KEY_TAB)
+            {
+                edit_field = (edit_field + 1) % 3;
+            }
+            else if (key == KEY_LEFT)
+            {
+                if (edit_field == 0 && edit_event.data[0] > 0)
+                    edit_event.data[0]--;
+                else if (edit_field == 1 && edit_event.data[1] > 1)
+                    edit_event.data[1]--;
+                else if (edit_field == 2)
+                {
+                    uint32_t dur = 0;
+                    std::memcpy(&dur, edit_event.data + 2, sizeof(dur));
+                    if (dur > 120)
+                    {
+                        dur -= 120;
+                        std::memcpy(edit_event.data + 2, &dur, sizeof(dur));
+                    }
+                }
+            }
+            else if (key == KEY_RIGHT)
+            {
+                if (edit_field == 0 && edit_event.data[0] < 127)
+                    edit_event.data[0]++;
+                else if (edit_field == 1 && edit_event.data[1] < 127)
+                    edit_event.data[1]++;
+                else if (edit_field == 2)
+                {
+                    uint32_t dur = 0;
+                    std::memcpy(&dur, edit_event.data + 2, sizeof(dur));
+                    dur += 120;
+                    std::memcpy(edit_event.data + 2, &dur, sizeof(dur));
+                }
+            }
+        }
+        else if (screen == Screen::TRACK_EDIT)
         {
             if (key == '\x1b')
             {
                 screen = Screen::MAIN;
                 printf("\033[2J");
             }
+            else if (key == 'n' || key == 'N')
+            {
+                std::strncpy(name_buf, TRACKS[selected_track].name, 31);
+                name_buf[31] = '\0';
+                screen = Screen::NAME_EDIT;
+                printf("\033[2J");
+            }
             else if (key == KEY_UP)
             {
-                scroll_offset = std::max(0, scroll_offset - 1);
+                if (event_cursor > 0)
+                    event_cursor--;
             }
             else if (key == KEY_DOWN)
             {
-                ++scroll_offset;  // draw_track_edit clamps to valid range
+                int total = count_channel_events(engine, pat, selected_track);
+                if (event_cursor < total - 1)
+                    event_cursor++;
             }
+            else if (key == KEY_ENTER)
+            {
+                // Find the raw vector index for the selected event.
+                const Pattern* ppat = engine.pattern_library().get(pat);
+                if (ppat)
+                {
+                    auto ch = static_cast<uint8_t>(selected_track);
+                    int count = 0;
+                    for (int i = 0; i < static_cast<int>(ppat->events.size()); ++i)
+                    {
+                        const auto& e = ppat->events[static_cast<size_t>(i)];
+                        if (e.channel == ch && e.payload_tag == OMEGA_NOTE_ON)
+                        {
+                            if (count == event_cursor)
+                            {
+                                edit_raw_idx = i;
+                                edit_event = e;
+                                edit_event_num = count + 1;
+                                edit_field = 0;
+                                // Stop playback so the timing thread won't read
+                                // the pattern events while we edit.
+                                if (playing)
+                                {
+                                    engine.enqueue(TransportCmd{TransportAction::STOP, 0});
+                                    playing = false;
+                                }
+                                screen = Screen::NOTE_EDIT;
+                                printf("\033[2J");
+                                break;
+                            }
+                            ++count;
+                        }
+                    }
+                }
+            }
+
+            // Scroll to keep event_cursor visible.
+            if (event_cursor < scroll_offset)
+                scroll_offset = event_cursor;
+            else if (event_cursor >= scroll_offset + EDIT_VISIBLE)
+                scroll_offset = event_cursor - EDIT_VISIBLE + 1;
         }
         else  // Screen::MAIN
         {
@@ -650,8 +872,9 @@ int main()
                     break;
 
                 case KEY_ENTER:
-                    screen = Screen::TRACK_EDIT;
+                    event_cursor = 0;
                     scroll_offset = 0;
+                    screen = Screen::TRACK_EDIT;
                     printf("\033[2J");
                     break;
 
@@ -708,7 +931,7 @@ int main()
             }
         }
 
-        // Loop-wrap detection (main screen only).
+        // Loop-wrap counter (main screen transport only).
         if (playing)
         {
             uint64_t pos_ns = engine.transport_position_ns();
@@ -721,15 +944,25 @@ int main()
             }
         }
 
-        if (screen == Screen::TRACK_EDIT)
-            draw_track_edit(engine, activity, pat, selected_track, scroll_offset);
-        else
-            draw_main(engine, activity, playing, loop_count, selected_track);
+        switch (screen)
+        {
+            case Screen::MAIN:
+                draw_main(engine, activity, playing, loop_count, selected_track);
+                break;
+            case Screen::TRACK_EDIT:
+                draw_track_edit(engine, activity, pat, selected_track, scroll_offset, event_cursor);
+                break;
+            case Screen::NAME_EDIT:
+                draw_name_edit(selected_track, name_buf);
+                break;
+            case Screen::NOTE_EDIT:
+                draw_note_edit(selected_track, edit_event_num, edit_event, edit_field);
+                break;
+        }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
 
-    // ── Cleanup ───────────────────────────────────────────────────────────────
     engine.enqueue(TransportCmd{TransportAction::STOP, 0});
 
     restore_terminal();
