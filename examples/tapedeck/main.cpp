@@ -14,10 +14,12 @@
 #include <omega/engine.h>
 #include <omega/midi_io.h>
 #include <omega/omega.h>
+#include <omega/sink.h>
 #include <omega/tempo_map.h>
 #include <omega/timer.h>
 #include <omega/types.h>
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -96,6 +98,57 @@ static void drain_escape()
         (void)nr;
     }
 }
+
+// ─── Activity-tracking sink ───────────────────────────────────────────────────
+//
+// Wraps LibremidiSink and records the timestamp of the most recent note-on per
+// MIDI channel. channel_active() returns true within ACTIVE_NS of any note-on.
+// Called from the timing thread (send) and the display thread (channel_active),
+// so per-channel state is held in atomics.
+
+class ActivitySink : public OutputSink
+{
+public:
+    static constexpr uint64_t ACTIVE_NS = 150'000'000ULL;  // 150 ms hold time
+
+    explicit ActivitySink(LibremidiSink& inner) noexcept : inner_(inner) {}
+
+    void send(const Event& e) override
+    {
+        if (e.payload_tag == OMEGA_NOTE_ON && e.channel < 16)
+            last_on_[e.channel].store(now_ns(), std::memory_order_relaxed);
+        inner_.send(e);
+    }
+
+    void flush() override { inner_.flush(); }
+
+    bool channel_active(uint8_t ch) const noexcept
+    {
+        if (ch >= 16)
+            return false;
+        uint64_t t = last_on_[ch].load(std::memory_order_relaxed);
+        return t > 0 && (now_ns() - t) < ACTIVE_NS;
+    }
+
+    bool any_active() const noexcept
+    {
+        for (uint8_t ch = 0; ch < 16; ++ch)
+            if (channel_active(ch))
+                return true;
+        return false;
+    }
+
+    bool port_open() const noexcept { return inner_.is_port_open(); }
+
+private:
+    static uint64_t now_ns() noexcept
+    {
+        return static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count());
+    }
+
+    LibremidiSink& inner_;
+    std::array<std::atomic<uint64_t>, 16> last_on_{};
+};
 
 // ─── Pattern content ──────────────────────────────────────────────────────────
 
@@ -218,7 +271,7 @@ static void populate_pattern(Engine& eng, PatternId pid, uint32_t sid)
 
 // ─── Display ──────────────────────────────────────────────────────────────────
 
-static void draw(const Engine& eng, bool playing, uint32_t loop_count, bool midi_ok)
+static void draw(const Engine& eng, const ActivitySink& activity, bool playing, uint32_t loop_count)
 {
     // Convert transport position to musical coordinates.
     uint64_t pos_ns = eng.transport_position_ns();
@@ -230,6 +283,19 @@ static void draw(const Engine& eng, bool playing, uint32_t loop_count, bool midi
     auto bar = static_cast<uint32_t>(beat_in / BEATS_PER_BAR) + 1;        // 1-8
     auto beat = static_cast<uint32_t>(fmod(beat_in, BEATS_PER_BAR)) + 1;  // 1-4
 
+    // Elapsed clock time from transport position.
+    uint64_t total_s = pos_ns / 1'000'000'000ULL;
+    uint64_t mins = total_s / 60;
+    uint64_t secs = total_s % 60;
+    uint64_t tenths = (pos_ns % 1'000'000'000ULL) / 100'000'000ULL;
+    char time_str[16];
+    snprintf(time_str,
+             sizeof(time_str),
+             "%llu:%02llu.%llu",
+             static_cast<unsigned long long>(mins),
+             static_cast<unsigned long long>(secs),
+             static_cast<unsigned long long>(tenths));
+
     // 32-char progress bar (8 bars × 4 beats each)
     char prog[33];
     prog[32] = '\0';
@@ -238,36 +304,40 @@ static void draw(const Engine& eng, bool playing, uint32_t loop_count, bool midi
         prog[i] = (i < cur_beat) ? '#' : (i == cur_beat ? '>' : '.');
 
     // 8-char bar indicator (one char per bar)
-    char bars[9];
-    bars[8] = '\0';
+    char bar_ind[9];
+    bar_ind[8] = '\0';
     for (uint32_t b = 0; b < BARS; ++b)
-        bars[b] = (b < bar - 1) ? '#' : (b == bar - 1 ? '>' : '.');
+        bar_ind[b] = (b < bar - 1) ? '#' : (b == bar - 1 ? '>' : '.');
+
+    // Global MIDI activity
+    bool midi_any = activity.any_active();
+    bool midi_ok = activity.port_open();
 
     // Redraw from cursor home
     printf("\033[H");
     printf("=============================================================\n");
     printf("  OMEGA TAPEDECK  v1.0.0    %u BPM  |  4/4  |  8 Bars\n", BPM);
     printf("=============================================================\n");
-    printf("  Trk  Name        [1 2 3 4 5 6 7 8]  Ch\n");
-    printf("  ---  ----------  ----------------   --\n");
+    printf("  Trk  Name        [1 2 3 4 5 6 7 8]  Ch  MIDI\n");
+    printf("  ---  ----------  ----------------   --  ----\n");
 
     for (uint32_t t = 0; t < NUM_TRACKS; ++t)
     {
+        // Track uses MIDI channel t (0-indexed).
+        const char* act = activity.channel_active(static_cast<uint8_t>(t)) ? "[*]" : "[ ]";
+
         if (TRACKS[t].has_content)
-        {
-            printf("   %u   %-10s  [%s]   %u\n", t + 1, TRACKS[t].name, bars, t + 1);
-        }
+            printf("   %u   %-10s  [%s]   %u   %s\n", t + 1, TRACKS[t].name, bar_ind, t + 1, act);
         else
-        {
-            printf("   %u   %-10s  [--------]   %u\n", t + 1, TRACKS[t].name, t + 1);
-        }
+            printf("   %u   %-10s  [--------]   %u   %s\n", t + 1, TRACKS[t].name, t + 1, act);
     }
 
     printf("-------------------------------------------------------------\n");
     printf("  [%s]\n", prog);
-    printf("  Bar %u/8   Beat %u/4   Loop: %u\n", bar, beat, loop_count);
-    printf("  %-14s  MIDI out: %s\n",
+    printf("  Bar %u/8   Beat %u/4   Loop: %u   Time: %s\n", bar, beat, loop_count, time_str);
+    printf("  %-14s  MIDI: %s %s\n",
            playing ? "PLAYING >>>" : "STOPPED [=]",
+           midi_any ? "[*]" : "[ ]",
            midi_ok ? "connected" : "no port");
     printf("=============================================================\n");
     printf("  SPACE: Play/Stop   ESC: Rewind to Start   Ctrl+C: Exit\n");
@@ -287,13 +357,15 @@ int main()
 
     setup_terminal();
 
-    // ── Engine & MIDI sink ───────────────────────────────────────────────────
+    // ── Engine & MIDI sinks ──────────────────────────────────────────────────
     Engine engine;
 
-    LibremidiSink sink(nullptr);  // nullptr = first available MIDI output port
-    engine.add_sink(&sink);
-    const uint32_t sid = sink.sink_id();
-    const bool midi_ok = sink.is_port_open();
+    // LibremidiSink owns the MIDI port; ActivitySink wraps it and is what the
+    // engine dispatches to. Pattern events use activity.sink_id().
+    LibremidiSink midi_sink(nullptr);  // nullptr = first available MIDI output
+    ActivitySink activity(midi_sink);
+    engine.add_sink(&activity);
+    const uint32_t sid = activity.sink_id();
 
     // ── Tempo & time signature (direct, before timer) ────────────────────────
     engine.tempo_map().insert(0, BPM_MILLI);
@@ -317,7 +389,7 @@ int main()
 
     // Clear screen once, then redraw in-place each tick.
     printf("\033[2J");
-    draw(engine, playing, loop_count, midi_ok);
+    draw(engine, activity, playing, loop_count);
 
     // ── Main loop ────────────────────────────────────────────────────────────
     while (!g_quit.load(std::memory_order_relaxed))
@@ -383,7 +455,7 @@ int main()
             }
         }
 
-        draw(engine, playing, loop_count, midi_ok);
+        draw(engine, activity, playing, loop_count);
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
 
