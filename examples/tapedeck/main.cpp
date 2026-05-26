@@ -5,10 +5,11 @@
  * All 8 tracks output to the same MIDI port on channels 1-8.
  *
  * Controls:
+ *   UP / DOWN  — Select track
+ *   m          — Toggle mute on selected track
+ *   s          — Toggle solo on selected track
  *   SPACE      — Play / Stop
  *   ESC        — Rewind to start (stops if playing)
- *   1–8        — Toggle mute on track 1–8
- *   !@#$%^&*   — Toggle solo on track 1–8 (Shift+1–8)
  *   q          — Exit
  */
 
@@ -26,7 +27,6 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
-#include <cstring>
 #include <fcntl.h>
 #include <sys/select.h>
 #include <termios.h>
@@ -72,27 +72,42 @@ static void setup_terminal()
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
 }
 
-// Read one byte non-blocking; returns 0 if no data available.
-static char read_key()
+// ─── Input ────────────────────────────────────────────────────────────────────
+
+static constexpr int KEY_NONE = 0;
+static constexpr int KEY_UP = 256;
+static constexpr int KEY_DOWN = 257;
+
+// Read one key (or escape sequence) non-blocking.
+// Returns KEY_NONE if no input, KEY_UP/KEY_DOWN for arrow keys,
+// '\x1b' for bare ESC, or the ASCII value for everything else.
+static int read_input()
 {
     char c = 0;
-    ssize_t n = read(STDIN_FILENO, &c, 1);
-    return (n == 1) ? c : 0;
-}
+    if (read(STDIN_FILENO, &c, 1) != 1)
+        return KEY_NONE;
 
-// Drain up to 4 pending bytes (used to swallow escape sequences).
-static void drain_escape()
-{
-    struct timeval tv = {0, 10000};  // 10 ms
+    if (c != '\x1b')
+        return static_cast<unsigned char>(c);
+
+    // Peek for an escape sequence within 10 ms.
+    struct timeval tv = {0, 10000};
     fd_set fds;
     FD_ZERO(&fds);
     FD_SET(STDIN_FILENO, &fds);
-    if (select(STDIN_FILENO + 1, &fds, nullptr, nullptr, &tv) > 0)
+    if (select(STDIN_FILENO + 1, &fds, nullptr, nullptr, &tv) <= 0)
+        return '\x1b';  // bare ESC
+
+    char seq[4] = {};
+    ssize_t nr = read(STDIN_FILENO, seq, sizeof(seq));
+    if (nr >= 2 && seq[0] == '[')
     {
-        char buf[4];
-        ssize_t nr = read(STDIN_FILENO, buf, sizeof(buf));
-        (void)nr;
+        if (seq[1] == 'A')
+            return KEY_UP;
+        if (seq[1] == 'B')
+            return KEY_DOWN;
     }
+    return KEY_NONE;  // unknown escape sequence
 }
 
 // ─── Activity-tracking sink ───────────────────────────────────────────────────
@@ -109,9 +124,6 @@ class ActivitySink : public OutputSink
 {
 public:
     static constexpr uint64_t ACTIVE_NS = 150'000'000ULL;  // 150 ms hold time
-
-    // Shift+1..8 solo key characters in track order.
-    static constexpr char SOLO_KEYS[NUM_TRACKS] = {'!', '@', '#', '$', '%', '^', '&', '*'};
 
     explicit ActivitySink(LibremidiSink& inner) noexcept : inner_(inner) {}
 
@@ -198,8 +210,6 @@ private:
     std::array<std::atomic<bool>, 16> soloed_{};
     std::atomic<bool> any_soloed_{false};
 };
-
-constexpr char ActivitySink::SOLO_KEYS[NUM_TRACKS];
 
 // ─── Pattern content ──────────────────────────────────────────────────────────
 
@@ -322,7 +332,11 @@ static void populate_pattern(Engine& eng, PatternId pid, uint32_t sid)
 
 // ─── Display ──────────────────────────────────────────────────────────────────
 
-static void draw(const Engine& eng, const ActivitySink& activity, bool playing, uint32_t loop_count)
+static void draw(const Engine& eng,
+                 const ActivitySink& activity,
+                 bool playing,
+                 uint32_t loop_count,
+                 uint32_t selected_track)
 {
     // Convert transport position to musical coordinates.
     uint64_t pos_ns = eng.transport_position_ns();
@@ -381,11 +395,9 @@ static void draw(const Engine& eng, const ActivitySink& activity, bool playing, 
 
     for (uint32_t t = 0; t < NUM_TRACKS; ++t)
     {
+        bool selected = (t == selected_track);
         bool muted = activity.is_muted(static_cast<uint8_t>(t));
         bool soloed = activity.is_soloed(static_cast<uint8_t>(t));
-
-        // A track is effectively silent if it is muted, or if another track
-        // is soloed and this one is not.
         bool silent = muted || (any_solo && !soloed);
 
         const char* mstr = muted ? "[M]" : "[ ]";
@@ -393,8 +405,11 @@ static void draw(const Engine& eng, const ActivitySink& activity, bool playing, 
         const char* act =
             (!silent && activity.channel_active(static_cast<uint8_t>(t))) ? "[*]" : "[ ]";
 
+        if (selected)
+            printf("\033[7m");  // reverse video for selected row
+
         if (TRACKS[t].has_content)
-            printf("   %u   %-10s  [%s]    %u   %s  %s   %s\n",
+            printf("   %u   %-10s  [%s]    %u   %s  %s   %s",
                    t + 1,
                    TRACKS[t].name,
                    bar_ind,
@@ -403,13 +418,18 @@ static void draw(const Engine& eng, const ActivitySink& activity, bool playing, 
                    sstr,
                    act);
         else
-            printf("   %u   %-10s  [........]   %u   %s  %s   %s\n",
+            printf("   %u   %-10s  [........]   %u   %s  %s   %s",
                    t + 1,
                    TRACKS[t].name,
                    t + 1,
                    mstr,
                    sstr,
                    act);
+
+        if (selected)
+            printf("\033[0m");  // reset after highlighted row
+
+        printf("\n");
     }
 
     printf("-----------------------------------------------------------------\n");
@@ -420,8 +440,8 @@ static void draw(const Engine& eng, const ActivitySink& activity, bool playing, 
            midi_any ? "[*]" : "[ ]",
            midi_ok ? "connected" : "no port");
     printf("=================================================================\n");
-    printf("  SPACE: Play/Stop   ESC: Rewind   1-8: Mute   Shift+1-8: Solo\n");
-    printf("  q: Quit\n");
+    printf("  UP/DOWN: Select   m: Mute   s: Solo   SPACE: Play/Stop\n");
+    printf("  ESC: Rewind   q: Quit\n");
     printf("=================================================================\n");
     fflush(stdout);
 }
@@ -461,65 +481,43 @@ int main()
     bool slot_cued = false;
     uint32_t loop_count = 0;
     uint64_t last_loop_idx = 0;
+    uint32_t selected_track = 0;
 
     // Clear screen once, then redraw in-place each tick.
     printf("\033[2J");
-    draw(engine, activity, playing, loop_count);
+    draw(engine, activity, playing, loop_count, selected_track);
 
     // ── Main loop ────────────────────────────────────────────────────────────
     while (!g_quit.load(std::memory_order_relaxed))
     {
-        char ch = read_key();
+        int key = read_input();
 
-        if (ch == 'q' || ch == 'Q')
+        switch (key)
         {
-            g_quit.store(true, std::memory_order_relaxed);
-        }
-        else if (ch == ' ')
-        {
-            if (!playing)
-            {
-                engine.enqueue(TransportCmd{TransportAction::PLAY, 0});
-                if (!slot_cued)
+            case 'q':
+            case 'Q':
+                g_quit.store(true, std::memory_order_relaxed);
+                break;
+
+            case ' ':
+                if (!playing)
                 {
-                    engine.enqueue(PerfCueCmd{0, CueMode::IMMEDIATE});
-                    slot_cued = true;
+                    engine.enqueue(TransportCmd{TransportAction::PLAY, 0});
+                    if (!slot_cued)
+                    {
+                        engine.enqueue(PerfCueCmd{0, CueMode::IMMEDIATE});
+                        slot_cued = true;
+                    }
+                    playing = true;
                 }
-                playing = true;
-            }
-            else
-            {
-                engine.enqueue(TransportCmd{TransportAction::STOP, 0});
-                playing = false;
-            }
-        }
-        else if (ch >= '1' && ch <= '8')
-        {
-            activity.toggle_mute(static_cast<uint8_t>(ch - '1'));
-        }
-        else
-        {
-            for (uint32_t t = 0; t < NUM_TRACKS; ++t)
-            {
-                if (ch == ActivitySink::SOLO_KEYS[t])
+                else
                 {
-                    activity.toggle_solo(static_cast<uint8_t>(t));
-                    break;
+                    engine.enqueue(TransportCmd{TransportAction::STOP, 0});
+                    playing = false;
                 }
-            }
-        }
+                break;
 
-        if (ch == '\x1b')
-        {
-            // If followed immediately by '[' it's an arrow/function key; swallow it.
-            // If nothing follows within 10 ms it's a bare ESC = rewind.
-            struct timeval tv = {0, 10000};
-            fd_set fds;
-            FD_ZERO(&fds);
-            FD_SET(STDIN_FILENO, &fds);
-
-            if (select(STDIN_FILENO + 1, &fds, nullptr, nullptr, &tv) == 0)
-            {
+            case '\x1b':
                 // Bare ESC → rewind to start
                 if (playing)
                 {
@@ -530,11 +528,28 @@ int main()
                 slot_cued = false;
                 loop_count = 0;
                 last_loop_idx = 0;
-            }
-            else
-            {
-                drain_escape();
-            }
+                break;
+
+            case KEY_UP:
+                selected_track = (selected_track + NUM_TRACKS - 1) % NUM_TRACKS;
+                break;
+
+            case KEY_DOWN:
+                selected_track = (selected_track + 1) % NUM_TRACKS;
+                break;
+
+            case 'm':
+            case 'M':
+                activity.toggle_mute(static_cast<uint8_t>(selected_track));
+                break;
+
+            case 's':
+            case 'S':
+                activity.toggle_solo(static_cast<uint8_t>(selected_track));
+                break;
+
+            default:
+                break;
         }
 
         // Detect pattern loop wrap.
@@ -550,7 +565,7 @@ int main()
             }
         }
 
-        draw(engine, activity, playing, loop_count);
+        draw(engine, activity, playing, loop_count, selected_track);
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
 
