@@ -11,6 +11,7 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 - **transport loop region** (`SetLoopCmd` / `omega_loop_set` / `omega_loop_clear` / `omega_loop_enable`): when playing, the engine automatically locates back to `start_tick` whenever `to_tick >= end_tick`; `on_locate()` is called on all built-in sources at the wrap point to send note-offs and reset playback cursors; C++ API: `Engine::loop_set(start, end)`, `Engine::loop_clear()`, `Engine::loop_enable(bool)`, `Engine::loop_region()`; C API: `omega_loop_set()`, `omega_loop_clear()`, `omega_loop_enable()`; 8 new unit tests in `tests/unit/test_loop.cpp`; closes #24
+- **tapedeck example**: 8-track, 8-bar looping MIDI sequencer CLI (`examples/tapedeck/`) using `omega::Engine`, `LibremidiSink`, `OmegaTimer`, and `PerformanceSource`; SPACE play/stop, ESC rewind, Ctrl+C exit; `OMEGA_BUILD_EXAMPLES=ON` enables the build
 
 ---
 
