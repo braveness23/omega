@@ -5,9 +5,11 @@
  * All 8 tracks output to the same MIDI port on channels 1-8.
  *
  * Controls:
- *   SPACE    — Play / Stop
- *   ESC      — Rewind to start (stops if playing)
- *   Ctrl+C   — Exit
+ *   SPACE      — Play / Stop
+ *   ESC        — Rewind to start (stops if playing)
+ *   1–8        — Toggle mute on track 1–8
+ *   !@#$%^&*   — Toggle solo on track 1–8 (Shift+1–8)
+ *   q          — Exit
  */
 
 #include <omega/commands.h>
@@ -23,7 +25,6 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
-#include <csignal>
 #include <cstdio>
 #include <cstring>
 #include <fcntl.h>
@@ -44,14 +45,9 @@ static constexpr uint32_t BEATS_PER_BAR = 4;
 static constexpr uint64_t PATTERN_LEN =
     static_cast<uint64_t>(BARS) * BEATS_PER_BAR * PPQN;  // 15360 ticks
 
-// ─── Signal handling ──────────────────────────────────────────────────────────
+// ─── Quit flag ────────────────────────────────────────────────────────────────
 
 static std::atomic<bool> g_quit{false};
-
-static void on_sigint(int)
-{
-    g_quit.store(true, std::memory_order_relaxed);
-}
 
 // ─── Terminal raw mode ────────────────────────────────────────────────────────
 
@@ -101,26 +97,76 @@ static void drain_escape()
 
 // ─── Activity-tracking sink ───────────────────────────────────────────────────
 //
-// Wraps LibremidiSink and records the timestamp of the most recent note-on per
-// MIDI channel. channel_active() returns true within ACTIVE_NS of any note-on.
-// Called from the timing thread (send) and the display thread (channel_active),
-// so per-channel state is held in atomics.
+// Wraps LibremidiSink, records the timestamp of the most recent note-on per
+// MIDI channel, and enforces per-channel mute/solo. Note-ons for muted or
+// non-soloed channels are suppressed; note-offs and CC always pass through so
+// that in-flight notes release cleanly.
+//
+// Called from both the timing thread (send) and the display/mutation thread
+// (toggle_mute, toggle_solo, channel_active). All shared state is atomic.
 
 class ActivitySink : public OutputSink
 {
 public:
     static constexpr uint64_t ACTIVE_NS = 150'000'000ULL;  // 150 ms hold time
 
+    // Shift+1..8 solo key characters in track order.
+    static constexpr char SOLO_KEYS[NUM_TRACKS] = {'!', '@', '#', '$', '%', '^', '&', '*'};
+
     explicit ActivitySink(LibremidiSink& inner) noexcept : inner_(inner) {}
 
     void send(const Event& e) override
     {
-        if (e.payload_tag == OMEGA_NOTE_ON && e.channel < 16)
+        if (e.channel < 16 && e.payload_tag == OMEGA_NOTE_ON)
+        {
+            bool muted = muted_[e.channel].load(std::memory_order_relaxed);
+            bool any_solo = any_soloed_.load(std::memory_order_relaxed);
+            bool soloed = soloed_[e.channel].load(std::memory_order_relaxed);
+            if (muted || (any_solo && !soloed))
+                return;
             last_on_[e.channel].store(now_ns(), std::memory_order_relaxed);
+        }
         inner_.send(e);
     }
 
     void flush() override { inner_.flush(); }
+
+    void toggle_mute(uint8_t ch) noexcept
+    {
+        if (ch >= 16)
+            return;
+        bool prev = muted_[ch].load(std::memory_order_relaxed);
+        muted_[ch].store(!prev, std::memory_order_relaxed);
+    }
+
+    void toggle_solo(uint8_t ch) noexcept
+    {
+        if (ch >= 16)
+            return;
+        bool prev = soloed_[ch].load(std::memory_order_relaxed);
+        soloed_[ch].store(!prev, std::memory_order_relaxed);
+        // Recompute the cached any_soloed flag.
+        bool any = false;
+        for (uint8_t i = 0; i < 16; ++i)
+        {
+            if (soloed_[i].load(std::memory_order_relaxed))
+            {
+                any = true;
+                break;
+            }
+        }
+        any_soloed_.store(any, std::memory_order_relaxed);
+    }
+
+    bool is_muted(uint8_t ch) const noexcept
+    {
+        return ch < 16 && muted_[ch].load(std::memory_order_relaxed);
+    }
+
+    bool is_soloed(uint8_t ch) const noexcept
+    {
+        return ch < 16 && soloed_[ch].load(std::memory_order_relaxed);
+    }
 
     bool channel_active(uint8_t ch) const noexcept
     {
@@ -148,7 +194,12 @@ private:
 
     LibremidiSink& inner_;
     std::array<std::atomic<uint64_t>, 16> last_on_{};
+    std::array<std::atomic<bool>, 16> muted_{};
+    std::array<std::atomic<bool>, 16> soloed_{};
+    std::atomic<bool> any_soloed_{false};
 };
+
+constexpr char ActivitySink::SOLO_KEYS[NUM_TRACKS];
 
 // ─── Pattern content ──────────────────────────────────────────────────────────
 
@@ -296,52 +347,82 @@ static void draw(const Engine& eng, const ActivitySink& activity, bool playing, 
              static_cast<unsigned long long>(secs),
              static_cast<unsigned long long>(tenths));
 
-    // 32-char progress bar (8 bars × 4 beats each)
-    char prog[33];
-    prog[32] = '\0';
-    auto cur_beat = static_cast<int>((bar - 1) * BEATS_PER_BAR + (beat - 1));
-    for (int i = 0; i < 32; ++i)
-        prog[i] = (i < cur_beat) ? '#' : (i == cur_beat ? '>' : '.');
-
     // 8-char bar indicator (one char per bar)
     char bar_ind[9];
     bar_ind[8] = '\0';
     for (uint32_t b = 0; b < BARS; ++b)
         bar_ind[b] = (b < bar - 1) ? '#' : (b == bar - 1 ? '>' : '.');
 
+    // 32-char beat progress bar
+    char prog[33];
+    prog[32] = '\0';
+    auto cur_beat = static_cast<int>((bar - 1) * BEATS_PER_BAR + (beat - 1));
+    for (int i = 0; i < 32; ++i)
+        prog[i] = (i < cur_beat) ? '#' : (i == cur_beat ? '>' : '.');
+
     // Global MIDI activity
     bool midi_any = activity.any_active();
     bool midi_ok = activity.port_open();
+    bool any_solo = false;
+    for (uint32_t t = 0; t < NUM_TRACKS; ++t)
+        if (activity.is_soloed(static_cast<uint8_t>(t)))
+        {
+            any_solo = true;
+            break;
+        }
 
     // Redraw from cursor home
     printf("\033[H");
-    printf("=============================================================\n");
+    printf("=================================================================\n");
     printf("  OMEGA TAPEDECK  v1.0.0    %u BPM  |  4/4  |  8 Bars\n", BPM);
-    printf("=============================================================\n");
-    printf("  Trk  Name        [1 2 3 4 5 6 7 8]  Ch  MIDI\n");
-    printf("  ---  ----------  ----------------   --  ----\n");
+    printf("=================================================================\n");
+    printf("  Trk  Name        [12345678]   Ch   Mut  Sol   MIDI\n");
+    printf("  ---  ----------  ----------   --   ---  ---   ----\n");
 
     for (uint32_t t = 0; t < NUM_TRACKS; ++t)
     {
-        // Track uses MIDI channel t (0-indexed).
-        const char* act = activity.channel_active(static_cast<uint8_t>(t)) ? "[*]" : "[ ]";
+        bool muted = activity.is_muted(static_cast<uint8_t>(t));
+        bool soloed = activity.is_soloed(static_cast<uint8_t>(t));
+
+        // A track is effectively silent if it is muted, or if another track
+        // is soloed and this one is not.
+        bool silent = muted || (any_solo && !soloed);
+
+        const char* mstr = muted ? "[M]" : "[ ]";
+        const char* sstr = soloed ? "[S]" : "[ ]";
+        const char* act =
+            (!silent && activity.channel_active(static_cast<uint8_t>(t))) ? "[*]" : "[ ]";
 
         if (TRACKS[t].has_content)
-            printf("   %u   %-10s  [%s]   %u   %s\n", t + 1, TRACKS[t].name, bar_ind, t + 1, act);
+            printf("   %u   %-10s  [%s]    %u   %s  %s   %s\n",
+                   t + 1,
+                   TRACKS[t].name,
+                   bar_ind,
+                   t + 1,
+                   mstr,
+                   sstr,
+                   act);
         else
-            printf("   %u   %-10s  [--------]   %u   %s\n", t + 1, TRACKS[t].name, t + 1, act);
+            printf("   %u   %-10s  [........]   %u   %s  %s   %s\n",
+                   t + 1,
+                   TRACKS[t].name,
+                   t + 1,
+                   mstr,
+                   sstr,
+                   act);
     }
 
-    printf("-------------------------------------------------------------\n");
+    printf("-----------------------------------------------------------------\n");
     printf("  [%s]\n", prog);
     printf("  Bar %u/8   Beat %u/4   Loop: %u   Time: %s\n", bar, beat, loop_count, time_str);
     printf("  %-14s  MIDI: %s %s\n",
            playing ? "PLAYING >>>" : "STOPPED [=]",
            midi_any ? "[*]" : "[ ]",
            midi_ok ? "connected" : "no port");
-    printf("=============================================================\n");
-    printf("  SPACE: Play/Stop   ESC: Rewind to Start   Ctrl+C: Exit\n");
-    printf("=============================================================\n");
+    printf("=================================================================\n");
+    printf("  SPACE: Play/Stop   ESC: Rewind   1-8: Mute   Shift+1-8: Solo\n");
+    printf("  q: Quit\n");
+    printf("=================================================================\n");
     fflush(stdout);
 }
 
@@ -349,12 +430,6 @@ static void draw(const Engine& eng, const ActivitySink& activity, bool playing, 
 
 int main()
 {
-    // Signal handler for clean Ctrl+C exit.
-    struct sigaction sa
-    {};
-    sa.sa_handler = on_sigint;
-    sigaction(SIGINT, &sa, nullptr);
-
     setup_terminal();
 
     // ── Engine & MIDI sinks ──────────────────────────────────────────────────
@@ -381,7 +456,7 @@ int main()
     // ── Start timing thread ──────────────────────────────────────────────────
     OmegaTimer timer(engine, 1000);  // 1 ms interval
 
-    // ── Transport state ───────────────────────────────────────────────────────
+    // ── Transport state ──────────────────────────────────────────────────────
     bool playing = false;
     bool slot_cued = false;
     uint32_t loop_count = 0;
@@ -396,7 +471,11 @@ int main()
     {
         char ch = read_key();
 
-        if (ch == ' ')
+        if (ch == 'q' || ch == 'Q')
+        {
+            g_quit.store(true, std::memory_order_relaxed);
+        }
+        else if (ch == ' ')
         {
             if (!playing)
             {
@@ -414,7 +493,23 @@ int main()
                 playing = false;
             }
         }
-        else if (ch == '\x1b')
+        else if (ch >= '1' && ch <= '8')
+        {
+            activity.toggle_mute(static_cast<uint8_t>(ch - '1'));
+        }
+        else
+        {
+            for (uint32_t t = 0; t < NUM_TRACKS; ++t)
+            {
+                if (ch == ActivitySink::SOLO_KEYS[t])
+                {
+                    activity.toggle_solo(static_cast<uint8_t>(t));
+                    break;
+                }
+            }
+        }
+
+        if (ch == '\x1b')
         {
             // If followed immediately by '[' it's an arrow/function key; swallow it.
             // If nothing follows within 10 ms it's a bare ESC = rewind.
@@ -446,8 +541,8 @@ int main()
         if (playing)
         {
             uint64_t pos_ns = engine.transport_position_ns();
-            double beats = static_cast<double>(pos_ns) / 1.0e9 * BPM / 60.0;
-            auto idx = static_cast<uint64_t>(beats) / (BARS * BEATS_PER_BAR);
+            double pos_beats = static_cast<double>(pos_ns) / 1.0e9 * BPM / 60.0;
+            auto idx = static_cast<uint64_t>(pos_beats) / (BARS * BEATS_PER_BAR);
             if (idx > last_loop_idx)
             {
                 loop_count += static_cast<uint32_t>(idx - last_loop_idx);
