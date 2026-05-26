@@ -68,7 +68,7 @@ static void setup_terminal()
     struct termios raw = g_orig_termios;
     raw.c_iflag &= ~static_cast<unsigned>(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
     raw.c_cflag |= static_cast<unsigned>(CS8);
-    raw.c_lflag &= ~static_cast<unsigned>(ECHO | ICANON | IEXTEN);
+    raw.c_lflag &= ~static_cast<unsigned>(ECHO | ICANON | IEXTEN | ISIG);
     raw.c_cc[VMIN] = 0;  // non-blocking reads
     raw.c_cc[VTIME] = 0;
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
