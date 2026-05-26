@@ -9,6 +9,9 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **tapedeck example**: 8-track, 8-bar looping MIDI sequencer CLI (`examples/tapedeck/`) using `omega::Engine`, `LibremidiSink`, `OmegaTimer`, and `PerformanceSource`; SPACE play/stop, ESC rewind, Ctrl+C exit; `OMEGA_BUILD_EXAMPLES=ON` enables the build
+
 ---
 
 ## [1.0.0] — 2026-05-25
