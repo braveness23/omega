@@ -4,29 +4,37 @@
  * An 8-track, 8-bar looping MIDI sequencer with a tapedeck-style transport.
  * All 8 tracks output to the same MIDI port on channels 1-8.
  *
- * Controls:
- *   UP / DOWN  — Select track
- *   m          — Toggle mute on selected track
- *   s          — Toggle solo on selected track
- *   SPACE      — Play / Stop
- *   ESC        — Rewind to start (stops if playing)
- *   q          — Exit
+ * Main screen controls:
+ *   UP / DOWN   — Select track
+ *   m           — Toggle mute on selected track
+ *   s           — Toggle solo on selected track
+ *   Enter       — Open track detail view
+ *   SPACE       — Play / Stop
+ *   ESC         — Rewind to start (stops if playing)
+ *   q           — Exit
+ *
+ * Track detail controls:
+ *   UP / DOWN   — Scroll event list
+ *   ESC         — Back to main screen
  */
 
 #include <omega/commands.h>
 #include <omega/engine.h>
 #include <omega/midi_io.h>
 #include <omega/omega.h>
+#include <omega/pattern_library.h>
 #include <omega/sink.h>
 #include <omega/tempo_map.h>
 #include <omega/timer.h>
 #include <omega/types.h>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <fcntl.h>
 #include <sys/select.h>
 #include <termios.h>
@@ -77,10 +85,11 @@ static void setup_terminal()
 static constexpr int KEY_NONE = 0;
 static constexpr int KEY_UP = 256;
 static constexpr int KEY_DOWN = 257;
+static constexpr int KEY_ENTER = 13;
 
 // Read one key (or escape sequence) non-blocking.
 // Returns KEY_NONE if no input, KEY_UP/KEY_DOWN for arrow keys,
-// '\x1b' for bare ESC, or the ASCII value for everything else.
+// KEY_ENTER for Return, '\x1b' for bare ESC, or the ASCII value otherwise.
 static int read_input()
 {
     char c = 0;
@@ -157,7 +166,6 @@ public:
             return;
         bool prev = soloed_[ch].load(std::memory_order_relaxed);
         soloed_[ch].store(!prev, std::memory_order_relaxed);
-        // Recompute the cached any_soloed flag.
         bool any = false;
         for (uint8_t i = 0; i < 16; ++i)
         {
@@ -330,25 +338,58 @@ static void populate_pattern(Engine& eng, PatternId pid, uint32_t sid)
     // Channels 4-7 are left empty.
 }
 
-// ─── Display ──────────────────────────────────────────────────────────────────
+// ─── Note naming ─────────────────────────────────────────────────────────────
 
-static void draw(const Engine& eng,
-                 const ActivitySink& activity,
-                 bool playing,
-                 uint32_t loop_count,
-                 uint32_t selected_track)
+static const char* NOTE_NAMES[12] = {
+    "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+
+// Returns e.g. "C4", "G#2", "A#-1"
+static void format_note(uint8_t midi_note, char* out, int out_size)
 {
-    // Convert transport position to musical coordinates.
+    int octave = static_cast<int>(midi_note / 12) - 1;
+    snprintf(out, static_cast<size_t>(out_size), "%s%d", NOTE_NAMES[midi_note % 12], octave);
+}
+
+// Returns e.g. "1:2" (bar 1, beat 2) or "1:2.240" if sub-beat ticks exist.
+static void format_pos(uint64_t tick, char* out, int out_size)
+{
+    const uint64_t ticks_per_bar = BEATS_PER_BAR * PPQN;
+    uint64_t bar = tick / ticks_per_bar + 1;
+    uint64_t beat = (tick % ticks_per_bar) / PPQN + 1;
+    uint64_t sub = tick % PPQN;
+
+    if (sub == 0)
+        snprintf(out,
+                 static_cast<size_t>(out_size),
+                 "%llu:%llu",
+                 (unsigned long long)bar,
+                 (unsigned long long)beat);
+    else
+        snprintf(out,
+                 static_cast<size_t>(out_size),
+                 "%llu:%llu.%llu",
+                 (unsigned long long)bar,
+                 (unsigned long long)beat,
+                 (unsigned long long)sub);
+}
+
+// ─── Display: main screen ─────────────────────────────────────────────────────
+
+static void draw_main(const Engine& eng,
+                      const ActivitySink& activity,
+                      bool playing,
+                      uint32_t loop_count,
+                      uint32_t selected_track)
+{
     uint64_t pos_ns = eng.transport_position_ns();
     double pos_sec = static_cast<double>(pos_ns) / 1.0e9;
     double beats = pos_sec * BPM / 60.0;
-    double pat_len = static_cast<double>(BARS * BEATS_PER_BAR);  // 32 beats
+    double pat_len = static_cast<double>(BARS * BEATS_PER_BAR);
     double beat_in = fmod(beats, pat_len);
 
-    auto bar = static_cast<uint32_t>(beat_in / BEATS_PER_BAR) + 1;        // 1-8
-    auto beat = static_cast<uint32_t>(fmod(beat_in, BEATS_PER_BAR)) + 1;  // 1-4
+    auto bar = static_cast<uint32_t>(beat_in / BEATS_PER_BAR) + 1;
+    auto beat = static_cast<uint32_t>(fmod(beat_in, BEATS_PER_BAR)) + 1;
 
-    // Elapsed clock time from transport position.
     uint64_t total_s = pos_ns / 1'000'000'000ULL;
     uint64_t mins = total_s / 60;
     uint64_t secs = total_s % 60;
@@ -357,24 +398,21 @@ static void draw(const Engine& eng,
     snprintf(time_str,
              sizeof(time_str),
              "%llu:%02llu.%llu",
-             static_cast<unsigned long long>(mins),
-             static_cast<unsigned long long>(secs),
-             static_cast<unsigned long long>(tenths));
+             (unsigned long long)mins,
+             (unsigned long long)secs,
+             (unsigned long long)tenths);
 
-    // 8-char bar indicator (one char per bar)
     char bar_ind[9];
     bar_ind[8] = '\0';
     for (uint32_t b = 0; b < BARS; ++b)
         bar_ind[b] = (b < bar - 1) ? '#' : (b == bar - 1 ? '>' : '.');
 
-    // 32-char beat progress bar
     char prog[33];
     prog[32] = '\0';
     auto cur_beat = static_cast<int>((bar - 1) * BEATS_PER_BAR + (beat - 1));
     for (int i = 0; i < 32; ++i)
         prog[i] = (i < cur_beat) ? '#' : (i == cur_beat ? '>' : '.');
 
-    // Global MIDI activity
     bool midi_any = activity.any_active();
     bool midi_ok = activity.port_open();
     bool any_solo = false;
@@ -385,7 +423,6 @@ static void draw(const Engine& eng,
             break;
         }
 
-    // Redraw from cursor home
     printf("\033[H");
     printf("=================================================================\n");
     printf("  OMEGA TAPEDECK  v1.0.0    %u BPM  |  4/4  |  8 Bars\n", BPM);
@@ -406,7 +443,7 @@ static void draw(const Engine& eng,
             (!silent && activity.channel_active(static_cast<uint8_t>(t))) ? "[*]" : "[ ]";
 
         if (selected)
-            printf("\033[7m");  // reverse video for selected row
+            printf("\033[7m");
 
         if (TRACKS[t].has_content)
             printf("   %u   %-10s  [%s]    %u   %s  %s   %s",
@@ -427,7 +464,7 @@ static void draw(const Engine& eng,
                    act);
 
         if (selected)
-            printf("\033[0m");  // reset after highlighted row
+            printf("\033[0m");
 
         printf("\n");
     }
@@ -440,13 +477,110 @@ static void draw(const Engine& eng,
            midi_any ? "[*]" : "[ ]",
            midi_ok ? "connected" : "no port");
     printf("=================================================================\n");
-    printf("  UP/DOWN: Select   m: Mute   s: Solo   SPACE: Play/Stop\n");
-    printf("  ESC: Rewind   q: Quit\n");
+    printf("  UP/DOWN: Select   m: Mute   s: Solo   Enter: Edit track\n");
+    printf("  SPACE: Play/Stop   ESC: Rewind   q: Quit\n");
+    printf("=================================================================\n");
+    fflush(stdout);
+}
+
+// ─── Display: track edit screen ───────────────────────────────────────────────
+
+static constexpr int EDIT_VISIBLE = 16;  // event rows shown at once
+
+static void draw_track_edit(const Engine& engine,
+                            const ActivitySink& activity,
+                            PatternId pat_id,
+                            uint32_t track,
+                            int scroll_offset)
+{
+    const Pattern* pat = engine.pattern_library().get(pat_id);
+
+    // Count events for this channel.
+    auto ch = static_cast<uint8_t>(track);
+    int total = 0;
+    if (pat)
+        for (const auto& e : pat->events)
+            if (e.channel == ch && e.payload_tag == OMEGA_NOTE_ON)
+                ++total;
+
+    printf("\033[H");
+    printf("=================================================================\n");
+    printf("  Track %u — %-10s  Ch %u   Mute: %s   Solo: %s\n",
+           track + 1,
+           TRACKS[track].name,
+           track + 1,
+           activity.is_muted(ch) ? "[M]" : "[ ]",
+           activity.is_soloed(ch) ? "[S]" : "[ ]");
+    printf("  Pattern: %-20s  Events: %d\n", pat ? pat->name.c_str() : "(none)", total);
+    printf("=================================================================\n");
+    printf("    #    Tick     Position    Note     Vel   Dur (ticks)\n");
+    printf("  ---   ------   ----------  ------   ---   -----------\n");
+
+    // Clamp scroll so we never show an empty page when events exist.
+    int max_offset = std::max(0, total - EDIT_VISIBLE);
+    int offset = std::min(scroll_offset, max_offset);
+
+    if (total == 0 || !pat)
+    {
+        printf("  (no events on this channel)\n");
+        for (int i = 1; i < EDIT_VISIBLE; ++i)
+            printf("\n");
+    }
+    else
+    {
+        int event_num = 0;
+        int shown = 0;
+        for (const auto& e : pat->events)
+        {
+            if (e.channel != ch || e.payload_tag != OMEGA_NOTE_ON)
+                continue;
+
+            ++event_num;
+            if (event_num <= offset)
+                continue;
+            if (shown >= EDIT_VISIBLE)
+                break;
+
+            uint32_t dur = 0;
+            std::memcpy(&dur, e.data + 2, sizeof(dur));
+
+            char note_str[8];
+            format_note(e.data[0], note_str, sizeof(note_str));
+
+            char pos_str[32];
+            format_pos(e.tick, pos_str, sizeof(pos_str));
+
+            printf("  %3d   %6llu   %-10s  %-6s   %3u   %u\n",
+                   event_num,
+                   (unsigned long long)e.tick,
+                   pos_str,
+                   note_str,
+                   e.data[1],
+                   dur);
+            ++shown;
+        }
+
+        for (int i = shown; i < EDIT_VISIBLE; ++i)
+            printf("\n");
+    }
+
+    int first = (total > 0) ? offset + 1 : 0;
+    int last = (total > 0) ? std::min(offset + EDIT_VISIBLE, total) : 0;
+    printf("-----------------------------------------------------------------\n");
+    printf("  Showing %d–%d of %d events\n", first, last, total);
+    printf("=================================================================\n");
+    printf("  UP/DOWN: Scroll   ESC: Back\n");
     printf("=================================================================\n");
     fflush(stdout);
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
+
+enum class Screen
+{
+    MAIN,
+    TRACK_EDIT
+};
 
 int main()
 {
@@ -455,9 +589,7 @@ int main()
     // ── Engine & MIDI sinks ──────────────────────────────────────────────────
     Engine engine;
 
-    // LibremidiSink owns the MIDI port; ActivitySink wraps it and is what the
-    // engine dispatches to. Pattern events use activity.sink_id().
-    LibremidiSink midi_sink(nullptr);  // nullptr = first available MIDI output
+    LibremidiSink midi_sink(nullptr);
     ActivitySink activity(midi_sink);
     engine.add_sink(&activity);
     const uint32_t sid = activity.sink_id();
@@ -470,89 +602,113 @@ int main()
     PatternId pat = engine.create_pattern("8-bar loop", PATTERN_LEN);
     populate_pattern(engine, pat, sid);
 
-    // Queue slot assignment before the timer starts.
     engine.enqueue(PerfAssignCmd{0, pat});
 
     // ── Start timing thread ──────────────────────────────────────────────────
-    OmegaTimer timer(engine, 1000);  // 1 ms interval
+    OmegaTimer timer(engine, 1000);
 
-    // ── Transport state ──────────────────────────────────────────────────────
+    // ── UI state ─────────────────────────────────────────────────────────────
+    Screen screen = Screen::MAIN;
     bool playing = false;
     bool slot_cued = false;
     uint32_t loop_count = 0;
     uint64_t last_loop_idx = 0;
     uint32_t selected_track = 0;
+    int scroll_offset = 0;
 
-    // Clear screen once, then redraw in-place each tick.
     printf("\033[2J");
-    draw(engine, activity, playing, loop_count, selected_track);
+    draw_main(engine, activity, playing, loop_count, selected_track);
 
     // ── Main loop ────────────────────────────────────────────────────────────
     while (!g_quit.load(std::memory_order_relaxed))
     {
         int key = read_input();
 
-        switch (key)
+        if (screen == Screen::TRACK_EDIT)
         {
-            case 'q':
-            case 'Q':
-                g_quit.store(true, std::memory_order_relaxed);
-                break;
+            if (key == '\x1b')
+            {
+                screen = Screen::MAIN;
+                printf("\033[2J");
+            }
+            else if (key == KEY_UP)
+            {
+                scroll_offset = std::max(0, scroll_offset - 1);
+            }
+            else if (key == KEY_DOWN)
+            {
+                ++scroll_offset;  // draw_track_edit clamps to valid range
+            }
+        }
+        else  // Screen::MAIN
+        {
+            switch (key)
+            {
+                case 'q':
+                case 'Q':
+                    g_quit.store(true, std::memory_order_relaxed);
+                    break;
 
-            case ' ':
-                if (!playing)
-                {
-                    engine.enqueue(TransportCmd{TransportAction::PLAY, 0});
-                    if (!slot_cued)
+                case KEY_ENTER:
+                    screen = Screen::TRACK_EDIT;
+                    scroll_offset = 0;
+                    printf("\033[2J");
+                    break;
+
+                case ' ':
+                    if (!playing)
                     {
-                        engine.enqueue(PerfCueCmd{0, CueMode::IMMEDIATE});
-                        slot_cued = true;
+                        engine.enqueue(TransportCmd{TransportAction::PLAY, 0});
+                        if (!slot_cued)
+                        {
+                            engine.enqueue(PerfCueCmd{0, CueMode::IMMEDIATE});
+                            slot_cued = true;
+                        }
+                        playing = true;
                     }
-                    playing = true;
-                }
-                else
-                {
-                    engine.enqueue(TransportCmd{TransportAction::STOP, 0});
-                    playing = false;
-                }
-                break;
+                    else
+                    {
+                        engine.enqueue(TransportCmd{TransportAction::STOP, 0});
+                        playing = false;
+                    }
+                    break;
 
-            case '\x1b':
-                // Bare ESC → rewind to start
-                if (playing)
-                {
-                    engine.enqueue(TransportCmd{TransportAction::STOP, 0});
-                    playing = false;
-                }
-                engine.enqueue(TransportCmd{TransportAction::LOCATE, 0});
-                slot_cued = false;
-                loop_count = 0;
-                last_loop_idx = 0;
-                break;
+                case '\x1b':
+                    if (playing)
+                    {
+                        engine.enqueue(TransportCmd{TransportAction::STOP, 0});
+                        playing = false;
+                    }
+                    engine.enqueue(TransportCmd{TransportAction::LOCATE, 0});
+                    slot_cued = false;
+                    loop_count = 0;
+                    last_loop_idx = 0;
+                    break;
 
-            case KEY_UP:
-                selected_track = (selected_track + NUM_TRACKS - 1) % NUM_TRACKS;
-                break;
+                case KEY_UP:
+                    selected_track = (selected_track + NUM_TRACKS - 1) % NUM_TRACKS;
+                    break;
 
-            case KEY_DOWN:
-                selected_track = (selected_track + 1) % NUM_TRACKS;
-                break;
+                case KEY_DOWN:
+                    selected_track = (selected_track + 1) % NUM_TRACKS;
+                    break;
 
-            case 'm':
-            case 'M':
-                activity.toggle_mute(static_cast<uint8_t>(selected_track));
-                break;
+                case 'm':
+                case 'M':
+                    activity.toggle_mute(static_cast<uint8_t>(selected_track));
+                    break;
 
-            case 's':
-            case 'S':
-                activity.toggle_solo(static_cast<uint8_t>(selected_track));
-                break;
+                case 's':
+                case 'S':
+                    activity.toggle_solo(static_cast<uint8_t>(selected_track));
+                    break;
 
-            default:
-                break;
+                default:
+                    break;
+            }
         }
 
-        // Detect pattern loop wrap.
+        // Loop-wrap detection (main screen only).
         if (playing)
         {
             uint64_t pos_ns = engine.transport_position_ns();
@@ -565,13 +721,16 @@ int main()
             }
         }
 
-        draw(engine, activity, playing, loop_count, selected_track);
+        if (screen == Screen::TRACK_EDIT)
+            draw_track_edit(engine, activity, pat, selected_track, scroll_offset);
+        else
+            draw_main(engine, activity, playing, loop_count, selected_track);
+
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
 
     // ── Cleanup ───────────────────────────────────────────────────────────────
     engine.enqueue(TransportCmd{TransportAction::STOP, 0});
-    // OmegaTimer destructor joins timing thread and does a final process().
 
     restore_terminal();
     printf("\n\033[2J\033[H");
