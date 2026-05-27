@@ -169,6 +169,30 @@ uint32_t omega_sink_id(const omega_sink_t* sink)
     return reinterpret_cast<const omega::OutputSink*>(sink)->sink_id();
 }
 
+omega_status_t omega_sink_set_mute(omega_engine_t* eng,
+                                   uint32_t sink_id,
+                                   uint8_t channel,
+                                   int muted)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.sink_set_mute(sink_id, channel, muted != 0);
+}
+
+omega_status_t omega_sink_set_solo(omega_engine_t* eng,
+                                   uint32_t sink_id,
+                                   uint8_t channel,
+                                   int soloed)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.sink_set_solo(sink_id, channel, soloed != 0);
+}
+
 omega_status_t omega_engine_add_track(omega_engine_t* eng,
                                       const char* name,
                                       omega_track_id_t* out_id)

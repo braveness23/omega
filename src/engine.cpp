@@ -8,6 +8,82 @@
 namespace omega
 {
 
+// ── FilteringDispatcher ───────────────────────────────────────────────────────
+//
+// Per-cycle dispatcher that enforces the engine's mute/solo state.
+//
+// The SinkFilterState vector is owned by the Engine and persists across cycles.
+// FilteringDispatcher holds a non-owning pointer to it.  Each dispatch() call
+// may update active_notes in the pointed-to state.  No allocation; no locking.
+//
+// Thread: Timing thread only (created on the stack inside process()).
+
+class FilteringDispatcher : public EventDispatcher
+{
+public:
+    FilteringDispatcher(const SinkList& sinks,
+                        std::vector<Engine::SinkFilterState>& filters,
+                        bool any_soloed) noexcept
+        : EventDispatcher{sinks}, filters_{&filters}, any_soloed_{any_soloed}
+    {}
+
+    void dispatch(const Event& event) noexcept override
+    {
+        Engine::SinkFilterState* f = find_filter(event.sink_id);
+
+        bool suppressed = false;
+        if (f != nullptr)
+        {
+            auto ch_bit = static_cast<uint16_t>(1u << (event.channel & 0x0Fu));
+            if (any_soloed_)
+            {
+                // Solo-exclusive mode: only soloed (sink, channel) pairs pass.
+                suppressed = (f->soloed & ch_bit) == 0;
+            }
+            else
+            {
+                suppressed = (f->muted & ch_bit) != 0;
+            }
+        }
+
+        if (!suppressed)
+        {
+            EventDispatcher::dispatch(event);
+            // Maintain per-channel active note bitmask (only for events that
+            // actually reach the sink — so we know what to silence on mute).
+            if (f != nullptr)
+            {
+                uint8_t ch = event.channel & 0x0Fu;
+                uint8_t note = event.data[0];
+                if (event.payload_tag == OMEGA_NOTE_ON)
+                {
+                    f->active_notes[ch][note >> 3u] |= static_cast<uint8_t>(1u << (note & 7u));
+                }
+                else if (event.payload_tag == OMEGA_NOTE_OFF)
+                {
+                    f->active_notes[ch][note >> 3u] &= static_cast<uint8_t>(~(1u << (note & 7u)));
+                }
+            }
+        }
+    }
+
+private:
+    Engine::SinkFilterState* find_filter(uint32_t sid) noexcept
+    {
+        for (auto& f : *filters_)
+        {
+            if (f.sink_id == sid)
+            {
+                return &f;
+            }
+        }
+        return nullptr;
+    }
+
+    std::vector<Engine::SinkFilterState>* filters_;
+    bool any_soloed_;
+};
+
 Engine::Engine(ClockSource* clock, std::pmr::memory_resource* /*mr*/, uint32_t /*queue_capacity*/)
     : clock_{clock != nullptr ? clock : &internal_clock_}
 {}
@@ -32,7 +108,16 @@ omega_status_t Engine::add_sink(OutputSink* sink)
         sinks_.end(),
         sid,
         [](const std::pair<uint32_t, OutputSink*>& p, uint32_t v) { return p.first < v; });
+    // Compute offset BEFORE insert — the iterator is invalidated by the insert.
+    auto offset = static_cast<ptrdiff_t>(it - sinks_.begin());
     sinks_.insert(it, {sid, sink});
+
+    // Insert a parallel SinkFilterState entry (zero-initialized) at the same position.
+    SinkFilterState f{};
+    f.sink_id = sid;
+    f.ptr = sink;
+    sink_filters_.insert(sink_filters_.begin() + offset, f);
+
     return OMEGA_OK;
 }
 
@@ -86,6 +171,24 @@ TrackId Engine::add_track(std::string name)
 omega_status_t Engine::set_track_sink(TrackId track_id, uint32_t sink_id)
 {
     return timeline_.set_sink(track_id, sink_id);
+}
+
+omega_status_t Engine::sink_set_mute(uint32_t sink_id, uint8_t channel, bool muted)
+{
+    if (channel > 15u && channel != 0xFFu)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return enqueue(SetSinkMuteCmd{sink_id, channel, static_cast<uint8_t>(muted ? 1u : 0u), {}});
+}
+
+omega_status_t Engine::sink_set_solo(uint32_t sink_id, uint8_t channel, bool soloed)
+{
+    if (channel > 15u && channel != 0xFFu)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return enqueue(SetSinkSoloCmd{sink_id, channel, static_cast<uint8_t>(soloed ? 1u : 0u), {}});
 }
 
 omega_status_t Engine::song_append(PatternId id, uint32_t repeat_count)
@@ -361,7 +464,7 @@ void Engine::apply(const TransportCmd& cmd)
             ctx.input_bus = &input_bus_;
             ctx.modulation_bus = &mod_bus_;
             ctx.perf_ctx = perf_ctx_;
-            EventDispatcher dispatcher{sinks_};
+            FilteringDispatcher dispatcher{sinks_, sink_filters_, any_soloed_};
             timeline_.on_locate(cmd.locate_tick, dispatcher, ctx);
             song_.on_locate(cmd.locate_tick, dispatcher, ctx);
             perf_.on_locate(cmd.locate_tick, dispatcher, ctx);
@@ -521,6 +624,144 @@ void Engine::apply(const ClearSmpteConfigCmd& /*cmd*/)
     smpte_config_.reset();
 }
 
+// ── Mute / solo helpers ───────────────────────────────────────────────────────
+
+void Engine::flush_active_notes(SinkFilterState& f, uint16_t ch_mask) noexcept
+{
+    if (f.ptr == nullptr)
+    {
+        return;
+    }
+    for (uint8_t ch = 0; ch < 16u; ++ch)
+    {
+        if (!(ch_mask & static_cast<uint16_t>(1u << ch)))
+        {
+            continue;
+        }
+        for (uint8_t byte_idx = 0; byte_idx < 16u; ++byte_idx)
+        {
+            uint8_t mask = f.active_notes[ch][byte_idx];
+            while (mask != 0u)
+            {
+                // Find the lowest set bit.
+                uint8_t bit = static_cast<uint8_t>(__builtin_ctz(static_cast<unsigned>(mask)));
+                uint8_t note = static_cast<uint8_t>(byte_idx * 8u + bit);
+
+                Event off{};
+                off.tick =
+                    tempo_map_.ns_to_ticks(last_position_ns_.load(std::memory_order_relaxed));
+                off.sink_id = f.sink_id;
+                off.payload_tag = OMEGA_NOTE_OFF;
+                off.channel = ch;
+                off.data[0] = note;
+                off.data[1] = 0u;
+                f.ptr->send(off);
+
+                f.active_notes[ch][byte_idx] &= static_cast<uint8_t>(~(1u << bit));
+                mask = f.active_notes[ch][byte_idx];
+            }
+        }
+    }
+}
+
+void Engine::apply(const SetSinkMuteCmd& cmd)
+{
+    // Build channel bitmask.
+    uint16_t ch_mask =
+        (cmd.channel == 0xFFu) ? 0xFFFFu : static_cast<uint16_t>(1u << (cmd.channel & 0x0Fu));
+
+    for (auto& f : sink_filters_)
+    {
+        if (f.sink_id != cmd.sink_id)
+        {
+            continue;
+        }
+        if (cmd.muted)
+        {
+            // Transitioning from unmuted to muted: flush active notes first.
+            uint16_t newly_muted = ch_mask & ~f.muted;
+            if (newly_muted != 0u)
+            {
+                flush_active_notes(f, newly_muted);
+            }
+            f.muted |= ch_mask;
+        }
+        else
+        {
+            f.muted &= ~ch_mask;
+        }
+        return;
+    }
+    // Unknown sink_id: silently ignored.
+}
+
+void Engine::apply(const SetSinkSoloCmd& cmd)
+{
+    uint16_t ch_mask =
+        (cmd.channel == 0xFFu) ? 0xFFFFu : static_cast<uint16_t>(1u << (cmd.channel & 0x0Fu));
+
+    bool was_any_soloed = any_soloed_;
+
+    for (auto& f : sink_filters_)
+    {
+        if (f.sink_id == cmd.sink_id)
+        {
+            if (cmd.soloed)
+            {
+                f.soloed |= ch_mask;
+            }
+            else
+            {
+                f.soloed &= ~ch_mask;
+            }
+            break;
+        }
+    }
+
+    // Recompute any_soloed_.
+    any_soloed_ = false;
+    for (const auto& f : sink_filters_)
+    {
+        if (f.soloed != 0u)
+        {
+            any_soloed_ = true;
+            break;
+        }
+    }
+
+    // When solo mode engages (any_soloed_ transitions false → true), flush
+    // active notes on all channels that are now suppressed.
+    if (!was_any_soloed && any_soloed_)
+    {
+        for (auto& f : sink_filters_)
+        {
+            // Channels NOT in the solo set are newly suppressed.
+            uint16_t suppress = static_cast<uint16_t>(~f.soloed) & 0xFFFFu;
+            if (suppress != 0u)
+            {
+                flush_active_notes(f, suppress);
+            }
+        }
+    }
+    else if (was_any_soloed && any_soloed_ && cmd.soloed == 0u)
+    {
+        // A solo was REMOVED while other solos remain: the now-unsoloed
+        // channels become suppressed.  Flush their active notes.
+        for (auto& f : sink_filters_)
+        {
+            if (f.sink_id == cmd.sink_id)
+            {
+                uint16_t newly_suppressed = ch_mask & ~f.soloed;
+                if (newly_suppressed != 0u)
+                {
+                    flush_active_notes(f, newly_suppressed);
+                }
+                break;
+            }
+        }
+    }
+}
+
 void Engine::process()
 {
     Command cmd;
@@ -658,6 +899,14 @@ void Engine::process()
                 {
                     apply(c);
                 }
+                else if constexpr (std::is_same_v<T, SetSinkMuteCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, SetSinkSoloCmd>)
+                {
+                    apply(c);
+                }
             },
             cmd);
     }
@@ -685,7 +934,7 @@ void Engine::process()
     ctx.modulation_bus = &mod_bus_;
     ctx.perf_ctx = perf_ctx_;
 
-    EventDispatcher dispatcher{sinks_};
+    FilteringDispatcher dispatcher{sinks_, sink_filters_, any_soloed_};
 
     // Loop detection: when the transport has reached or passed loop_end_tick_,
     // locate all sources back to loop_start_tick_ and resume from there.

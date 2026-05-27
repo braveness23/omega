@@ -28,6 +28,7 @@ add_executable(omega_tests
     unit/test_loop.cpp
     unit/test_position_snapshot.cpp
     unit/test_replace_event.cpp
+    unit/test_mute_solo.cpp
 )
 
 target_link_libraries(omega_tests
@@ -49,6 +50,7 @@ catch_discover_tests(omega_tests)
 add_executable(omega_integration_tests
     integration/test_c_api_playback.cpp
     integration/test_c_api_patterns.cpp
+    integration/test_c_api_mute_solo.cpp
     integration/test_c_api_timesig.cpp
     integration/test_c_api_smf.cpp
     integration/test_c_api_markers.cpp
