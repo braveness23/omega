@@ -427,6 +427,35 @@ omega_status_t omega_pattern_length(const omega_engine_t* eng,
     return OMEGA_OK;
 }
 
+omega_status_t omega_pattern_for_each_event(const omega_engine_t* eng,
+                                            omega_pattern_id_t pat,
+                                            uint8_t channel_filter,
+                                            uint8_t tag_filter,
+                                            void (*cb)(uint32_t, const omega_event_t*, void*),
+                                            void* userdata)
+{
+    if (eng == nullptr || cb == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    const omega::Pattern* p = eng->engine.pattern_library().get(pat);
+    if (p == nullptr)
+    {
+        return OMEGA_ERR_NOT_FOUND;
+    }
+    for (uint32_t i = 0; i < static_cast<uint32_t>(p->events.size()); ++i)
+    {
+        const auto& ev = p->events[i];
+        bool ch_match = (channel_filter == 0xFFu) || (ev.channel == channel_filter);
+        bool tag_match = (tag_filter == 0xFFu) || (ev.payload_tag == tag_filter);
+        if (ch_match && tag_match)
+        {
+            cb(i, &ev, userdata);
+        }
+    }
+    return OMEGA_OK;
+}
+
 omega_status_t omega_song_append(omega_engine_t* eng,
                                  omega_pattern_id_t pattern_id,
                                  uint32_t repeats)
