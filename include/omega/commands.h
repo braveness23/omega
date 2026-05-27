@@ -271,7 +271,6 @@ struct SetSinkMuteCmd
     uint32_t sink_id;
     uint8_t channel;  // 0-15 or 0xFF for all
     uint8_t muted;    // non-zero = mute
-    uint8_t _pad[2];  // NOLINT(readability-identifier-naming)
 };
 
 /*
@@ -292,7 +291,6 @@ struct SetSinkSoloCmd
     uint32_t sink_id;
     uint8_t channel;  // 0-15 or 0xFF for all
     uint8_t soloed;   // non-zero = solo
-    uint8_t _pad[2];  // NOLINT(readability-identifier-naming)
 };
 
 // ── Custom source commands ────────────────────────────────────────────────────

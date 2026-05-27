@@ -693,7 +693,8 @@ public:
         // Bit (note & 7) of active_notes[channel][note >> 3] is set while
         // a NOTE_ON has been dispatched and the matching NOTE_OFF has not yet
         // been dispatched. Used to flush note-offs when muting mid-note.
-        uint8_t active_notes[16][16]{};  // NOLINT(modernize-avoid-c-arrays)
+        uint8_t active_notes
+            [16][16]{};  // NOLINT(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
     };
 
 private:

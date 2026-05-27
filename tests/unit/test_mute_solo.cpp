@@ -30,11 +30,7 @@ struct Fixture
     CapturingSink sink;
     uint32_t sid{0};
 
-    Fixture()
-    {
-        sid = sink.sink_id();
-        engine.add_sink(&sink);
-    }
+    Fixture() : sid{sink.sink_id()} { engine.add_sink(&sink); }
 
     // Convenience: play one pattern on perf slot 0 and advance past the first tick.
     PatternId play_pattern_with_note(uint8_t note = 60,

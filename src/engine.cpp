@@ -179,7 +179,7 @@ omega_status_t Engine::sink_set_mute(uint32_t sink_id, uint8_t channel, bool mut
     {
         return OMEGA_ERR_INVALID;
     }
-    return enqueue(SetSinkMuteCmd{sink_id, channel, static_cast<uint8_t>(muted ? 1u : 0u), {}});
+    return enqueue(SetSinkMuteCmd{sink_id, channel, static_cast<uint8_t>(muted ? 1u : 0u)});
 }
 
 omega_status_t Engine::sink_set_solo(uint32_t sink_id, uint8_t channel, bool soloed)
@@ -188,7 +188,7 @@ omega_status_t Engine::sink_set_solo(uint32_t sink_id, uint8_t channel, bool sol
     {
         return OMEGA_ERR_INVALID;
     }
-    return enqueue(SetSinkSoloCmd{sink_id, channel, static_cast<uint8_t>(soloed ? 1u : 0u), {}});
+    return enqueue(SetSinkSoloCmd{sink_id, channel, static_cast<uint8_t>(soloed ? 1u : 0u)});
 }
 
 omega_status_t Engine::song_append(PatternId id, uint32_t repeat_count)
@@ -634,7 +634,7 @@ void Engine::flush_active_notes(SinkFilterState& f, uint16_t ch_mask) noexcept
     }
     for (uint8_t ch = 0; ch < 16u; ++ch)
     {
-        if (!(ch_mask & static_cast<uint16_t>(1u << ch)))
+        if ((ch_mask & static_cast<uint16_t>(1u << ch)) == 0u)
         {
             continue;
         }
@@ -643,9 +643,17 @@ void Engine::flush_active_notes(SinkFilterState& f, uint16_t ch_mask) noexcept
             uint8_t mask = f.active_notes[ch][byte_idx];
             while (mask != 0u)
             {
-                // Find the lowest set bit.
-                uint8_t bit = static_cast<uint8_t>(__builtin_ctz(static_cast<unsigned>(mask)));
-                uint8_t note = static_cast<uint8_t>(byte_idx * 8u + bit);
+                // Find the lowest set bit: count trailing zeros, portable C++17.
+                uint8_t bit = 0u;
+                {
+                    auto tmp = static_cast<unsigned>(mask);
+                    while ((tmp & 1u) == 0u)
+                    {
+                        tmp >>= 1u;
+                        ++bit;
+                    }
+                }
+                auto note = static_cast<uint8_t>(byte_idx * 8u + bit);
 
                 Event off{};
                 off.tick =
@@ -676,7 +684,7 @@ void Engine::apply(const SetSinkMuteCmd& cmd)
         {
             continue;
         }
-        if (cmd.muted)
+        if (cmd.muted != 0u)
         {
             // Transitioning from unmuted to muted: flush active notes first.
             uint16_t newly_muted = ch_mask & ~f.muted;
@@ -706,7 +714,7 @@ void Engine::apply(const SetSinkSoloCmd& cmd)
     {
         if (f.sink_id == cmd.sink_id)
         {
-            if (cmd.soloed)
+            if (cmd.soloed != 0u)
             {
                 f.soloed |= ch_mask;
             }
