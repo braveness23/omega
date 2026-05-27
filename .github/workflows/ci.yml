@@ -448,6 +448,7 @@ jobs:
           cmake -B build_cov \
             -DCMAKE_BUILD_TYPE=Debug \
             -DOMEGA_BUILD_TESTS=ON \
+            -DLIBREMIDI_NO_ALSA=ON \
             -DCMAKE_CXX_FLAGS="--coverage" \
             -DCMAKE_EXE_LINKER_FLAGS="--coverage" \
             -DFETCHCONTENT_BASE_DIR=${{ github.workspace }}/.cache/fetchcontent \
