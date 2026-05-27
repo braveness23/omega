@@ -25,8 +25,8 @@
 
 #include <omega/export.h>
 
+#include <cstddef>
 #include <cstdint>
-#include <stddef.h> /* size_t — compatible with both C and C++ */
 
 #ifdef __cplusplus
 extern "C" {
