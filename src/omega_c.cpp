@@ -1147,4 +1147,31 @@ omega_status_t omega_snap(const omega_engine_t* eng,
     return OMEGA_OK;
 }
 
+omega_status_t omega_loop_set(omega_engine_t* eng, omega_tick_t start, omega_tick_t end)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.loop_set(start, end);
+}
+
+omega_status_t omega_loop_clear(omega_engine_t* eng)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.loop_clear();
+}
+
+omega_status_t omega_loop_enable(omega_engine_t* eng, int enabled)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.loop_enable(enabled != 0);
+}
+
 }  // extern "C"
