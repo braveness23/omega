@@ -6,6 +6,7 @@
 #include <omega/types.h>
 
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <vector>
 
@@ -75,6 +76,14 @@ public:
     void set_velocity_scale(SlotId slot, uint8_t scale);
     void set_random_bias(SlotId slot, uint8_t bias);
 
+    /*
+     * Returns the current state of the given performance slot.
+     * Returns SlotState::EMPTY for out-of-range slot indices.
+     *
+     * Thread: Any thread (state is atomic).
+     */
+    [[nodiscard]] SlotState slot_state(uint32_t slot) const noexcept;
+
     void advance(uint64_t to_tick, EventDispatcher& dispatcher, ProcessContext& ctx) override;
     void on_locate(uint64_t tick, EventDispatcher& dispatcher, ProcessContext& ctx) override;
 
@@ -89,7 +98,7 @@ private:
 
     struct PerfSlot
     {
-        SlotState state{SlotState::EMPTY};
+        std::atomic<uint8_t> state{static_cast<uint8_t>(SlotState::EMPTY)};
         PatternId assigned{0};
         PatternId playing{0};
         PatternId pending{0};
@@ -100,6 +109,21 @@ private:
         uint8_t random_bias{0};
         uint32_t rng_state{0};
         std::vector<ActiveNote> active_notes;
+
+        void reset() noexcept
+        {
+            state.store(static_cast<uint8_t>(SlotState::EMPTY), std::memory_order_relaxed);
+            assigned = 0;
+            playing = 0;
+            pending = 0;
+            start_tick = 0;
+            transition_tick = 0;
+            transpose = 0;
+            velocity_scale = 100;
+            random_bias = 0;
+            rng_state = 0;
+            active_notes.clear();
+        }
     };
 
     void dispatch_slot_events(PerfSlot& slot,
