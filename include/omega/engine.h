@@ -97,6 +97,39 @@ public:
      */
     omega_status_t add_sink(OutputSink* sink);
 
+    /*
+     * Enqueues a command to mute or unmute a specific MIDI channel on a
+     * registered sink. channel 0–15 targets one channel; 0xFF targets all
+     * channels. When a channel transitions from unmuted to muted, active notes
+     * on that channel receive immediate note-off before future note-ons are
+     * suppressed. Safe during playback.
+     *
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_INVALID    — channel > 15 and channel != 0xFF.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t sink_set_mute(uint32_t sink_id, uint8_t channel, bool muted);
+
+    /*
+     * Enqueues a command to solo or un-solo a specific MIDI channel on a
+     * registered sink. channel 0–15 targets one channel; 0xFF targets all
+     * channels. While any channel is soloed, only soloed channels produce
+     * output; all others are effectively muted. Active notes on channels that
+     * become suppressed by a new solo receive immediate note-offs. Safe during
+     * playback.
+     *
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_INVALID    — channel > 15 and channel != 0xFF.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t sink_set_solo(uint32_t sink_id, uint8_t channel, bool soloed);
+
     /* ── Patterns ────────────────────────────────────────────────────────── */
 
     /*
@@ -639,6 +672,31 @@ public:
      */
     [[nodiscard]] omega_position_t position() const noexcept;
 
+    /*
+     * Mute/solo state for one registered sink.
+     * Maintained in sync with sinks_: one entry per sink, in the same order.
+     * Timing-thread-owned after the first process() call.
+     *
+     * This struct is public so that FilteringDispatcher (defined in engine.cpp)
+     * can reference it without a friend declaration. Do not use it directly;
+     * it is an engine implementation detail.
+     */
+    struct SinkFilterState
+    {
+        uint32_t sink_id{0};
+        OutputSink* ptr{nullptr};  // non-owning; used for direct note-off flush
+
+        uint16_t muted{0};   // bit N = MIDI channel N is muted
+        uint16_t soloed{0};  // bit N = MIDI channel N is soloed
+
+        // Active note bitmask: 128 bits per channel, packed as 16 bytes.
+        // Bit (note & 7) of active_notes[channel][note >> 3] is set while
+        // a NOTE_ON has been dispatched and the matching NOTE_OFF has not yet
+        // been dispatched. Used to flush note-offs when muting mid-note.
+        // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+        uint8_t active_notes[16][16]{};
+    };
+
 private:
     void apply(const AddEventCmd& cmd);
     void apply(const DeleteEventCmd& cmd);
@@ -672,6 +730,17 @@ private:
     void apply(const ClearTimeSigCmd& cmd);
     void apply(const SetSmpteConfigCmd& cmd);
     void apply(const ClearSmpteConfigCmd& cmd);
+    void apply(const SetSinkMuteCmd& cmd);
+    void apply(const SetSinkSoloCmd& cmd);
+
+    /*
+     * Flushes active notes for a given channel mask.
+     * ch_mask: bit N = flush channel N. Pass 0xFFFFu to flush all channels.
+     * Sends NOTE_OFF directly to f.ptr, which bypasses the FilteringDispatcher.
+     * Called from the timing thread during command application (before the
+     * per-cycle EventDispatcher is created).
+     */
+    void flush_active_notes(SinkFilterState& f, uint16_t ch_mask) noexcept;
 
     InternalClock internal_clock_;
     ClockSource* clock_;
@@ -679,6 +748,14 @@ private:
     PatternLibrary patterns_;
 
     EventDispatcher::SinkList sinks_;  // sorted by sink_id, non-owning
+
+    // Mute/solo state — one entry per registered sink, parallel to sinks_.
+    // Modified from timing thread only (via command queue or add_sink()).
+    std::vector<SinkFilterState> sink_filters_;
+
+    // True when any channel on any sink has its solo bit set.
+    // Timing-thread-owned; recomputed by apply(SetSinkSoloCmd).
+    bool any_soloed_{false};
 
     // timesig_map_ must be declared before perf_ — perf_ holds a const reference.
     TimeSignatureMap timesig_map_;

@@ -278,6 +278,52 @@ OMEGA_API omega_status_t omega_engine_add_sink(omega_engine_t* e, omega_sink_t* 
 OMEGA_API uint32_t omega_sink_id(const omega_sink_t* sink);
 
 /*
+ * Mutes or unmutes a specific MIDI channel on a registered sink.
+ *
+ * channel: 0–15 targets one MIDI channel; 0xFF targets all channels.
+ * muted:   non-zero = mute, 0 = unmute.
+ *
+ * When a channel transitions to muted, the engine sends immediate note-off
+ * for every active note on that channel before suppressing further note-ons.
+ * Safe during playback — enqueued through the SPSC command queue and applied
+ * at the start of the next process() cycle.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL, or channel > 15 and channel != 0xFF.
+ *   OMEGA_ERR_QUEUE_FULL — command queue is full.
+ */
+OMEGA_API omega_status_t omega_sink_set_mute(omega_engine_t* e,
+                                             uint32_t sink_id,
+                                             uint8_t channel,
+                                             int muted);
+
+/*
+ * Solos or un-solos a specific MIDI channel on a registered sink.
+ *
+ * channel: 0–15 targets one MIDI channel; 0xFF targets all channels.
+ * soloed:  non-zero = solo, 0 = un-solo.
+ *
+ * While any channel is soloed, only soloed (sink, channel) pairs produce
+ * output; all others are effectively muted. When the last solo is cleared,
+ * the explicit mute flags resume control. Active notes on channels that
+ * become newly suppressed receive immediate note-offs. Safe during playback.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL, or channel > 15 and channel != 0xFF.
+ *   OMEGA_ERR_QUEUE_FULL — command queue is full.
+ */
+OMEGA_API omega_status_t omega_sink_set_solo(omega_engine_t* e,
+                                             uint32_t sink_id,
+                                             uint8_t channel,
+                                             int soloed);
+
+/*
  * Creates a new empty track in the engine's built-in timeline.
  * Call before playback starts.
  *

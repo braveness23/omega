@@ -254,6 +254,45 @@ struct SetSmpteConfigCmd
 struct ClearSmpteConfigCmd
 {};
 
+// ── Sink mute / solo commands ─────────────────────────────────────────────────
+
+/*
+ * Sets the mute state for a specific channel on a registered sink.
+ * channel: 0–15 selects one MIDI channel; 0xFF applies to all channels.
+ * muted: non-zero = mute, 0 = unmute.
+ *
+ * When a channel transitions from unmuted to muted, the engine sends immediate
+ * note-off for every active note on that channel before suppressing further
+ * note-ons. Applied on the timing thread at the start of the next process()
+ * cycle; safe during playback.
+ */
+struct SetSinkMuteCmd
+{
+    uint32_t sink_id;
+    uint8_t channel;  // 0-15 or 0xFF for all
+    uint8_t muted;    // non-zero = mute
+};
+
+/*
+ * Sets the solo state for a specific channel on a registered sink.
+ * channel: 0–15 selects one MIDI channel; 0xFF applies to all channels.
+ * soloed: non-zero = solo, 0 = un-solo.
+ *
+ * When any channel is soloed, only soloed channels produce output; all other
+ * (sink, channel) pairs are effectively muted. When the last solo is cleared,
+ * the explicit mute flags resume normal control.
+ *
+ * When enabling solo, active notes on channels that become newly suppressed
+ * receive immediate note-offs. Applied on the timing thread at the start of
+ * the next process() cycle; safe during playback.
+ */
+struct SetSinkSoloCmd
+{
+    uint32_t sink_id;
+    uint8_t channel;  // 0-15 or 0xFF for all
+    uint8_t soloed;   // non-zero = solo
+};
+
 // ── Custom source commands ────────────────────────────────────────────────────
 
 /*
@@ -304,7 +343,9 @@ using Command = std::variant<AddEventCmd,
                              RemoveTimeSigCmd,
                              ClearTimeSigCmd,
                              SetSmpteConfigCmd,
-                             ClearSmpteConfigCmd>;
+                             ClearSmpteConfigCmd,
+                             SetSinkMuteCmd,
+                             SetSinkSoloCmd>;
 
 static_assert(sizeof(Command) <= 64, "Command must fit within 64 bytes");
 
