@@ -245,6 +245,43 @@ typedef enum
     OMEGA_SLOT_STOPPING = 4,
 } omega_slot_state_t;
 
+typedef enum
+{
+    OMEGA_EVENT_SLOT_STARTED = 0,
+    OMEGA_EVENT_SLOT_STOPPED = 1,
+    OMEGA_EVENT_LOOP_WRAPPED = 2,
+    OMEGA_EVENT_TRANSPORT_STOPPED = 3,
+} omega_engine_event_t;
+
+/*
+ * Callback for engine state-change notifications.
+ *
+ * event:    the type of state change.
+ * detail:   event-specific data:
+ *             SLOT_STARTED / SLOT_STOPPED: slot index (0 to OMEGA_SLOT_MAX-1).
+ *             LOOP_WRAPPED: new loop count (1-based).
+ *             TRANSPORT_STOPPED: always 0.
+ * userdata: pointer passed to omega_engine_set_event_callback().
+ *
+ * Constraint: fires from the timing thread. Must not block, allocate,
+ * or call back into the engine.
+ */
+typedef void (*omega_event_callback_t)(omega_engine_event_t event, uint32_t detail, void* userdata);
+
+/*
+ * Registers an event callback. Pass NULL for cb to clear the callback.
+ * Only one callback is supported; setting a new one replaces the previous.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK          — callback registered (or cleared).
+ *   OMEGA_ERR_INVALID — e is NULL.
+ */
+OMEGA_API omega_status_t omega_engine_set_event_callback(omega_engine_t* e,
+                                                         omega_event_callback_t cb,
+                                                         void* userdata);
+
 /*
  * Creates a new engine using the built-in real-time clock.
  *

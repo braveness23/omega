@@ -449,6 +449,7 @@ void Engine::apply(const TransportCmd& cmd)
         }
         case TransportAction::STOP:
             state_.store(static_cast<uint8_t>(TransportState::STOPPED), std::memory_order_release);
+            fire_event(OMEGA_EVENT_TRANSPORT_STOPPED, 0u);
             break;
         case TransportAction::LOCATE:
         {
@@ -768,6 +769,19 @@ void Engine::apply(const SetSinkSoloCmd& cmd)
 
 void Engine::process()
 {
+    // Snapshot slot states at the top of the cycle so we can detect transitions
+    // caused by both command application (e.g. IMMEDIATE cue) and advance().
+    auto cb_fn = event_cb_fn_.load(std::memory_order_acquire);
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+    uint8_t pre_states[PERF_MAX_SLOTS]{};
+    if (cb_fn != nullptr)
+    {
+        for (uint32_t i = 0; i < PERF_MAX_SLOTS; ++i)
+        {
+            pre_states[i] = static_cast<uint8_t>(perf_.slot_state(i));
+        }
+    }
+
     Command cmd;
     uint32_t drain_limit = queue_.size();
     while (drain_limit-- > 0 && queue_.pop(cmd))
@@ -946,6 +960,7 @@ void Engine::process()
     if (loop_enabled_ && loop_end_tick_ > loop_start_tick_ && to_tick >= loop_end_tick_)
     {
         ++loop_count_;
+        fire_event(OMEGA_EVENT_LOOP_WRAPPED, static_cast<uint32_t>(loop_count_));
 
         uint64_t loop_pos_ns = tempo_map_.ticks_to_ns(loop_start_tick_);
         session_start_ns_ = now - loop_pos_ns;
@@ -967,6 +982,30 @@ void Engine::process()
     timeline_.advance(to_tick, dispatcher, ctx);
     song_.advance(to_tick, dispatcher, ctx);
     perf_.advance(to_tick, dispatcher, ctx);
+
+    // Fire slot state-change callbacks by comparing pre/post states.
+    if (cb_fn != nullptr)
+    {
+        for (uint32_t i = 0; i < PERF_MAX_SLOTS; ++i)
+        {
+            auto post = static_cast<uint8_t>(perf_.slot_state(i));
+            if (pre_states[i] == post)
+            {
+                continue;
+            }
+            if (post == static_cast<uint8_t>(SlotState::PLAYING) &&
+                pre_states[i] != static_cast<uint8_t>(SlotState::PLAYING))
+            {
+                fire_event(OMEGA_EVENT_SLOT_STARTED, i);
+            }
+            else if (post == static_cast<uint8_t>(SlotState::IDLE) &&
+                     pre_states[i] != static_cast<uint8_t>(SlotState::IDLE) &&
+                     pre_states[i] != static_cast<uint8_t>(SlotState::EMPTY))
+            {
+                fire_event(OMEGA_EVENT_SLOT_STOPPED, i);
+            }
+        }
+    }
 
     for (auto& [sid, sink] : sinks_)
     {
@@ -1057,6 +1096,22 @@ bool Engine::sink_is_soloed(uint32_t sink_id, uint8_t channel) const noexcept
         }
     }
     return false;
+}
+
+void Engine::set_event_callback(void (*cb)(omega_engine_event_t, uint32_t, void*),
+                                void* userdata) noexcept
+{
+    event_cb_userdata_ = userdata;
+    event_cb_fn_.store(cb, std::memory_order_release);
+}
+
+void Engine::fire_event(omega_engine_event_t event, uint32_t detail) noexcept
+{
+    auto fn = event_cb_fn_.load(std::memory_order_acquire);
+    if (fn != nullptr)
+    {
+        fn(event, detail, event_cb_userdata_);
+    }
 }
 
 }  // namespace omega
