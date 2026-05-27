@@ -23,6 +23,7 @@ static void collect_cb(omega_engine_event_t event, uint32_t detail, void* userda
     out->push_back({event, detail});
 }
 
+// NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
 struct CbFixture
 {
     MockClock clock;
