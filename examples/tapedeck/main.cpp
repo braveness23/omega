@@ -109,30 +109,44 @@ static int read_input()
 {
     char c = 0;
     if (read(STDIN_FILENO, &c, 1) != 1)
+    {
         return KEY_NONE;
+    }
 
     if (c != '\x1b')
+    {
         return static_cast<unsigned char>(c);
+    }
 
     struct timeval tv = {0, 10000};
     fd_set fds;
     FD_ZERO(&fds);
     FD_SET(STDIN_FILENO, &fds);
     if (select(STDIN_FILENO + 1, &fds, nullptr, nullptr, &tv) <= 0)
+    {
         return '\x1b';
+    }
 
     char seq[4] = {};
     ssize_t nr = read(STDIN_FILENO, seq, sizeof(seq));
     if (nr >= 2 && seq[0] == '[')
     {
         if (seq[1] == 'A')
+        {
             return KEY_UP;
+        }
         if (seq[1] == 'B')
+        {
             return KEY_DOWN;
+        }
         if (seq[1] == 'C')
+        {
             return KEY_RIGHT;
+        }
         if (seq[1] == 'D')
+        {
             return KEY_LEFT;
+        }
     }
     return KEY_NONE;
 }
@@ -154,7 +168,9 @@ public:
             bool any_solo = any_soloed_.load(std::memory_order_relaxed);
             bool soloed = soloed_[e.channel].load(std::memory_order_relaxed);
             if (muted || (any_solo && !soloed))
+            {
                 return;
+            }
             last_on_[e.channel].store(now_ns(), std::memory_order_relaxed);
         }
         inner_.send(e);
@@ -165,7 +181,9 @@ public:
     void toggle_mute(uint8_t ch) noexcept
     {
         if (ch >= 16)
+        {
             return;
+        }
         bool prev = muted_[ch].load(std::memory_order_relaxed);
         muted_[ch].store(!prev, std::memory_order_relaxed);
     }
@@ -173,7 +191,9 @@ public:
     void toggle_solo(uint8_t ch) noexcept
     {
         if (ch >= 16)
+        {
             return;
+        }
         bool prev = soloed_[ch].load(std::memory_order_relaxed);
         soloed_[ch].store(!prev, std::memory_order_relaxed);
         bool any = false;
@@ -188,33 +208,39 @@ public:
         any_soloed_.store(any, std::memory_order_relaxed);
     }
 
-    bool is_muted(uint8_t ch) const noexcept
+    [[nodiscard]] bool is_muted(uint8_t ch) const noexcept
     {
         return ch < 16 && muted_[ch].load(std::memory_order_relaxed);
     }
 
-    bool is_soloed(uint8_t ch) const noexcept
+    [[nodiscard]] bool is_soloed(uint8_t ch) const noexcept
     {
         return ch < 16 && soloed_[ch].load(std::memory_order_relaxed);
     }
 
-    bool channel_active(uint8_t ch) const noexcept
+    [[nodiscard]] bool channel_active(uint8_t ch) const noexcept
     {
         if (ch >= 16)
+        {
             return false;
+        }
         uint64_t t = last_on_[ch].load(std::memory_order_relaxed);
         return t > 0 && (now_ns() - t) < ACTIVE_NS;
     }
 
-    bool any_active() const noexcept
+    [[nodiscard]] bool any_active() const noexcept
     {
         for (uint8_t ch = 0; ch < 16; ++ch)
+        {
             if (channel_active(ch))
+            {
                 return true;
+            }
+        }
         return false;
     }
 
-    bool port_open() const noexcept { return inner_.is_port_open(); }
+    [[nodiscard]] bool port_open() const noexcept { return inner_.is_port_open(); }
 
 private:
     static uint64_t now_ns() noexcept
@@ -273,8 +299,8 @@ static void populate_pattern(Engine& eng, PatternId pid, uint32_t sid)
     for (uint32_t b = 0; b < BARS; ++b)
     {
         uint64_t o = b * BAR;
-        uint32_t qn = static_cast<uint32_t>(BEAT - 40);
-        uint32_t en = static_cast<uint32_t>(E8 - 20);
+        auto qn = static_cast<uint32_t>(BEAT - 40);
+        auto en = static_cast<uint32_t>(E8 - 20);
 
         if (b % 2 == 0)
         {
@@ -297,7 +323,7 @@ static void populate_pattern(Engine& eng, PatternId pid, uint32_t sid)
     for (uint32_t b = 0; b < BARS; ++b)
     {
         uint64_t o = b * BAR;
-        uint32_t dur = static_cast<uint32_t>(BAR - 60);
+        auto dur = static_cast<uint32_t>(BAR - 60);
 
         if ((b / 2) % 2 == 0)
         {
@@ -360,27 +386,37 @@ static void format_pos(uint64_t tick, char* out, size_t out_size)
     uint64_t sub = tick % PPQN;
 
     if (sub == 0)
+    {
         snprintf(out, out_size, "%llu:%llu", (unsigned long long)bar, (unsigned long long)beat);
+    }
     else
+    {
         snprintf(out,
                  out_size,
                  "%llu:%llu.%llu",
                  (unsigned long long)bar,
                  (unsigned long long)beat,
                  (unsigned long long)sub);
+    }
 }
 
 // Count note-on events for a given MIDI channel in the pattern.
 static int count_channel_events(const Engine& engine, PatternId pat_id, uint32_t track)
 {
     const Pattern* pat = engine.pattern_library().get(pat_id);
-    if (!pat)
+    if (pat == nullptr)
+    {
         return 0;
+    }
     int n = 0;
     auto ch = static_cast<uint8_t>(track);
     for (const auto& e : pat->events)
+    {
         if (e.channel == ch && e.payload_tag == OMEGA_NOTE_ON)
+        {
             ++n;
+        }
+    }
     return n;
 }
 
@@ -395,7 +431,7 @@ static void draw_main(const Engine& eng,
     uint64_t pos_ns = eng.transport_position_ns();
     double pos_sec = static_cast<double>(pos_ns) / 1.0e9;
     double beats = pos_sec * BPM / 60.0;
-    double pat_len = static_cast<double>(BARS * BEATS_PER_BAR);
+    auto pat_len = static_cast<double>(BARS * BEATS_PER_BAR);
     double beat_in = fmod(beats, pat_len);
 
     auto bar = static_cast<uint32_t>(beat_in / BEATS_PER_BAR) + 1;
@@ -413,23 +449,51 @@ static void draw_main(const Engine& eng,
     char bar_ind[9];
     bar_ind[8] = '\0';
     for (uint32_t b = 0; b < BARS; ++b)
-        bar_ind[b] = (b < bar - 1) ? '#' : (b == bar - 1 ? '>' : '.');
+    {
+        if (b < bar - 1)
+        {
+            bar_ind[b] = '#';
+        }
+        else if (b == bar - 1)
+        {
+            bar_ind[b] = '>';
+        }
+        else
+        {
+            bar_ind[b] = '.';
+        }
+    }
 
     char prog[33];
     prog[32] = '\0';
     auto cur_beat = static_cast<int>((bar - 1) * BEATS_PER_BAR + (beat - 1));
     for (int i = 0; i < 32; ++i)
-        prog[i] = (i < cur_beat) ? '#' : (i == cur_beat ? '>' : '.');
+    {
+        if (i < cur_beat)
+        {
+            prog[i] = '#';
+        }
+        else if (i == cur_beat)
+        {
+            prog[i] = '>';
+        }
+        else
+        {
+            prog[i] = '.';
+        }
+    }
 
     bool midi_any = activity.any_active();
     bool midi_ok = activity.port_open();
     bool any_solo = false;
     for (uint32_t t = 0; t < NUM_TRACKS; ++t)
+    {
         if (activity.is_soloed(static_cast<uint8_t>(t)))
         {
             any_solo = true;
             break;
         }
+    }
 
     printf("\033[H");
     printf("=================================================================\n");
@@ -451,9 +515,12 @@ static void draw_main(const Engine& eng,
             (!silent && activity.channel_active(static_cast<uint8_t>(t))) ? "[*]" : "[ ]";
 
         if (selected)
+        {
             printf("\033[7m");
+        }
 
         if (TRACKS[t].has_content)
+        {
             printf("   %u   %-10s  [%s]    %u   %s  %s   %s",
                    t + 1,
                    TRACKS[t].name,
@@ -462,7 +529,9 @@ static void draw_main(const Engine& eng,
                    mstr,
                    sstr,
                    act);
+        }
         else
+        {
             printf("   %u   %-10s  [........]   %u   %s  %s   %s",
                    t + 1,
                    TRACKS[t].name,
@@ -470,9 +539,12 @@ static void draw_main(const Engine& eng,
                    mstr,
                    sstr,
                    act);
+        }
 
         if (selected)
+        {
             printf("\033[0m");
+        }
         printf("\n");
     }
 
@@ -505,10 +577,16 @@ static void draw_track_edit(const Engine& engine,
     auto ch = static_cast<uint8_t>(track);
 
     int total = 0;
-    if (pat)
+    if (pat != nullptr)
+    {
         for (const auto& e : pat->events)
+        {
             if (e.channel == ch && e.payload_tag == OMEGA_NOTE_ON)
+            {
                 ++total;
+            }
+        }
+    }
 
     int max_offset = std::max(0, total - EDIT_VISIBLE);
     int offset = std::min(scroll_offset, max_offset);
@@ -521,16 +599,18 @@ static void draw_track_edit(const Engine& engine,
            track + 1,
            activity.is_muted(ch) ? "[M]" : "[ ]",
            activity.is_soloed(ch) ? "[S]" : "[ ]");
-    printf("  Pattern: %-20s  Events: %d\n", pat ? pat->name.c_str() : "(none)", total);
+    printf("  Pattern: %-20s  Events: %d\n", pat != nullptr ? pat->name.c_str() : "(none)", total);
     printf("=================================================================\n");
     printf("    #    Tick     Position    Note     Vel   Dur (ticks)\n");
     printf("  ---   ------   ----------  ------   ---   -----------\n");
 
-    if (total == 0 || !pat)
+    if (total == 0 || pat == nullptr)
     {
         printf("  (no events on this channel)\n");
         for (int i = 1; i < EDIT_VISIBLE; ++i)
+        {
             printf("\n");
+        }
     }
     else
     {
@@ -539,15 +619,21 @@ static void draw_track_edit(const Engine& engine,
         for (const auto& e : pat->events)
         {
             if (e.channel != ch || e.payload_tag != OMEGA_NOTE_ON)
+            {
                 continue;
+            }
 
             bool selected = (event_num == event_cursor);
             ++event_num;
 
             if (event_num - 1 < offset)
+            {
                 continue;
+            }
             if (shown >= EDIT_VISIBLE)
+            {
                 break;
+            }
 
             uint32_t dur = 0;
             std::memcpy(&dur, e.data + 2, sizeof(dur));
@@ -559,7 +645,9 @@ static void draw_track_edit(const Engine& engine,
             format_pos(e.tick, pos_str, sizeof(pos_str));
 
             if (selected)
+            {
                 printf("\033[7m");
+            }
 
             printf("  %3d   %6llu   %-10s  %-6s   %3u   %u",
                    event_num,
@@ -570,14 +658,18 @@ static void draw_track_edit(const Engine& engine,
                    dur);
 
             if (selected)
+            {
                 printf("\033[0m");
+            }
 
             printf("\n");
             ++shown;
         }
 
         for (int i = shown; i < EDIT_VISIBLE; ++i)
+        {
             printf("\n");
+        }
     }
 
     int first = (total > 0) ? offset + 1 : 0;
@@ -727,7 +819,9 @@ int main()
             {
                 int len = static_cast<int>(std::strlen(name_buf));
                 if (len > 0)
+                {
                     name_buf[len - 1] = '\0';
+                }
             }
             else if (key >= 32 && key < 127)
             {
@@ -751,7 +845,7 @@ int main()
                 // Apply the edit. Transport is already stopped; timing thread
                 // is not advancing the pattern, so direct write is safe.
                 Pattern* ppat = engine.pattern_library().get(pat);
-                if (ppat && edit_raw_idx >= 0 &&
+                if (ppat != nullptr && edit_raw_idx >= 0 &&
                     edit_raw_idx < static_cast<int>(ppat->events.size()))
                 {
                     ppat->events[static_cast<size_t>(edit_raw_idx)] = edit_event;
@@ -766,9 +860,13 @@ int main()
             else if (key == KEY_LEFT)
             {
                 if (edit_field == 0 && edit_event.data[0] > 0)
+                {
                     edit_event.data[0]--;
+                }
                 else if (edit_field == 1 && edit_event.data[1] > 1)
+                {
                     edit_event.data[1]--;
+                }
                 else if (edit_field == 2)
                 {
                     uint32_t dur = 0;
@@ -783,9 +881,13 @@ int main()
             else if (key == KEY_RIGHT)
             {
                 if (edit_field == 0 && edit_event.data[0] < 127)
+                {
                     edit_event.data[0]++;
+                }
                 else if (edit_field == 1 && edit_event.data[1] < 127)
+                {
                     edit_event.data[1]++;
+                }
                 else if (edit_field == 2)
                 {
                     uint32_t dur = 0;
@@ -812,19 +914,23 @@ int main()
             else if (key == KEY_UP)
             {
                 if (event_cursor > 0)
+                {
                     event_cursor--;
+                }
             }
             else if (key == KEY_DOWN)
             {
                 int total = count_channel_events(engine, pat, selected_track);
                 if (event_cursor < total - 1)
+                {
                     event_cursor++;
+                }
             }
             else if (key == KEY_ENTER)
             {
                 // Find the raw vector index for the selected event.
                 const Pattern* ppat = engine.pattern_library().get(pat);
-                if (ppat)
+                if (ppat != nullptr)
                 {
                     auto ch = static_cast<uint8_t>(selected_track);
                     int count = 0;
@@ -858,9 +964,13 @@ int main()
 
             // Scroll to keep event_cursor visible.
             if (event_cursor < scroll_offset)
+            {
                 scroll_offset = event_cursor;
+            }
             else if (event_cursor >= scroll_offset + EDIT_VISIBLE)
+            {
                 scroll_offset = event_cursor - EDIT_VISIBLE + 1;
+            }
         }
         else  // Screen::MAIN
         {
