@@ -285,6 +285,7 @@ jobs:
           cmake -B build_tidy \
             -DCMAKE_BUILD_TYPE=Debug \
             -DOMEGA_BUILD_TESTS=ON \
+            -DOMEGA_BUILD_EXAMPLES=ON \
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
             -DFETCHCONTENT_BASE_DIR=${{ github.workspace }}/.cache/fetchcontent \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \

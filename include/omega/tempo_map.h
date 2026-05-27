@@ -34,6 +34,14 @@ public:
      */
     void insert(uint64_t tick, uint32_t bpm_milli);
 
+    /*
+     * Remove the tempo point at exactly tick.
+     * No-op if no point exists at tick, or if tick == 0
+     * (the origin point cannot be removed; use insert(0, bpm) to change it).
+     * Recomputes ns_at_tick for all subsequent points after removal.
+     */
+    void remove(uint64_t tick);
+
     /* Convert absolute ticks to nanoseconds from session start. */
     [[nodiscard]] uint64_t ticks_to_ns(uint64_t ticks) const;
 

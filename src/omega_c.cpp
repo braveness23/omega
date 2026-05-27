@@ -11,10 +11,12 @@
 #include <omega/sink.h>
 #include <omega/smpte_converter.h>
 #include <omega/snap.h>
+#include <omega/tempo_map.h>
 #include <omega/time_signature_map.h>
 #include <omega/timer.h>
 #include <omega/types.h>
 
+#include <algorithm>
 #include <new>
 #include <string>
 
@@ -155,6 +157,16 @@ omega_status_t omega_engine_add_sink(omega_engine_t* eng, omega_sink_t* sink)
     }
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     return eng->engine.add_sink(reinterpret_cast<omega::OutputSink*>(sink));
+}
+
+uint32_t omega_sink_id(const omega_sink_t* sink)
+{
+    if (sink == nullptr)
+    {
+        return 0u;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    return reinterpret_cast<const omega::OutputSink*>(sink)->sink_id();
 }
 
 omega_status_t omega_engine_add_track(omega_engine_t* eng,
@@ -646,6 +658,46 @@ void omega_ctx_mod_set_ctx(omega_process_context_t* ctx, omega_mod_channel_t cha
     {
         pctx->modulation_bus->set(channel, value);
     }
+}
+
+// ── Tempo map ─────────────────────────────────────────────────────────────────
+
+omega_status_t omega_tempo_set(omega_engine_t* eng, omega_tick_t tick, uint32_t bpm_milli)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.tempo_set(tick, bpm_milli);
+}
+
+omega_status_t omega_tempo_remove(omega_engine_t* eng, omega_tick_t tick)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.tempo_remove(tick);
+}
+
+omega_status_t omega_tempo_at(const omega_engine_t* eng, omega_tick_t tick, uint32_t* bpm_milli_out)
+{
+    if (eng == nullptr || bpm_milli_out == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    const auto& pts = eng->engine.tempo_map().points();
+    // Find the last point whose tick <= query tick (upper_bound trick).
+    auto it = std::upper_bound(
+        pts.begin(), pts.end(), tick, [](omega_tick_t t, const omega::TempoMap::TempoPoint& p) {
+            return t < p.tick;
+        });
+    if (it != pts.begin())
+    {
+        --it;
+    }
+    *bpm_milli_out = it->bpm_milli;
+    return OMEGA_OK;
 }
 
 // ── Time signature map ────────────────────────────────────────────────────────
