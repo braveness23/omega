@@ -605,6 +605,15 @@ public:
      */
     [[nodiscard]] uint64_t transport_position_ns() const;
 
+    /*
+     * Returns the current transport position in ticks from session start.
+     * Converts the stored nanosecond position through the TempoMap.
+     * Updated by process(); may return a stale value when read concurrently.
+     *
+     * Thread: Any thread.
+     */
+    [[nodiscard]] uint64_t transport_position_tick() const;
+
 private:
     void apply(const AddEventCmd& cmd);
     void apply(const DeleteEventCmd& cmd);

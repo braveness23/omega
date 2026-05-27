@@ -81,3 +81,57 @@ TEST_CASE("C API: transport state reflects play/stop cycle")
 
     omega_engine_destroy(e);
 }
+
+// ── omega_engine_position_tick (issue #26) ────────────────────────────────────
+
+TEST_CASE("C API: omega_engine_position_tick returns 0 before play")
+{
+    omega_engine_t* e = omega_engine_create();
+    REQUIRE(e != nullptr);
+    REQUIRE(omega_engine_position_tick(nullptr) == 0u);
+    REQUIRE(omega_engine_position_tick(e) == 0u);
+    omega_engine_destroy(e);
+}
+
+TEST_CASE("C API: omega_engine_position_tick advances while playing")
+{
+    omega_engine_t* e = omega_engine_create();
+    REQUIRE(e != nullptr);
+
+    REQUIRE(omega_engine_play(e) == OMEGA_OK);
+    omega_engine_process(e);
+
+    omega_tick_t t1 = omega_engine_position_tick(e);
+    // Sleep long enough to advance at least one tick at 120 BPM
+    // 120 BPM = 2 beats/s; 480 ticks/beat = 960 ticks/s => ~1ms per tick
+    struct timespec ts = {0, 50000000}; /* 50 ms */
+    nanosleep(&ts, nullptr);
+    omega_engine_process(e);
+    omega_tick_t t2 = omega_engine_position_tick(e);
+
+    REQUIRE(t2 > t1);
+
+    REQUIRE(omega_engine_stop(e) == OMEGA_OK);
+    omega_engine_process(e);
+    omega_engine_destroy(e);
+}
+
+TEST_CASE("C API: omega_engine_position_tick does not advance while stopped")
+{
+    omega_engine_t* e = omega_engine_create();
+    REQUIRE(e != nullptr);
+
+    omega_engine_process(e);
+    omega_tick_t t1 = omega_engine_position_tick(e);
+
+    struct timespec ts = {0, 10000000}; /* 10 ms */
+    nanosleep(&ts, nullptr);
+
+    omega_engine_process(e);
+    omega_tick_t t2 = omega_engine_position_tick(e);
+
+    REQUIRE(t1 == t2);
+    REQUIRE(t1 == 0u);
+
+    omega_engine_destroy(e);
+}

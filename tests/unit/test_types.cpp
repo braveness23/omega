@@ -73,3 +73,85 @@ TEST_CASE("omega_make_note_on reserved bytes are zero")
     REQUIRE(e.reserved[0] == 0u);
     REQUIRE(e.reserved[1] == 0u);
 }
+
+// ── Event field accessors (issue #29) ─────────────────────────────────────────
+
+TEST_CASE("omega_event_note_pitch reads data[0]")
+{
+    omega_event_t e = omega_make_note_on(0u, 0u, 0u, 72u, 100u, 0u);
+    REQUIRE(omega_event_note_pitch(&e) == 72u);
+}
+
+TEST_CASE("omega_event_note_velocity reads data[1]")
+{
+    omega_event_t e = omega_make_note_on(0u, 0u, 0u, 60u, 99u, 0u);
+    REQUIRE(omega_event_note_velocity(&e) == 99u);
+}
+
+TEST_CASE("omega_event_note_duration reads data[2-5]")
+{
+    omega_event_t e = omega_make_note_on(0u, 0u, 0u, 60u, 100u, 960u);
+    REQUIRE(omega_event_note_duration(&e) == 960u);
+}
+
+TEST_CASE("omega_event_set_pitch mutates pitch")
+{
+    omega_event_t e = omega_make_note_on(0u, 0u, 0u, 60u, 100u, 480u);
+    REQUIRE(omega_event_set_pitch(&e, 64u) == OMEGA_OK);
+    REQUIRE(omega_event_note_pitch(&e) == 64u);
+    // other fields unaffected
+    REQUIRE(omega_event_note_velocity(&e) == 100u);
+    REQUIRE(omega_event_note_duration(&e) == 480u);
+}
+
+TEST_CASE("omega_event_set_velocity mutates velocity")
+{
+    omega_event_t e = omega_make_note_on(0u, 0u, 0u, 60u, 100u, 480u);
+    REQUIRE(omega_event_set_velocity(&e, 127u) == OMEGA_OK);
+    REQUIRE(omega_event_note_velocity(&e) == 127u);
+    REQUIRE(omega_event_note_pitch(&e) == 60u);
+}
+
+TEST_CASE("omega_event_set_duration mutates duration")
+{
+    omega_event_t e = omega_make_note_on(0u, 0u, 0u, 60u, 100u, 480u);
+    REQUIRE(omega_event_set_duration(&e, 240u) == OMEGA_OK);
+    REQUIRE(omega_event_note_duration(&e) == 240u);
+    REQUIRE(omega_event_note_pitch(&e) == 60u);
+    REQUIRE(omega_event_note_velocity(&e) == 100u);
+}
+
+TEST_CASE("omega_event_set_pitch returns ERR_INVALID for NULL")
+{
+    REQUIRE(omega_event_set_pitch(nullptr, 60u) == OMEGA_ERR_INVALID);
+}
+
+TEST_CASE("omega_event_set_velocity returns ERR_INVALID for NULL")
+{
+    REQUIRE(omega_event_set_velocity(nullptr, 100u) == OMEGA_ERR_INVALID);
+}
+
+TEST_CASE("omega_event_set_duration returns ERR_INVALID for NULL")
+{
+    REQUIRE(omega_event_set_duration(nullptr, 480u) == OMEGA_ERR_INVALID);
+}
+
+TEST_CASE("omega_event_cc_number and omega_event_cc_value read CC fields")
+{
+    omega_event_t e = omega_make_cc(0u, 0u, 0u, 7u, 63u);
+    REQUIRE(omega_event_cc_number(&e) == 7u);
+    REQUIRE(omega_event_cc_value(&e) == 63u);
+}
+
+TEST_CASE("omega_event_set_pitch and omega_event_set_velocity work on NOTE_OFF events")
+{
+    // NOTE_OFF uses the same data[0]/data[1] layout
+    omega_event_t e{};
+    e.payload_tag = OMEGA_NOTE_OFF;
+    e.data[0] = 60u;
+    e.data[1] = 0u;
+    REQUIRE(omega_event_note_pitch(&e) == 60u);
+    REQUIRE(omega_event_note_velocity(&e) == 0u);
+    omega_event_set_pitch(&e, 62u);
+    REQUIRE(omega_event_note_pitch(&e) == 62u);
+}

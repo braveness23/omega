@@ -16,6 +16,7 @@ TEST_CASE("Engine initial state is STOPPED and position is 0")
     Engine e;
     REQUIRE(e.transport_state() == TransportState::STOPPED);
     REQUIRE(e.transport_position_ns() == 0u);
+    REQUIRE(e.transport_position_tick() == 0u);
 }
 
 TEST_CASE("Engine PLAY/STOP round-trip via command queue")
@@ -56,6 +57,35 @@ TEST_CASE("Engine position does not advance while stopped")
 
     REQUIRE(pos1 == pos2);
     REQUIRE(pos1 == 0u);
+}
+
+// ── transport_position_tick (issue #26) ───────────────────────────────────────
+
+TEST_CASE("Engine transport_position_tick advances while playing")
+{
+    Engine e;
+    REQUIRE(e.enqueue(TransportCmd{TransportAction::PLAY, 0u}) == OMEGA_OK);
+    e.process();
+
+    uint64_t tick1 = e.transport_position_tick();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    e.process();
+    uint64_t tick2 = e.transport_position_tick();
+
+    REQUIRE(tick2 > tick1);
+}
+
+TEST_CASE("Engine transport_position_tick does not advance while stopped")
+{
+    Engine e;
+    e.process();
+    uint64_t t1 = e.transport_position_tick();
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    e.process();
+    uint64_t t2 = e.transport_position_tick();
+
+    REQUIRE(t1 == t2);
+    REQUIRE(t1 == 0u);
 }
 
 TEST_CASE("Engine SetTempoCmd is applied on next process() call")
