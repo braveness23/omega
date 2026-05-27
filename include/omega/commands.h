@@ -37,6 +37,21 @@ struct SetTempoCmd
     uint32_t bpm_milli;
 };
 
+// ── Tempo map commands ────────────────────────────────────────────────────────
+
+/* Inserts or replaces a tempo point at tick. bpm_milli = BPM × 1000. */
+struct SetTempoPointCmd
+{
+    uint64_t tick;
+    uint32_t bpm_milli;
+};
+
+/* Removes the tempo point at tick (no-op if none exists there). */
+struct RemoveTempoPointCmd
+{
+    uint64_t tick;
+};
+
 /*
  * Configures the transport loop region.
  * enabled=false leaves the start/end range intact but deactivates looping.
@@ -243,6 +258,8 @@ struct RemoveSourceCmd
 using Command = std::variant<AddEventCmd,
                              DeleteEventCmd,
                              SetTempoCmd,
+                             SetTempoPointCmd,
+                             RemoveTempoPointCmd,
                              SetLoopCmd,
                              CuePatternCmd,
                              TransportCmd,

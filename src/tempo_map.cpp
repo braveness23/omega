@@ -53,6 +53,38 @@ void TempoMap::insert(uint64_t tick, uint32_t bpm_milli)
     }
 }
 
+void TempoMap::remove(uint64_t tick)
+{
+    // tick == 0 is the mandatory origin point; it cannot be removed.
+    if (tick == 0u)
+    {
+        return;
+    }
+
+    auto it =
+        std::lower_bound(points_.begin(), points_.end(), tick, [](const TempoPoint& p, uint64_t t) {
+            return p.tick < t;
+        });
+
+    if (it == points_.end() || it->tick != tick)
+    {
+        return;  // no-op: no point at this tick
+    }
+
+    it = points_.erase(it);
+
+    // Recompute ns_at_tick for all points that follow the removed one.
+    if (it != points_.end())
+    {
+        auto prev = std::prev(it);
+        for (; it != points_.end(); ++it, ++prev)
+        {
+            uint64_t elapsed = it->tick - prev->tick;
+            it->ns_at_tick = prev->ns_at_tick + segment_ticks_to_ns(elapsed, prev->bpm_milli);
+        }
+    }
+}
+
 uint64_t TempoMap::ticks_to_ns(uint64_t ticks) const
 {
     // Find the last TempoPoint whose tick <= ticks.

@@ -370,6 +370,32 @@ public:
      */
     omega_status_t remove_source(EventSource* source);
 
+    /* ── Tempo map ──────────────────────────────────────────────────────────── */
+
+    /*
+     * Insert or replace a tempo point at tick.
+     * bpm_milli = BPM × 1000 (e.g. 120 BPM = 120000). Zero is invalid.
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_INVALID    — bpm_milli is zero.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t tempo_set(uint64_t tick, uint32_t bpm_milli);
+
+    /*
+     * Remove the tempo point at exactly tick.
+     * The default point at tick 0 cannot be removed; a replacement is inserted
+     * at tick 0 with 120 BPM if tick == 0.
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t tempo_remove(uint64_t tick);
+
     /* ── Time signature map ─────────────────────────────────────────────────── */
 
     /*
@@ -583,6 +609,8 @@ private:
     void apply(const AddEventCmd& cmd);
     void apply(const DeleteEventCmd& cmd);
     void apply(const SetTempoCmd& cmd);
+    void apply(const SetTempoPointCmd& cmd);
+    void apply(const RemoveTempoPointCmd& cmd);
     void apply(const SetLoopCmd& cmd);
     void apply(const TransportCmd& cmd);
     void apply(const SongAppendCmd& cmd);

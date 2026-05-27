@@ -179,6 +179,20 @@ omega_status_t Engine::ctx_set_groove(uint8_t groove_id, float swing)
     return enqueue(SetCtxGrooveCmd{groove_id, swing});
 }
 
+omega_status_t Engine::tempo_set(uint64_t tick, uint32_t bpm_milli)
+{
+    if (bpm_milli == 0u)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return enqueue(SetTempoPointCmd{tick, bpm_milli});
+}
+
+omega_status_t Engine::tempo_remove(uint64_t tick)
+{
+    return enqueue(RemoveTempoPointCmd{tick});
+}
+
 omega_status_t Engine::timesig_set(uint64_t tick, uint8_t numerator, uint8_t denominator)
 {
     if (!is_valid_timesig_denominator(denominator) || numerator == 0u)
@@ -280,6 +294,16 @@ void Engine::apply(const SetTempoCmd& cmd)
     uint64_t pos = last_position_ns_.load(std::memory_order_relaxed);
     uint64_t tick = tempo_map_.ns_to_ticks(pos);
     tempo_map_.insert(tick, cmd.bpm_milli);
+}
+
+void Engine::apply(const SetTempoPointCmd& cmd)
+{
+    tempo_map_.insert(cmd.tick, cmd.bpm_milli);
+}
+
+void Engine::apply(const RemoveTempoPointCmd& cmd)
+{
+    tempo_map_.remove(cmd.tick);
 }
 
 void Engine::apply(const TransportCmd& cmd)
@@ -487,6 +511,14 @@ void Engine::process()
                     apply(c);
                 }
                 else if constexpr (std::is_same_v<T, SetTempoCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, SetTempoPointCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, RemoveTempoPointCmd>)
                 {
                     apply(c);
                 }

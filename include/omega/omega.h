@@ -214,6 +214,17 @@ OMEGA_API void omega_engine_destroy(omega_engine_t* e);
 OMEGA_API omega_status_t omega_engine_add_sink(omega_engine_t* e, omega_sink_t* sink);
 
 /*
+ * Returns the unique sink_id of sink. Use this value as the sink_id field in
+ * omega_make_note_on / omega_make_cc / omega_engine_set_track_sink to route
+ * events to this sink.
+ *
+ * Returns 0 if sink is NULL (0 is never a valid sink_id).
+ *
+ * Thread: Any thread.
+ */
+OMEGA_API uint32_t omega_sink_id(const omega_sink_t* sink);
+
+/*
  * Creates a new empty track in the engine's built-in timeline.
  * Call before playback starts.
  *
@@ -921,6 +932,53 @@ OMEGA_API float omega_ctx_mod_get_ctx(const omega_process_context_t* ctx,
 OMEGA_API void omega_ctx_mod_set_ctx(omega_process_context_t* ctx,
                                      omega_mod_channel_t channel,
                                      float value);
+
+/* ── Tempo map ────────────────────────────────────────────────────────────── */
+
+/*
+ * Insert or replace a tempo point at tick.
+ * bpm_milli is BPM × 1000 (e.g. 120 BPM = 120000). Zero is invalid.
+ *
+ * The change takes effect on the next process() call after the command drains.
+ * The default tempo (120 BPM at tick 0) is set at construction and can be
+ * overridden by calling omega_tempo_set(e, 0, new_bpm_milli).
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL, or bpm_milli is zero.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_tempo_set(omega_engine_t* e, omega_tick_t tick, uint32_t bpm_milli);
+
+/*
+ * Remove the tempo point at exactly tick.
+ * No-op if no point exists at that tick, or if tick == 0
+ * (the origin point cannot be removed; use omega_tempo_set(e, 0, bpm) instead).
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_tempo_remove(omega_engine_t* e, omega_tick_t tick);
+
+/*
+ * Query the BPM (as milli-BPM) in effect at the given tick.
+ * Returns the bpm_milli of the last tempo point whose tick <= the query tick.
+ *
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ *
+ * Returns:
+ *   OMEGA_OK          — *bpm_milli_out written.
+ *   OMEGA_ERR_INVALID — e or bpm_milli_out is NULL.
+ */
+OMEGA_API omega_status_t omega_tempo_at(const omega_engine_t* e,
+                                        omega_tick_t tick,
+                                        uint32_t* bpm_milli_out);
 
 /* ── Time signature map ───────────────────────────────────────────────────── */
 
