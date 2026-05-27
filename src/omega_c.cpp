@@ -246,6 +246,15 @@ uint64_t omega_engine_position_ns(const omega_engine_t* eng)
     return eng->engine.transport_position_ns();
 }
 
+omega_tick_t omega_engine_position_tick(const omega_engine_t* eng)
+{
+    if (eng == nullptr)
+    {
+        return 0u;
+    }
+    return eng->engine.transport_position_tick();
+}
+
 omega_pattern_id_t omega_pattern_create(omega_engine_t* eng,
                                         const char* name,
                                         omega_tick_t length_ticks)
@@ -287,6 +296,89 @@ omega_status_t omega_pattern_set_length(omega_engine_t* eng,
         return OMEGA_ERR_INVALID;
     }
     return eng->engine.pattern_set_length(id, length_ticks);
+}
+
+// ── Pattern read API ──────────────────────────────────────────────────────────
+
+omega_status_t omega_pattern_event_count(const omega_engine_t* eng,
+                                         omega_pattern_id_t pat,
+                                         uint32_t* count_out)
+{
+    if (eng == nullptr || count_out == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    const omega::Pattern* p = eng->engine.pattern_library().get(pat);
+    if (p == nullptr)
+    {
+        return OMEGA_ERR_NOT_FOUND;
+    }
+    *count_out = static_cast<uint32_t>(p->events.size());
+    return OMEGA_OK;
+}
+
+omega_status_t omega_pattern_event_at(const omega_engine_t* eng,
+                                      omega_pattern_id_t pat,
+                                      uint32_t idx,
+                                      omega_event_t* event_out)
+{
+    if (eng == nullptr || event_out == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    const omega::Pattern* p = eng->engine.pattern_library().get(pat);
+    if (p == nullptr || idx >= static_cast<uint32_t>(p->events.size()))
+    {
+        return OMEGA_ERR_NOT_FOUND;
+    }
+    *event_out = p->events[idx];
+    return OMEGA_OK;
+}
+
+omega_status_t omega_pattern_event_count_filtered(const omega_engine_t* eng,
+                                                  omega_pattern_id_t pat,
+                                                  uint8_t channel,
+                                                  uint8_t payload_tag,
+                                                  uint32_t* count_out)
+{
+    if (eng == nullptr || count_out == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    const omega::Pattern* p = eng->engine.pattern_library().get(pat);
+    if (p == nullptr)
+    {
+        return OMEGA_ERR_NOT_FOUND;
+    }
+    uint32_t n = 0;
+    for (const auto& ev : p->events)
+    {
+        bool ch_match = (channel == 0xFFu) || (ev.channel == channel);
+        bool tag_match = (payload_tag == 0xFFu) || (ev.payload_tag == payload_tag);
+        if (ch_match && tag_match)
+        {
+            ++n;
+        }
+    }
+    *count_out = n;
+    return OMEGA_OK;
+}
+
+omega_status_t omega_pattern_length(const omega_engine_t* eng,
+                                    omega_pattern_id_t pat,
+                                    omega_tick_t* length_out)
+{
+    if (eng == nullptr || length_out == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    const omega::Pattern* p = eng->engine.pattern_library().get(pat);
+    if (p == nullptr)
+    {
+        return OMEGA_ERR_NOT_FOUND;
+    }
+    *length_out = p->length_ticks;
+    return OMEGA_OK;
 }
 
 omega_status_t omega_song_append(omega_engine_t* eng,

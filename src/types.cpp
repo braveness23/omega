@@ -87,4 +87,63 @@ omega_event_t omega_make_program(uint64_t tick, uint32_t sink_id, uint8_t channe
     return e;
 }
 
+// ── Event field accessors ─────────────────────────────────────────────────────
+
+uint8_t omega_event_note_pitch(const omega_event_t* e)
+{
+    return e->data[0];
+}
+
+uint8_t omega_event_note_velocity(const omega_event_t* e)
+{
+    return e->data[1];
+}
+
+uint32_t omega_event_note_duration(const omega_event_t* e)
+{
+    uint32_t dur = 0;
+    memcpy(&dur, &e->data[2], sizeof(dur));
+    return dur;
+}
+
+omega_status_t omega_event_set_pitch(omega_event_t* e, uint8_t pitch)
+{
+    if (e == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    e->data[0] = pitch;
+    return OMEGA_OK;
+}
+
+omega_status_t omega_event_set_velocity(omega_event_t* e, uint8_t vel)
+{
+    if (e == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    e->data[1] = vel;
+    return OMEGA_OK;
+}
+
+omega_status_t omega_event_set_duration(omega_event_t* e, uint32_t dur)
+{
+    if (e == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    memcpy(&e->data[2], &dur, sizeof(dur));
+    return OMEGA_OK;
+}
+
+uint8_t omega_event_cc_number(const omega_event_t* e)
+{
+    return e->data[0];
+}
+
+uint8_t omega_event_cc_value(const omega_event_t* e)
+{
+    return e->data[1];
+}
+
 }  // extern "C"

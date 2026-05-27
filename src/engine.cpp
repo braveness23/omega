@@ -698,4 +698,9 @@ uint64_t Engine::transport_position_ns() const
     return last_position_ns_.load(std::memory_order_relaxed);
 }
 
+uint64_t Engine::transport_position_tick() const
+{
+    return tempo_map_.ns_to_ticks(last_position_ns_.load(std::memory_order_relaxed));
+}
+
 }  // namespace omega

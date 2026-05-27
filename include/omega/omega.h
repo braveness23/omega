@@ -147,6 +147,58 @@ OMEGA_API omega_event_t omega_make_program(uint64_t tick,
                                            uint8_t channel,
                                            uint8_t program);
 
+/* ── Event field accessors ────────────────────────────────────────────────── */
+
+/*
+ * Accessors for OMEGA_NOTE_ON / OMEGA_NOTE_OFF events.
+ * Behaviour is undefined if the event's payload_tag is not NOTE_ON or NOTE_OFF.
+ *
+ * Thread: Any thread.
+ */
+OMEGA_API uint8_t omega_event_note_pitch(const omega_event_t* e);
+OMEGA_API uint8_t omega_event_note_velocity(const omega_event_t* e);
+
+/*
+ * Returns the inline duration in ticks for an OMEGA_NOTE_ON event.
+ * Behaviour is undefined if payload_tag != OMEGA_NOTE_ON.
+ *
+ * Thread: Any thread.
+ */
+OMEGA_API uint32_t omega_event_note_duration(const omega_event_t* e);
+
+/*
+ * Mutators for OMEGA_NOTE_ON / OMEGA_NOTE_OFF events.
+ *
+ * Thread: Any thread.
+ *
+ * Returns:
+ *   OMEGA_OK          — field updated.
+ *   OMEGA_ERR_INVALID — e is NULL.
+ */
+OMEGA_API omega_status_t omega_event_set_pitch(omega_event_t* e, uint8_t pitch);
+OMEGA_API omega_status_t omega_event_set_velocity(omega_event_t* e, uint8_t vel);
+
+/*
+ * Sets the inline duration for an OMEGA_NOTE_ON event.
+ * Behaviour is undefined if payload_tag != OMEGA_NOTE_ON.
+ *
+ * Thread: Any thread.
+ *
+ * Returns:
+ *   OMEGA_OK          — field updated.
+ *   OMEGA_ERR_INVALID — e is NULL.
+ */
+OMEGA_API omega_status_t omega_event_set_duration(omega_event_t* e, uint32_t dur);
+
+/*
+ * Accessors for OMEGA_CC events.
+ * Behaviour is undefined if payload_tag != OMEGA_CC.
+ *
+ * Thread: Any thread.
+ */
+OMEGA_API uint8_t omega_event_cc_number(const omega_event_t* e);
+OMEGA_API uint8_t omega_event_cc_value(const omega_event_t* e);
+
 /* ── Engine ───────────────────────────────────────────────────────────────── */
 
 typedef struct omega_engine_s omega_engine_t;
@@ -315,6 +367,20 @@ OMEGA_API omega_transport_state_t omega_engine_transport_state(const omega_engin
  */
 OMEGA_API uint64_t omega_engine_position_ns(const omega_engine_t* e);
 
+/*
+ * Returns the current transport position in ticks from session start.
+ * Converts the stored nanosecond position through the TempoMap, so the
+ * result correctly handles tempo automation. Equivalent to calling
+ * omega_engine_position_ns() and doing the conversion manually, but
+ * without floating-point arithmetic and without assuming constant tempo.
+ * Updated by process(); may return a stale value when read concurrently.
+ *
+ * Thread: Any thread.
+ *
+ * Returns: tick position; 0 if e is NULL.
+ */
+OMEGA_API omega_tick_t omega_engine_position_tick(const omega_engine_t* e);
+
 /* ── Patterns ─────────────────────────────────────────────────────────────── */
 
 /*
@@ -370,6 +436,68 @@ OMEGA_API omega_status_t omega_pattern_add_event(omega_engine_t* e,
 OMEGA_API omega_status_t omega_pattern_set_length(omega_engine_t* e,
                                                   omega_pattern_id_t id,
                                                   omega_tick_t length_ticks);
+
+/* ── Pattern read API ─────────────────────────────────────────────────────── */
+
+/*
+ * Returns the total number of events in the pattern via *count_out.
+ *
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ *
+ * Returns:
+ *   OMEGA_OK            — *count_out written.
+ *   OMEGA_ERR_INVALID   — e or count_out is NULL.
+ *   OMEGA_ERR_NOT_FOUND — pat is not a valid pattern ID.
+ */
+OMEGA_API omega_status_t omega_pattern_event_count(const omega_engine_t* e,
+                                                   omega_pattern_id_t pat,
+                                                   uint32_t* count_out);
+
+/*
+ * Copies the event at zero-based index idx into *event_out.
+ *
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ *
+ * Returns:
+ *   OMEGA_OK            — *event_out written.
+ *   OMEGA_ERR_INVALID   — e or event_out is NULL.
+ *   OMEGA_ERR_NOT_FOUND — pat is not a valid pattern ID, or idx >= event count.
+ */
+OMEGA_API omega_status_t omega_pattern_event_at(const omega_engine_t* e,
+                                                omega_pattern_id_t pat,
+                                                uint32_t idx,
+                                                omega_event_t* event_out);
+
+/*
+ * Counts events matching channel and payload_tag, writing the result to
+ * *count_out. Pass 0xFF for channel or payload_tag to match any value.
+ *
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ *
+ * Returns:
+ *   OMEGA_OK            — *count_out written.
+ *   OMEGA_ERR_INVALID   — e or count_out is NULL.
+ *   OMEGA_ERR_NOT_FOUND — pat is not a valid pattern ID.
+ */
+OMEGA_API omega_status_t omega_pattern_event_count_filtered(const omega_engine_t* e,
+                                                            omega_pattern_id_t pat,
+                                                            uint8_t channel,
+                                                            uint8_t payload_tag,
+                                                            uint32_t* count_out);
+
+/*
+ * Returns the length of the pattern in ticks via *length_out.
+ *
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ *
+ * Returns:
+ *   OMEGA_OK            — *length_out written.
+ *   OMEGA_ERR_INVALID   — e or length_out is NULL.
+ *   OMEGA_ERR_NOT_FOUND — pat is not a valid pattern ID.
+ */
+OMEGA_API omega_status_t omega_pattern_length(const omega_engine_t* e,
+                                              omega_pattern_id_t pat,
+                                              omega_tick_t* length_out);
 
 /* ── Song arrangement ─────────────────────────────────────────────────────── */
 
