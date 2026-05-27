@@ -30,6 +30,7 @@ add_executable(omega_tests
     unit/test_replace_event.cpp
     unit/test_mute_solo.cpp
     unit/test_query_boundary.cpp
+    unit/test_event_callback.cpp
 )
 
 target_link_libraries(omega_tests
@@ -59,6 +60,7 @@ add_executable(omega_integration_tests
     integration/test_c_api_utils.cpp
     integration/test_c_api_query.cpp
     integration/test_c_api_for_each.cpp
+    integration/test_c_api_callbacks.cpp
 )
 
 target_link_libraries(omega_integration_tests

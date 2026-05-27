@@ -149,6 +149,18 @@ void omega_engine_destroy(omega_engine_t* eng)
     delete eng;  // NOLINT(cppcoreguidelines-owning-memory)
 }
 
+omega_status_t omega_engine_set_event_callback(omega_engine_t* eng,
+                                               omega_event_callback_t cb,
+                                               void* userdata)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    eng->engine.set_event_callback(cb, userdata);
+    return OMEGA_OK;
+}
+
 omega_status_t omega_engine_add_sink(omega_engine_t* eng, omega_sink_t* sink)
 {
     if (eng == nullptr || sink == nullptr)

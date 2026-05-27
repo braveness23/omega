@@ -690,6 +690,16 @@ public:
     [[nodiscard]] bool sink_is_muted(uint32_t sink_id, uint8_t channel) const noexcept;
 
     /*
+     * Registers an event callback that fires from the timing thread on
+     * state transitions (slot started/stopped, loop wrapped, transport stopped).
+     * Pass nullptr for cb to clear the callback.
+     *
+     * Thread: Mutation thread only.
+     */
+    void set_event_callback(void (*cb)(omega_engine_event_t, uint32_t, void*),
+                            void* userdata) noexcept;
+
+    /*
      * Returns true if the given MIDI channel on the specified sink is soloed.
      * Returns false for unregistered sink_id or channel > 15.
      *
@@ -790,6 +800,7 @@ private:
      * per-cycle EventDispatcher is created).
      */
     void flush_active_notes(SinkFilterState& f, uint16_t ch_mask) noexcept;
+    void fire_event(omega_engine_event_t event, uint32_t detail) noexcept;
 
     InternalClock internal_clock_;
     ClockSource* clock_;
@@ -861,6 +872,10 @@ private:
     std::atomic<uint32_t> snap_sub_{0};
     std::atomic<uint64_t> snap_loop_count_{0};
     std::atomic<uint64_t> snap_tick_{0};
+
+    using EventCallbackFn = void (*)(omega_engine_event_t, uint32_t, void*);
+    std::atomic<EventCallbackFn> event_cb_fn_{nullptr};
+    void* event_cb_userdata_{nullptr};
 };
 
 }  // namespace omega
