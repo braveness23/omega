@@ -10,6 +10,9 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **`omega_midi_note_name()`** (`omega.h`): converts a MIDI pitch byte (0–127) to a human-readable note name string ("C4", "F#3", "A-1", etc.) using sharp names and the MIDI octave convention (middle C = C4). Thread-safe. 6 new integration tests. Closes #33.
+- **`omega_format_position()`** (`omega.h`): formats a tick position as a "bar:beat.subdivision" string (e.g. "3:2.120") using the engine's `TimeSignatureMap` via `MeterCursor`. Returns `OMEGA_ERR_NO_METER` in freeform mode. 6 new integration tests. Closes #33.
+- **Sink-before-pattern ordering** (`omega.h`): documented the `sink_id` ordering constraint explicitly in the `omega_pattern_add_event()` and `omega_sink_create_midi_out()` docstrings — callers must create and register sinks before building patterns that reference their IDs. Closes #32.
 - **Event field accessors** (`omega.h`): symmetric read/write accessors for the `omega_event_t` payload fields — `omega_event_note_pitch()`, `omega_event_note_velocity()`, `omega_event_note_duration()`, `omega_event_set_pitch()`, `omega_event_set_velocity()`, `omega_event_set_duration()`, `omega_event_cc_number()`, `omega_event_cc_value()` — eliminates the need to know the private `data[]` byte layout. 10 new unit tests. Closes #29.
 - **Pattern read API** (`omega.h`): `omega_pattern_event_count()`, `omega_pattern_event_at()`, `omega_pattern_event_count_filtered()`, `omega_pattern_length()` — allows C callers to inspect pattern contents without accessing the C++ layer. 12 new integration tests. Closes #28.
 - **`omega_engine_position_tick()`** (`omega.h`): returns the current transport position in ticks, converting via the TempoMap (handles tempo automation correctly; no floating-point). 2 new unit tests, 3 new integration tests. Closes #26.
