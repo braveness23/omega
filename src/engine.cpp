@@ -754,7 +754,7 @@ void Engine::apply(const SetSinkSoloCmd& cmd)
         {
             if (f.sink_id == cmd.sink_id)
             {
-                uint16_t newly_suppressed =
+                auto newly_suppressed =
                     static_cast<uint16_t>(ch_mask & ~f.soloed.load(std::memory_order_relaxed));
                 if (newly_suppressed != 0u)
                 {

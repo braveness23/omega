@@ -722,12 +722,14 @@ public:
         uint8_t active_notes[16][16]{};
 
         SinkFilterState() = default;
+        ~SinkFilterState() = default;
         SinkFilterState(SinkFilterState&& o) noexcept
             : sink_id{o.sink_id},
               ptr{o.ptr},
               muted{o.muted.load(std::memory_order_relaxed)},
               soloed{o.soloed.load(std::memory_order_relaxed)}
         {
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
             std::memcpy(active_notes, o.active_notes, sizeof(active_notes));
         }
         SinkFilterState& operator=(SinkFilterState&& o) noexcept
@@ -736,6 +738,7 @@ public:
             ptr = o.ptr;
             muted.store(o.muted.load(std::memory_order_relaxed), std::memory_order_relaxed);
             soloed.store(o.soloed.load(std::memory_order_relaxed), std::memory_order_relaxed);
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
             std::memcpy(active_notes, o.active_notes, sizeof(active_notes));
             return *this;
         }
