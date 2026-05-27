@@ -236,6 +236,15 @@ typedef enum
     OMEGA_TRANSPORT_PLAYING = 1,
 } omega_transport_state_t;
 
+typedef enum
+{
+    OMEGA_SLOT_EMPTY = 0,
+    OMEGA_SLOT_IDLE = 1,
+    OMEGA_SLOT_QUEUED = 2,
+    OMEGA_SLOT_PLAYING = 3,
+    OMEGA_SLOT_STOPPING = 4,
+} omega_slot_state_t;
+
 /*
  * Creates a new engine using the built-in real-time clock.
  *
@@ -750,6 +759,32 @@ OMEGA_API omega_status_t omega_perf_set_velocity_scale(omega_engine_t* e,
 OMEGA_API omega_status_t omega_perf_set_random_bias(omega_engine_t* e,
                                                     omega_slot_id_t slot,
                                                     uint8_t bias);
+
+/* ── Query boundary ──────────────────────────────────────────────────────── */
+
+/*
+ * Returns the current state of the given performance slot.
+ * Returns OMEGA_SLOT_EMPTY for NULL engine or out-of-range slot.
+ *
+ * Thread: Any thread.
+ */
+OMEGA_API omega_slot_state_t omega_perf_slot_state(const omega_engine_t* e, omega_slot_id_t slot);
+
+/*
+ * Returns non-zero if the given MIDI channel on the specified sink is muted.
+ * Returns 0 for NULL engine, unregistered sink_id, or channel > 15.
+ *
+ * Thread: Any thread.
+ */
+OMEGA_API int omega_sink_is_muted(const omega_engine_t* e, uint32_t sink_id, uint8_t channel);
+
+/*
+ * Returns non-zero if the given MIDI channel on the specified sink is soloed.
+ * Returns 0 for NULL engine, unregistered sink_id, or channel > 15.
+ *
+ * Thread: Any thread.
+ */
+OMEGA_API int omega_sink_is_soloed(const omega_engine_t* e, uint32_t sink_id, uint8_t channel);
 
 /* ── Inputs ───────────────────────────────────────────────────────────────── */
 

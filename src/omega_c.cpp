@@ -517,6 +517,36 @@ omega_status_t omega_perf_set_random_bias(omega_engine_t* eng, omega_slot_id_t s
     return eng->engine.perf_set_random_bias(slot, bias);
 }
 
+// ── Query boundary ──────────────────────────────────────────────────────────
+
+omega_slot_state_t omega_perf_slot_state(const omega_engine_t* eng, omega_slot_id_t slot)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_SLOT_EMPTY;
+    }
+    auto s = eng->engine.perf_slot_state(slot);
+    return static_cast<omega_slot_state_t>(s);
+}
+
+int omega_sink_is_muted(const omega_engine_t* eng, uint32_t sink_id, uint8_t channel)
+{
+    if (eng == nullptr)
+    {
+        return 0;
+    }
+    return eng->engine.sink_is_muted(sink_id, channel) ? 1 : 0;
+}
+
+int omega_sink_is_soloed(const omega_engine_t* eng, uint32_t sink_id, uint8_t channel)
+{
+    if (eng == nullptr)
+    {
+        return 0;
+    }
+    return eng->engine.sink_is_soloed(sink_id, channel) ? 1 : 0;
+}
+
 omega_input_t* omega_input_create(const omega_input_desc_t* desc)
 {
     if (desc == nullptr || desc->poll_fn == nullptr)

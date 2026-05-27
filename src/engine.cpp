@@ -37,12 +37,11 @@ public:
             auto ch_bit = static_cast<uint16_t>(1u << (event.channel & 0x0Fu));
             if (any_soloed_)
             {
-                // Solo-exclusive mode: only soloed (sink, channel) pairs pass.
-                suppressed = (f->soloed & ch_bit) == 0;
+                suppressed = (f->soloed.load(std::memory_order_relaxed) & ch_bit) == 0;
             }
             else
             {
-                suppressed = (f->muted & ch_bit) != 0;
+                suppressed = (f->muted.load(std::memory_order_relaxed) & ch_bit) != 0;
             }
         }
 
@@ -116,7 +115,7 @@ omega_status_t Engine::add_sink(OutputSink* sink)
     SinkFilterState f{};
     f.sink_id = sid;
     f.ptr = sink;
-    sink_filters_.insert(sink_filters_.begin() + offset, f);
+    sink_filters_.insert(sink_filters_.begin() + offset, std::move(f));
 
     return OMEGA_OK;
 }
@@ -464,7 +463,8 @@ void Engine::apply(const TransportCmd& cmd)
             ctx.input_bus = &input_bus_;
             ctx.modulation_bus = &mod_bus_;
             ctx.perf_ctx = perf_ctx_;
-            FilteringDispatcher dispatcher{sinks_, sink_filters_, any_soloed_};
+            FilteringDispatcher dispatcher{
+                sinks_, sink_filters_, any_soloed_.load(std::memory_order_relaxed)};
             timeline_.on_locate(cmd.locate_tick, dispatcher, ctx);
             song_.on_locate(cmd.locate_tick, dispatcher, ctx);
             perf_.on_locate(cmd.locate_tick, dispatcher, ctx);
@@ -674,7 +674,6 @@ void Engine::flush_active_notes(SinkFilterState& f, uint16_t ch_mask) noexcept
 
 void Engine::apply(const SetSinkMuteCmd& cmd)
 {
-    // Build channel bitmask.
     uint16_t ch_mask =
         (cmd.channel == 0xFFu) ? 0xFFFFu : static_cast<uint16_t>(1u << (cmd.channel & 0x0Fu));
 
@@ -684,23 +683,22 @@ void Engine::apply(const SetSinkMuteCmd& cmd)
         {
             continue;
         }
+        uint16_t cur = f.muted.load(std::memory_order_relaxed);
         if (cmd.muted != 0u)
         {
-            // Transitioning from unmuted to muted: flush active notes first.
-            uint16_t newly_muted = ch_mask & ~f.muted;
+            uint16_t newly_muted = ch_mask & static_cast<uint16_t>(~cur);
             if (newly_muted != 0u)
             {
                 flush_active_notes(f, newly_muted);
             }
-            f.muted |= ch_mask;
+            f.muted.store(static_cast<uint16_t>(cur | ch_mask), std::memory_order_relaxed);
         }
         else
         {
-            f.muted &= ~ch_mask;
+            f.muted.store(static_cast<uint16_t>(cur & ~ch_mask), std::memory_order_relaxed);
         }
         return;
     }
-    // Unknown sink_id: silently ignored.
 }
 
 void Engine::apply(const SetSinkSoloCmd& cmd)
@@ -708,58 +706,56 @@ void Engine::apply(const SetSinkSoloCmd& cmd)
     uint16_t ch_mask =
         (cmd.channel == 0xFFu) ? 0xFFFFu : static_cast<uint16_t>(1u << (cmd.channel & 0x0Fu));
 
-    bool was_any_soloed = any_soloed_;
+    bool was_any_soloed = any_soloed_.load(std::memory_order_relaxed);
 
     for (auto& f : sink_filters_)
     {
         if (f.sink_id == cmd.sink_id)
         {
+            uint16_t cur = f.soloed.load(std::memory_order_relaxed);
             if (cmd.soloed != 0u)
             {
-                f.soloed |= ch_mask;
+                f.soloed.store(static_cast<uint16_t>(cur | ch_mask), std::memory_order_relaxed);
             }
             else
             {
-                f.soloed &= ~ch_mask;
+                f.soloed.store(static_cast<uint16_t>(cur & ~ch_mask), std::memory_order_relaxed);
             }
             break;
         }
     }
 
-    // Recompute any_soloed_.
-    any_soloed_ = false;
+    any_soloed_.store(false, std::memory_order_relaxed);
     for (const auto& f : sink_filters_)
     {
-        if (f.soloed != 0u)
+        if (f.soloed.load(std::memory_order_relaxed) != 0u)
         {
-            any_soloed_ = true;
+            any_soloed_.store(true, std::memory_order_relaxed);
             break;
         }
     }
 
-    // When solo mode engages (any_soloed_ transitions false → true), flush
-    // active notes on all channels that are now suppressed.
-    if (!was_any_soloed && any_soloed_)
+    bool is_any_soloed = any_soloed_.load(std::memory_order_relaxed);
+    if (!was_any_soloed && is_any_soloed)
     {
         for (auto& f : sink_filters_)
         {
-            // Channels NOT in the solo set are newly suppressed.
-            uint16_t suppress = static_cast<uint16_t>(~f.soloed) & 0xFFFFu;
+            auto suppress =
+                static_cast<uint16_t>(~f.soloed.load(std::memory_order_relaxed) & 0xFFFFu);
             if (suppress != 0u)
             {
                 flush_active_notes(f, suppress);
             }
         }
     }
-    else if (was_any_soloed && any_soloed_ && cmd.soloed == 0u)
+    else if (was_any_soloed && is_any_soloed && cmd.soloed == 0u)
     {
-        // A solo was REMOVED while other solos remain: the now-unsoloed
-        // channels become suppressed.  Flush their active notes.
         for (auto& f : sink_filters_)
         {
             if (f.sink_id == cmd.sink_id)
             {
-                uint16_t newly_suppressed = ch_mask & ~f.soloed;
+                uint16_t newly_suppressed =
+                    static_cast<uint16_t>(ch_mask & ~f.soloed.load(std::memory_order_relaxed));
                 if (newly_suppressed != 0u)
                 {
                     flush_active_notes(f, newly_suppressed);
@@ -942,7 +938,8 @@ void Engine::process()
     ctx.modulation_bus = &mod_bus_;
     ctx.perf_ctx = perf_ctx_;
 
-    FilteringDispatcher dispatcher{sinks_, sink_filters_, any_soloed_};
+    FilteringDispatcher dispatcher{
+        sinks_, sink_filters_, any_soloed_.load(std::memory_order_relaxed)};
 
     // Loop detection: when the transport has reached or passed loop_end_tick_,
     // locate all sources back to loop_start_tick_ and resume from there.
@@ -1021,6 +1018,45 @@ omega_position_t Engine::position() const noexcept
     out.subdivision = snap_sub_.load(std::memory_order_relaxed);
     out.loop_count = snap_loop_count_.load(std::memory_order_relaxed);
     return out;
+}
+
+SlotState Engine::perf_slot_state(uint32_t slot) const noexcept
+{
+    return perf_.slot_state(slot);
+}
+
+bool Engine::sink_is_muted(uint32_t sink_id, uint8_t channel) const noexcept
+{
+    if (channel > 15u)
+    {
+        return false;
+    }
+    for (const auto& f : sink_filters_)
+    {
+        if (f.sink_id == sink_id)
+        {
+            return (f.muted.load(std::memory_order_relaxed) &
+                    static_cast<uint16_t>(1u << channel)) != 0u;
+        }
+    }
+    return false;
+}
+
+bool Engine::sink_is_soloed(uint32_t sink_id, uint8_t channel) const noexcept
+{
+    if (channel > 15u)
+    {
+        return false;
+    }
+    for (const auto& f : sink_filters_)
+    {
+        if (f.sink_id == sink_id)
+        {
+            return (f.soloed.load(std::memory_order_relaxed) &
+                    static_cast<uint16_t>(1u << channel)) != 0u;
+        }
+    }
+    return false;
 }
 
 }  // namespace omega

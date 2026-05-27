@@ -29,6 +29,7 @@ add_executable(omega_tests
     unit/test_position_snapshot.cpp
     unit/test_replace_event.cpp
     unit/test_mute_solo.cpp
+    unit/test_query_boundary.cpp
 )
 
 target_link_libraries(omega_tests
@@ -56,6 +57,7 @@ add_executable(omega_integration_tests
     integration/test_c_api_markers.cpp
     integration/test_c_api_tempo.cpp
     integration/test_c_api_utils.cpp
+    integration/test_c_api_query.cpp
 )
 
 target_link_libraries(omega_integration_tests

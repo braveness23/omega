@@ -23,6 +23,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <cstring>
 #include <memory_resource>
 #include <optional>
 #include <string>
@@ -673,6 +674,30 @@ public:
     [[nodiscard]] omega_position_t position() const noexcept;
 
     /*
+     * Returns the current state of the given performance slot.
+     * Returns SlotState::EMPTY for out-of-range slot indices.
+     *
+     * Thread: Any thread.
+     */
+    [[nodiscard]] SlotState perf_slot_state(uint32_t slot) const noexcept;
+
+    /*
+     * Returns true if the given MIDI channel on the specified sink is muted.
+     * Returns false for unregistered sink_id or channel > 15.
+     *
+     * Thread: Any thread.
+     */
+    [[nodiscard]] bool sink_is_muted(uint32_t sink_id, uint8_t channel) const noexcept;
+
+    /*
+     * Returns true if the given MIDI channel on the specified sink is soloed.
+     * Returns false for unregistered sink_id or channel > 15.
+     *
+     * Thread: Any thread.
+     */
+    [[nodiscard]] bool sink_is_soloed(uint32_t sink_id, uint8_t channel) const noexcept;
+
+    /*
      * Mute/solo state for one registered sink.
      * Maintained in sync with sinks_: one entry per sink, in the same order.
      * Timing-thread-owned after the first process() call.
@@ -686,8 +711,8 @@ public:
         uint32_t sink_id{0};
         OutputSink* ptr{nullptr};  // non-owning; used for direct note-off flush
 
-        uint16_t muted{0};   // bit N = MIDI channel N is muted
-        uint16_t soloed{0};  // bit N = MIDI channel N is soloed
+        std::atomic<uint16_t> muted{0};   // bit N = MIDI channel N is muted
+        std::atomic<uint16_t> soloed{0};  // bit N = MIDI channel N is soloed
 
         // Active note bitmask: 128 bits per channel, packed as 16 bytes.
         // Bit (note & 7) of active_notes[channel][note >> 3] is set while
@@ -695,6 +720,27 @@ public:
         // been dispatched. Used to flush note-offs when muting mid-note.
         // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
         uint8_t active_notes[16][16]{};
+
+        SinkFilterState() = default;
+        SinkFilterState(SinkFilterState&& o) noexcept
+            : sink_id{o.sink_id},
+              ptr{o.ptr},
+              muted{o.muted.load(std::memory_order_relaxed)},
+              soloed{o.soloed.load(std::memory_order_relaxed)}
+        {
+            std::memcpy(active_notes, o.active_notes, sizeof(active_notes));
+        }
+        SinkFilterState& operator=(SinkFilterState&& o) noexcept
+        {
+            sink_id = o.sink_id;
+            ptr = o.ptr;
+            muted.store(o.muted.load(std::memory_order_relaxed), std::memory_order_relaxed);
+            soloed.store(o.soloed.load(std::memory_order_relaxed), std::memory_order_relaxed);
+            std::memcpy(active_notes, o.active_notes, sizeof(active_notes));
+            return *this;
+        }
+        SinkFilterState(const SinkFilterState&) = delete;
+        SinkFilterState& operator=(const SinkFilterState&) = delete;
     };
 
 private:
@@ -755,7 +801,7 @@ private:
 
     // True when any channel on any sink has its solo bit set.
     // Timing-thread-owned; recomputed by apply(SetSinkSoloCmd).
-    bool any_soloed_{false};
+    std::atomic<bool> any_soloed_{false};
 
     // timesig_map_ must be declared before perf_ — perf_ holds a const reference.
     TimeSignatureMap timesig_map_;

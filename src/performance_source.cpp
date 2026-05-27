@@ -49,14 +49,15 @@ void PerformanceSource::assign(SlotId slot_id, PatternId pattern)
 
     if (pattern == 0u)
     {
-        slot = PerfSlot{};
+        slot.reset();
         return;
     }
 
-    switch (slot.state)
+    auto cur = static_cast<SlotState>(slot.state.load(std::memory_order_relaxed));
+    switch (cur)
     {
         case SlotState::EMPTY:
-            slot.state = SlotState::IDLE;
+            slot.state.store(static_cast<uint8_t>(SlotState::IDLE), std::memory_order_relaxed);
             slot.assigned = pattern;
             break;
         case SlotState::IDLE:
@@ -131,21 +132,24 @@ void PerformanceSource::cue(SlotId slot_id, CueMode mode, uint64_t current_tick)
         slot.playing = slot.assigned;
         slot.start_tick = next_tick_;
         slot.pending = 0u;
-        slot.state = SlotState::PLAYING;
+        slot.state.store(static_cast<uint8_t>(SlotState::PLAYING), std::memory_order_relaxed);
         return;
     }
+
+    auto cur = static_cast<SlotState>(slot.state.load(std::memory_order_relaxed));
 
     if (mode == CueMode::NEXT_BAR)
     {
         uint64_t bar_tick = next_bar_boundary(current_tick, len);
-        switch (slot.state)
+        switch (cur)
         {
             case SlotState::EMPTY:
                 break;
             case SlotState::IDLE:
                 slot.pending = slot.assigned;
                 slot.transition_tick = bar_tick;
-                slot.state = SlotState::QUEUED;
+                slot.state.store(static_cast<uint8_t>(SlotState::QUEUED),
+                                 std::memory_order_relaxed);
                 break;
             case SlotState::QUEUED:
                 slot.pending = slot.assigned;
@@ -153,18 +157,10 @@ void PerformanceSource::cue(SlotId slot_id, CueMode mode, uint64_t current_tick)
                 break;
             case SlotState::PLAYING:
             {
-                if (slot.assigned == slot.playing)
-                {
-                    slot.pending = 0u;
-                    slot.transition_tick = bar_tick;
-                    slot.state = SlotState::STOPPING;
-                }
-                else
-                {
-                    slot.pending = slot.assigned;
-                    slot.transition_tick = bar_tick;
-                    slot.state = SlotState::STOPPING;
-                }
+                slot.pending = (slot.assigned == slot.playing) ? 0u : slot.assigned;
+                slot.transition_tick = bar_tick;
+                slot.state.store(static_cast<uint8_t>(SlotState::STOPPING),
+                                 std::memory_order_relaxed);
                 break;
             }
             case SlotState::STOPPING:
@@ -175,7 +171,7 @@ void PerformanceSource::cue(SlotId slot_id, CueMode mode, uint64_t current_tick)
     }
 
     // CueMode::NEXT_BEAT — queue at next loop boundary
-    switch (slot.state)
+    switch (cur)
     {
         case SlotState::EMPTY:
             break;
@@ -183,7 +179,7 @@ void PerformanceSource::cue(SlotId slot_id, CueMode mode, uint64_t current_tick)
         {
             slot.pending = slot.assigned;
             slot.transition_tick = global_boundary(current_tick, len);
-            slot.state = SlotState::QUEUED;
+            slot.state.store(static_cast<uint8_t>(SlotState::QUEUED), std::memory_order_relaxed);
             break;
         }
         case SlotState::QUEUED:
@@ -195,24 +191,14 @@ void PerformanceSource::cue(SlotId slot_id, CueMode mode, uint64_t current_tick)
         case SlotState::PLAYING:
         {
             uint64_t boundary = next_loop_boundary(slot, current_tick);
-            if (slot.assigned == slot.playing)
-            {
-                slot.pending = 0u;
-                slot.transition_tick = boundary;
-                slot.state = SlotState::STOPPING;
-            }
-            else
-            {
-                slot.pending = slot.assigned;
-                slot.transition_tick = boundary;
-                slot.state = SlotState::STOPPING;
-            }
+            slot.pending = (slot.assigned == slot.playing) ? 0u : slot.assigned;
+            slot.transition_tick = boundary;
+            slot.state.store(static_cast<uint8_t>(SlotState::STOPPING), std::memory_order_relaxed);
             break;
         }
         case SlotState::STOPPING:
         {
             slot.pending = slot.assigned;
-            // transition_tick stays: current loop boundary for the playing pattern
             break;
         }
     }
@@ -226,14 +212,17 @@ void PerformanceSource::stop(SlotId slot_id, CueMode mode, uint64_t current_tick
     }
     PerfSlot& slot = slots_[slot_id];
 
+    auto cur = static_cast<SlotState>(slot.state.load(std::memory_order_relaxed));
+
     if (mode == CueMode::IMMEDIATE)
     {
-        switch (slot.state)
+        switch (cur)
         {
             case SlotState::PLAYING:
                 slot.pending = 0u;
                 slot.transition_tick = next_tick_;
-                slot.state = SlotState::STOPPING;
+                slot.state.store(static_cast<uint8_t>(SlotState::STOPPING),
+                                 std::memory_order_relaxed);
                 break;
             case SlotState::STOPPING:
                 slot.pending = 0u;
@@ -242,7 +231,7 @@ void PerformanceSource::stop(SlotId slot_id, CueMode mode, uint64_t current_tick
             case SlotState::QUEUED:
                 slot.active_notes.clear();
                 slot.pending = 0u;
-                slot.state = SlotState::IDLE;
+                slot.state.store(static_cast<uint8_t>(SlotState::IDLE), std::memory_order_relaxed);
                 break;
             default:
                 break;
@@ -251,20 +240,20 @@ void PerformanceSource::stop(SlotId slot_id, CueMode mode, uint64_t current_tick
     }
 
     // CueMode::NEXT_BEAT — silence at next loop boundary
-    switch (slot.state)
+    switch (cur)
     {
         case SlotState::PLAYING:
         {
             uint64_t boundary = next_loop_boundary(slot, current_tick);
             slot.pending = 0u;
             slot.transition_tick = boundary;
-            slot.state = SlotState::STOPPING;
+            slot.state.store(static_cast<uint8_t>(SlotState::STOPPING), std::memory_order_relaxed);
             break;
         }
         case SlotState::QUEUED:
             slot.active_notes.clear();
             slot.pending = 0u;
-            slot.state = SlotState::IDLE;
+            slot.state.store(static_cast<uint8_t>(SlotState::IDLE), std::memory_order_relaxed);
             break;
         default:
             break;
@@ -489,7 +478,8 @@ void PerformanceSource::advance(uint64_t to_tick,
 
     for (auto& slot : slots_)
     {
-        switch (slot.state)
+        auto cur = static_cast<SlotState>(slot.state.load(std::memory_order_relaxed));
+        switch (cur)
         {
             case SlotState::QUEUED:
                 if (slot.transition_tick <= to_tick)
@@ -497,7 +487,8 @@ void PerformanceSource::advance(uint64_t to_tick,
                     slot.playing = slot.pending;
                     slot.start_tick = slot.transition_tick;
                     slot.pending = 0u;
-                    slot.state = SlotState::PLAYING;
+                    slot.state.store(static_cast<uint8_t>(SlotState::PLAYING),
+                                     std::memory_order_relaxed);
                     dispatch_slot_events(slot, slot.start_tick, to_tick, dispatcher);
                     fire_note_offs(slot, to_tick, dispatcher);
                 }
@@ -524,14 +515,16 @@ void PerformanceSource::advance(uint64_t to_tick,
                         slot.playing = slot.pending;
                         slot.start_tick = slot.transition_tick;
                         slot.pending = 0u;
-                        slot.state = SlotState::PLAYING;
+                        slot.state.store(static_cast<uint8_t>(SlotState::PLAYING),
+                                         std::memory_order_relaxed);
                         dispatch_slot_events(slot, slot.start_tick, to_tick, dispatcher);
                         fire_note_offs(slot, to_tick, dispatcher);
                     }
                     else
                     {
                         slot.playing = 0u;
-                        slot.state = SlotState::IDLE;
+                        slot.state.store(static_cast<uint8_t>(SlotState::IDLE),
+                                         std::memory_order_relaxed);
                     }
                 }
                 else
@@ -559,7 +552,8 @@ void PerformanceSource::on_locate(uint64_t tick,
     {
         slot.active_notes.clear();
 
-        switch (slot.state)
+        auto cur = static_cast<SlotState>(slot.state.load(std::memory_order_relaxed));
+        switch (cur)
         {
             case SlotState::QUEUED:
                 if (slot.transition_tick <= tick)
@@ -567,7 +561,8 @@ void PerformanceSource::on_locate(uint64_t tick,
                     slot.playing = slot.pending;
                     slot.start_tick = slot.transition_tick;
                     slot.pending = 0u;
-                    slot.state = SlotState::PLAYING;
+                    slot.state.store(static_cast<uint8_t>(SlotState::PLAYING),
+                                     std::memory_order_relaxed);
                 }
                 break;
             case SlotState::STOPPING:
@@ -578,12 +573,14 @@ void PerformanceSource::on_locate(uint64_t tick,
                         slot.playing = slot.pending;
                         slot.start_tick = slot.transition_tick;
                         slot.pending = 0u;
-                        slot.state = SlotState::PLAYING;
+                        slot.state.store(static_cast<uint8_t>(SlotState::PLAYING),
+                                         std::memory_order_relaxed);
                     }
                     else
                     {
                         slot.playing = 0u;
-                        slot.state = SlotState::IDLE;
+                        slot.state.store(static_cast<uint8_t>(SlotState::IDLE),
+                                         std::memory_order_relaxed);
                     }
                 }
                 break;
@@ -593,6 +590,15 @@ void PerformanceSource::on_locate(uint64_t tick,
     }
 
     next_tick_ = tick;
+}
+
+SlotState PerformanceSource::slot_state(uint32_t slot) const noexcept
+{
+    if (slot >= PERF_MAX_SLOTS)
+    {
+        return SlotState::EMPTY;
+    }
+    return static_cast<SlotState>(slots_[slot].state.load(std::memory_order_relaxed));
 }
 
 }  // namespace omega
