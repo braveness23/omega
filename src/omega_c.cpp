@@ -308,6 +308,18 @@ omega_status_t omega_pattern_set_length(omega_engine_t* eng,
     return eng->engine.pattern_set_length(id, length_ticks);
 }
 
+omega_status_t omega_pattern_replace_event(omega_engine_t* eng,
+                                           omega_pattern_id_t pat,
+                                           uint32_t event_index,
+                                           const omega_event_t* replacement)
+{
+    if (eng == nullptr || replacement == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.pattern_replace_event(pat, event_index, *replacement);
+}
+
 // ── Pattern read API ──────────────────────────────────────────────────────────
 
 omega_status_t omega_pattern_event_count(const omega_engine_t* eng,

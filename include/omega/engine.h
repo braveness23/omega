@@ -132,6 +132,21 @@ public:
     omega_status_t pattern_set_length(PatternId id, uint64_t length_ticks);
 
     /*
+     * Enqueues a command to replace the event at event_index (0-based) in the
+     * given pattern with replacement. If the replacement tick differs from the
+     * original, the event vector is re-sorted. Safe during playback.
+     *
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t pattern_replace_event(PatternId id,
+                                         uint32_t event_index,
+                                         const Event& replacement);
+
+    /*
      * Returns a non-owning reference to the pattern library.
      * Thread: Mutation thread for writes; Timing thread for reads.
      */
@@ -627,6 +642,7 @@ public:
 private:
     void apply(const AddEventCmd& cmd);
     void apply(const DeleteEventCmd& cmd);
+    void apply(const ReplaceEventCmd& cmd);
     void apply(const SetTempoCmd& cmd);
     void apply(const SetTempoPointCmd& cmd);
     void apply(const RemoveTempoPointCmd& cmd);

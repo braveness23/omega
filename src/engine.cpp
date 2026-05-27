@@ -56,6 +56,13 @@ omega_status_t Engine::pattern_set_length(PatternId id, uint64_t length_ticks)
     return patterns_.set_length(id, length_ticks);
 }
 
+omega_status_t Engine::pattern_replace_event(PatternId id,
+                                             uint32_t event_index,
+                                             const Event& replacement)
+{
+    return enqueue(ReplaceEventCmd{id, event_index, replacement});
+}
+
 omega_status_t Engine::add_track_event(TrackId track_id, const Event& event)
 {
     return timeline_.add_event(track_id, event);
@@ -280,6 +287,20 @@ void Engine::apply(const AddEventCmd& cmd)
 void Engine::apply(const DeleteEventCmd& cmd)
 {
     timeline_.remove_event(cmd.track, cmd.tick, cmd.index);
+}
+
+void Engine::apply(const ReplaceEventCmd& cmd)
+{
+    Pattern* p = patterns_.get(cmd.pattern_id);
+    if (p == nullptr || cmd.event_index >= static_cast<uint32_t>(p->events.size()))
+    {
+        return;
+    }
+    p->events[cmd.event_index] = cmd.replacement;
+    // Re-sort only if the tick changed (otherwise the order is already valid).
+    std::stable_sort(p->events.begin(), p->events.end(), [](const Event& a, const Event& b) {
+        return a.tick < b.tick;
+    });
 }
 
 void Engine::apply(const SetLoopCmd& cmd)
@@ -514,6 +535,10 @@ void Engine::process()
                     apply(c);
                 }
                 else if constexpr (std::is_same_v<T, DeleteEventCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, ReplaceEventCmd>)
                 {
                     apply(c);
                 }

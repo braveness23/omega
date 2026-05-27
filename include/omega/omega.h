@@ -483,6 +483,28 @@ OMEGA_API omega_status_t omega_pattern_set_length(omega_engine_t* e,
                                                   omega_pattern_id_t id,
                                                   omega_tick_t length_ticks);
 
+/*
+ * Replaces the event at zero-based index event_index in the pattern with
+ * replacement. If the replacement tick differs from the original, the event
+ * vector is re-sorted. Safe during playback — enqueued through the SPSC
+ * command queue and applied at the start of the next process() cycle.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e or replacement is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — command queue is full.
+ *
+ * Note: OMEGA_ERR_NOT_FOUND (invalid pattern or index out of bounds) is
+ * detected on the timing thread when the command is applied; the function
+ * itself returns OMEGA_OK as long as the command was enqueued successfully.
+ */
+OMEGA_API omega_status_t omega_pattern_replace_event(omega_engine_t* e,
+                                                     omega_pattern_id_t pat,
+                                                     uint32_t event_index,
+                                                     const omega_event_t* replacement);
+
 /* ── Pattern read API ─────────────────────────────────────────────────────── */
 
 /*

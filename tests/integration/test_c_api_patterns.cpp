@@ -297,3 +297,108 @@ TEST_CASE("C API: omega_pattern_length null guards")
 
     omega_engine_destroy(e);
 }
+
+// ── omega_pattern_replace_event (issue #30) ───────────────────────────────────
+
+TEST_CASE("C API: omega_pattern_replace_event null guards")
+{
+    omega_engine_t* e = omega_engine_create();
+    REQUIRE(e != nullptr);
+    omega_pattern_id_t id = omega_pattern_create(e, "p", 960u);
+    omega_event_t ev = omega_make_note_on(0u, 1u, 0, 60, 100, 0);
+
+    REQUIRE(omega_pattern_replace_event(nullptr, id, 0u, &ev) == OMEGA_ERR_INVALID);
+    REQUIRE(omega_pattern_replace_event(e, id, 0u, nullptr) == OMEGA_ERR_INVALID);
+
+    omega_engine_destroy(e);
+}
+
+TEST_CASE("C API: omega_pattern_replace_event returns OMEGA_OK when enqueued")
+{
+    omega_engine_t* e = omega_engine_create();
+    REQUIRE(e != nullptr);
+
+    omega_pattern_id_t id = omega_pattern_create(e, "p", 960u);
+    omega_event_t ev = omega_make_note_on(0u, 1u, 0, 60, 100, 480u);
+    REQUIRE(omega_pattern_add_event(e, id, &ev) == OMEGA_OK);
+
+    omega_event_t repl = omega_make_note_on(0u, 1u, 0, 62, 90, 480u);
+    REQUIRE(omega_pattern_replace_event(e, id, 0u, &repl) == OMEGA_OK);
+
+    omega_engine_destroy(e);
+}
+
+TEST_CASE("C API: omega_pattern_replace_event replaces event on next process")
+{
+    omega_engine_t* e = omega_engine_create();
+    REQUIRE(e != nullptr);
+
+    omega_pattern_id_t id = omega_pattern_create(e, "p", 960u);
+    omega_event_t ev = omega_make_note_on(0u, 1u, 0, 60, 100, 480u);
+    REQUIRE(omega_pattern_add_event(e, id, &ev) == OMEGA_OK);
+
+    // Replace C4 with D4.
+    omega_event_t repl = omega_make_note_on(0u, 1u, 0, 62, 90, 480u);
+    REQUIRE(omega_pattern_replace_event(e, id, 0u, &repl) == OMEGA_OK);
+
+    // process() drains the queue even in stopped state.
+    omega_engine_process(e);
+
+    omega_event_t out{};
+    REQUIRE(omega_pattern_event_at(e, id, 0u, &out) == OMEGA_OK);
+    REQUIRE(omega_event_note_pitch(&out) == 62u);
+    REQUIRE(omega_event_note_velocity(&out) == 90u);
+
+    omega_engine_destroy(e);
+}
+
+TEST_CASE("C API: omega_pattern_replace_event with out-of-bounds index is silent no-op")
+{
+    omega_engine_t* e = omega_engine_create();
+    REQUIRE(e != nullptr);
+
+    omega_pattern_id_t id = omega_pattern_create(e, "p", 960u);
+    omega_event_t ev = omega_make_note_on(0u, 1u, 0, 60, 100, 480u);
+    REQUIRE(omega_pattern_add_event(e, id, &ev) == OMEGA_OK);
+
+    omega_event_t repl = omega_make_note_on(0u, 1u, 0, 62, 90, 480u);
+    REQUIRE(omega_pattern_replace_event(e, id, 99u, &repl) == OMEGA_OK);  // way out of bounds
+    omega_engine_process(e);
+
+    // Original event must be unchanged.
+    omega_event_t out{};
+    REQUIRE(omega_pattern_event_at(e, id, 0u, &out) == OMEGA_OK);
+    REQUIRE(omega_event_note_pitch(&out) == 60u);
+
+    omega_engine_destroy(e);
+}
+
+TEST_CASE("C API: omega_pattern_replace_event reorders events when tick changes")
+{
+    omega_engine_t* e = omega_engine_create();
+    REQUIRE(e != nullptr);
+
+    omega_pattern_id_t id = omega_pattern_create(e, "p", 1920u);
+    // C4 at tick 0, E4 at tick 480
+    omega_event_t ev0 = omega_make_note_on(0u, 1u, 0, 60, 100, 240u);
+    omega_event_t ev1 = omega_make_note_on(480u, 1u, 0, 64, 100, 240u);
+    REQUIRE(omega_pattern_add_event(e, id, &ev0) == OMEGA_OK);
+    REQUIRE(omega_pattern_add_event(e, id, &ev1) == OMEGA_OK);
+
+    // Replace index 0 (C4@0) with G4@960 — tick moves past E4@480
+    omega_event_t repl = omega_make_note_on(960u, 1u, 0, 67, 80, 240u);
+    REQUIRE(omega_pattern_replace_event(e, id, 0u, &repl) == OMEGA_OK);
+    omega_engine_process(e);
+
+    // After re-sort: index 0 = E4@480, index 1 = G4@960
+    omega_event_t out0{};
+    omega_event_t out1{};
+    REQUIRE(omega_pattern_event_at(e, id, 0u, &out0) == OMEGA_OK);
+    REQUIRE(omega_pattern_event_at(e, id, 1u, &out1) == OMEGA_OK);
+    REQUIRE(omega_event_note_pitch(&out0) == 64u);  // E4
+    REQUIRE(out0.tick == 480u);
+    REQUIRE(omega_event_note_pitch(&out1) == 67u);  // G4
+    REQUIRE(out1.tick == 960u);
+
+    omega_engine_destroy(e);
+}

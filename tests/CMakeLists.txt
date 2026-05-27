@@ -27,6 +27,7 @@ add_executable(omega_tests
     unit/test_snap.cpp
     unit/test_loop.cpp
     unit/test_position_snapshot.cpp
+    unit/test_replace_event.cpp
 )
 
 target_link_libraries(omega_tests
