@@ -19,6 +19,9 @@
 
 using namespace omega;
 
+namespace
+{
+
 // Helper: engine with a clock, a CapturingSink, sink_id available for event construction.
 struct Fixture
 {
@@ -30,6 +33,8 @@ struct Fixture
 
     Fixture() : sink_id{sink.sink_id()} { engine.add_sink(&sink); }
 };
+
+}  // namespace
 
 // ── ReplaceEventCmd struct ────────────────────────────────────────────────────
 

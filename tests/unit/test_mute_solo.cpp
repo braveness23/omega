@@ -22,6 +22,9 @@
 
 using namespace omega;
 
+namespace
+{
+
 // Standard fixture: engine with a MockClock, one CapturingSink.
 struct Fixture
 {
@@ -49,6 +52,8 @@ struct Fixture
         return pat;
     }
 };
+
+}  // namespace
 
 // ── Command validation ────────────────────────────────────────────────────────
 
