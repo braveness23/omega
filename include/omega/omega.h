@@ -622,6 +622,37 @@ OMEGA_API omega_status_t omega_pattern_length(const omega_engine_t* e,
                                               omega_pattern_id_t pat,
                                               omega_tick_t* length_out);
 
+/*
+ * Iterates events in a pattern, invoking cb for each matching event.
+ *
+ * channel_filter: 0xFF = all channels; 0-15 = match specific channel.
+ * tag_filter: 0xFF = all payload tags; specific tag value = match that tag.
+ *
+ * The callback receives the zero-based event index (in the unfiltered pattern),
+ * a pointer to the event (valid only for the duration of the callback), and
+ * the caller-supplied userdata pointer.
+ *
+ * Thread safety: safe to call from any thread, provided the caller does not
+ * concurrently mutate pattern contents via the command queue. During playback
+ * this is inherently safe: the timing thread reads events read-only, and
+ * mutations are applied between process() cycles.
+ *
+ * Thread: Any thread (see above).
+ *
+ * Returns:
+ *   OMEGA_OK            — iteration completed (zero or more events visited).
+ *   OMEGA_ERR_INVALID   — e or cb is NULL.
+ *   OMEGA_ERR_NOT_FOUND — pat is not a valid pattern ID.
+ */
+OMEGA_API omega_status_t omega_pattern_for_each_event(const omega_engine_t* e,
+                                                      omega_pattern_id_t pat,
+                                                      uint8_t channel_filter,
+                                                      uint8_t tag_filter,
+                                                      void (*cb)(uint32_t index,
+                                                                 const omega_event_t* event,
+                                                                 void* userdata),
+                                                      void* userdata);
+
 /* ── Song arrangement ─────────────────────────────────────────────────────── */
 
 /*
