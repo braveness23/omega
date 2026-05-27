@@ -284,6 +284,13 @@ void Engine::apply(const DeleteEventCmd& cmd)
 
 void Engine::apply(const SetLoopCmd& cmd)
 {
+    // Reset the loop wrap counter whenever the loop region itself changes
+    // (loop_set / loop_clear). Toggling enabled without changing the region
+    // does not reset the counter so the display thread sees a monotone count.
+    if (cmd.start_tick != loop_start_tick_ || cmd.end_tick != loop_end_tick_)
+    {
+        loop_count_ = 0;
+    }
     loop_start_tick_ = cmd.start_tick;
     loop_end_tick_ = cmd.end_tick;
     loop_enabled_ = cmd.enabled;
@@ -659,6 +666,8 @@ void Engine::process()
     // locate all sources back to loop_start_tick_ and resume from there.
     if (loop_enabled_ && loop_end_tick_ > loop_start_tick_ && to_tick >= loop_end_tick_)
     {
+        ++loop_count_;
+
         uint64_t loop_pos_ns = tempo_map_.ticks_to_ns(loop_start_tick_);
         session_start_ns_ = now - loop_pos_ns;
         position = loop_pos_ns;
@@ -686,6 +695,23 @@ void Engine::process()
     }
 
     last_position_ns_.store(position, std::memory_order_release);
+
+    // Update the position snapshot for any-thread readers (display, etc.).
+    // MeterCursor::tick_to_beat_pos is safe here: the TimeSignatureMap was
+    // already fully updated during the command-drain phase above, so no
+    // mutation-thread write is racing with this read.
+    {
+        BeatPosition bp{};
+        bool has_meter = !timesig_map_.is_freeform() &&
+                         (MeterCursor{timesig_map_}.tick_to_beat_pos(to_tick, bp) == OMEGA_OK);
+        snap_bar_.store(has_meter ? bp.bar : 0u, std::memory_order_relaxed);
+        snap_beat_.store(has_meter ? bp.beat : 0u, std::memory_order_relaxed);
+        snap_sub_.store(has_meter ? bp.subdivision : 0u, std::memory_order_relaxed);
+        snap_loop_count_.store(loop_count_, std::memory_order_relaxed);
+        // tick written last with release so readers that load tick first with
+        // acquire will see all preceding stores.
+        snap_tick_.store(to_tick, std::memory_order_release);
+    }
 }
 
 TransportState Engine::transport_state() const
@@ -701,6 +727,18 @@ uint64_t Engine::transport_position_ns() const
 uint64_t Engine::transport_position_tick() const
 {
     return tempo_map_.ns_to_ticks(last_position_ns_.load(std::memory_order_relaxed));
+}
+
+omega_position_t Engine::position() const noexcept
+{
+    omega_position_t out{};
+    // Load tick first (acquire) so we see any preceding relaxed stores.
+    out.tick = snap_tick_.load(std::memory_order_acquire);
+    out.bar = snap_bar_.load(std::memory_order_relaxed);
+    out.beat = snap_beat_.load(std::memory_order_relaxed);
+    out.subdivision = snap_sub_.load(std::memory_order_relaxed);
+    out.loop_count = snap_loop_count_.load(std::memory_order_relaxed);
+    return out;
 }
 
 }  // namespace omega
