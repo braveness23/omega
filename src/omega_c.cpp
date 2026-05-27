@@ -17,7 +17,6 @@
 #include <omega/types.h>
 
 #include <algorithm>
-#include <cstdio>
 #include <new>
 #include <string>
 
@@ -1321,6 +1320,41 @@ omega_status_t omega_loop_enable(omega_engine_t* eng, int enabled)
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
+namespace
+{
+
+// Writes the decimal representation of n into buf[pos..out_size-1], advancing
+// *pos past the digits written.  Stops early if the buffer is full.  Does NOT
+// write a NUL — the caller is responsible for termination.
+void write_uint(char* buf, size_t out_size, size_t& pos, uint32_t n)
+{
+    // Compute digits in reverse, then copy forward.
+    char tmp[11];  // max 10 digits for uint32_t + sentinel
+    size_t ndig = 0;
+    do
+    {
+        tmp[ndig++] = static_cast<char>('0' + static_cast<int>(n % 10u));
+        n /= 10u;
+    } while (n != 0u);
+
+    // tmp holds digits in reverse order.
+    for (size_t i = ndig; i > 0u && pos + 1u < out_size; --i)
+    {
+        buf[pos++] = tmp[i - 1u];
+    }
+}
+
+// Appends a single char if space remains (leaving room for the NUL).
+void write_char(char* buf, size_t out_size, size_t& pos, char c)
+{
+    if (pos + 1u < out_size)
+    {
+        buf[pos++] = c;
+    }
+}
+
+}  // namespace
+
 void omega_midi_note_name(uint8_t pitch, char* out, size_t out_size)
 {
     if (out == nullptr || out_size == 0)
@@ -1332,14 +1366,33 @@ void omega_midi_note_name(uint8_t pitch, char* out, size_t out_size)
         "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
 
     // Clamp to valid MIDI range.
-    if (pitch > 127)
+    if (pitch > 127u)
     {
-        pitch = 127;
+        pitch = 127u;
     }
 
-    const int octave = static_cast<int>(pitch / 12) - 1;  // MIDI: C4 = 60
-    const int name_idx = pitch % 12;
-    std::snprintf(out, out_size, "%s%d", k_names[name_idx], octave);
+    const int octave = static_cast<int>(pitch / 12u) - 1;  // MIDI: C4 = 60
+    const char* name = k_names[pitch % 12u];
+
+    size_t pos = 0;
+    // Copy note name (1 or 2 chars).
+    for (size_t i = 0; name[i] != '\0'; ++i)
+    {
+        write_char(out, out_size, pos, name[i]);
+    }
+
+    // Append octave: range is -1 (pitch 0) to 9 (pitch 127).
+    if (octave < 0)
+    {
+        write_char(out, out_size, pos, '-');
+        write_char(out, out_size, pos, static_cast<char>('0' + (-octave)));
+    }
+    else
+    {
+        write_char(out, out_size, pos, static_cast<char>('0' + octave));
+    }
+
+    out[pos] = '\0';
 }
 
 omega_status_t omega_format_position(const omega_engine_t* e,
@@ -1360,12 +1413,15 @@ omega_status_t omega_format_position(const omega_engine_t* e,
         return st;
     }
 
-    std::snprintf(out,
-                  out_size,
-                  "%u:%u.%u",
-                  static_cast<unsigned>(pos.bar),
-                  static_cast<unsigned>(pos.beat),
-                  static_cast<unsigned>(pos.subdivision));
+    // Write "bar:beat.subdivision" without snprintf (avoid vararg).
+    size_t p = 0;
+    write_uint(out, out_size, p, pos.bar);
+    write_char(out, out_size, p, ':');
+    write_uint(out, out_size, p, static_cast<uint32_t>(pos.beat));
+    write_char(out, out_size, p, '.');
+    write_uint(out, out_size, p, pos.subdivision);
+    out[p] = '\0';
+
     return OMEGA_OK;
 }
 
