@@ -28,11 +28,7 @@ struct Fixture
     PatternId pat{0};
     uint32_t sink_id{0};
 
-    Fixture()
-    {
-        sink_id = sink.sink_id();
-        engine.add_sink(&sink);
-    }
+    Fixture() : sink_id{sink.sink_id()} { engine.add_sink(&sink); }
 };
 
 // ── ReplaceEventCmd struct ────────────────────────────────────────────────────
