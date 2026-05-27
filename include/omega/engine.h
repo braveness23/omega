@@ -448,6 +448,63 @@ public:
      */
     omega_status_t add_track_event(TrackId track_id, const Event& event);
 
+    /* ── Loop region ─────────────────────────────────────────────────────────── */
+
+    /* Snapshot of the transport loop region (returned by loop_region()). */
+    struct LoopRegion
+    {
+        uint64_t start_tick;
+        uint64_t end_tick;
+        bool enabled;
+    };
+
+    /*
+     * Enqueues a command to set the transport loop region and enable looping.
+     * While playing, when the transport position reaches end_tick it automatically
+     * locates back to start_tick (sending note-offs and resetting source cursors).
+     *
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_INVALID    — end_tick <= start_tick.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t loop_set(uint64_t start_tick, uint64_t end_tick);
+
+    /*
+     * Enqueues a command to disable looping and clear the loop region.
+     *
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t loop_clear();
+
+    /*
+     * Enqueues a command to enable or disable looping without changing the
+     * stored loop region.
+     *
+     * Thread: Mutation thread only. Must not be called concurrently with
+     * process() — reads loop_start_tick_ and loop_end_tick_.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t loop_enable(bool enabled);
+
+    /*
+     * Returns a snapshot of the current loop region (start, end, enabled).
+     * Thread: Mutation thread only. Must not be called concurrently with process().
+     */
+    [[nodiscard]] LoopRegion loop_region() const noexcept
+    {
+        return {loop_start_tick_, loop_end_tick_, loop_enabled_};
+    }
+
     /* ── SMPTE config ────────────────────────────────────────────────────────── */
 
     /*
@@ -526,6 +583,7 @@ private:
     void apply(const AddEventCmd& cmd);
     void apply(const DeleteEventCmd& cmd);
     void apply(const SetTempoCmd& cmd);
+    void apply(const SetLoopCmd& cmd);
     void apply(const TransportCmd& cmd);
     void apply(const SongAppendCmd& cmd);
     void apply(const SongClearCmd& cmd);
@@ -592,6 +650,12 @@ private:
     std::atomic<uint8_t> state_{static_cast<uint8_t>(TransportState::STOPPED)};
     uint64_t session_start_ns_{0};
     std::atomic<uint64_t> last_position_ns_{0};
+
+    // Loop region — timing-thread-owned; read from mutation thread only when
+    // process() is not running (same contract as smpte_config_ and perf_ctx_).
+    uint64_t loop_start_tick_{0};
+    uint64_t loop_end_tick_{0};
+    bool loop_enabled_{false};
 };
 
 }  // namespace omega

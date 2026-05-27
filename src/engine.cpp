@@ -198,6 +198,25 @@ omega_status_t Engine::timesig_clear()
     return enqueue(ClearTimeSigCmd{});
 }
 
+omega_status_t Engine::loop_set(uint64_t start_tick, uint64_t end_tick)
+{
+    if (end_tick <= start_tick)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return enqueue(SetLoopCmd{start_tick, end_tick, true});
+}
+
+omega_status_t Engine::loop_clear()
+{
+    return enqueue(SetLoopCmd{0, 0, false});
+}
+
+omega_status_t Engine::loop_enable(bool enabled)
+{
+    return enqueue(SetLoopCmd{loop_start_tick_, loop_end_tick_, enabled});
+}
+
 omega_status_t Engine::smpte_config_set(const SmpteConfig& config)
 {
     if (!is_valid_smpte_config(config))
@@ -247,6 +266,13 @@ void Engine::apply(const AddEventCmd& cmd)
 void Engine::apply(const DeleteEventCmd& cmd)
 {
     timeline_.remove_event(cmd.track, cmd.tick, cmd.index);
+}
+
+void Engine::apply(const SetLoopCmd& cmd)
+{
+    loop_start_tick_ = cmd.start_tick;
+    loop_end_tick_ = cmd.end_tick;
+    loop_enabled_ = cmd.enabled;
 }
 
 void Engine::apply(const SetTempoCmd& cmd)
@@ -464,6 +490,10 @@ void Engine::process()
                 {
                     apply(c);
                 }
+                else if constexpr (std::is_same_v<T, SetLoopCmd>)
+                {
+                    apply(c);
+                }
                 else if constexpr (std::is_same_v<T, TransportCmd>)
                 {
                     apply(c);
@@ -592,6 +622,20 @@ void Engine::process()
     ctx.perf_ctx = perf_ctx_;
 
     EventDispatcher dispatcher{sinks_};
+
+    // Loop detection: when the transport has reached or passed loop_end_tick_,
+    // locate all sources back to loop_start_tick_ and resume from there.
+    if (loop_enabled_ && loop_end_tick_ > loop_start_tick_ && to_tick >= loop_end_tick_)
+    {
+        uint64_t loop_pos_ns = tempo_map_.ticks_to_ns(loop_start_tick_);
+        session_start_ns_ = now - loop_pos_ns;
+        position = loop_pos_ns;
+        to_tick = loop_start_tick_;
+
+        timeline_.on_locate(loop_start_tick_, dispatcher, ctx);
+        song_.on_locate(loop_start_tick_, dispatcher, ctx);
+        perf_.on_locate(loop_start_tick_, dispatcher, ctx);
+    }
 
     // Custom sources run before built-ins, in priority/registration order.
     for (auto& [pri, src] : custom_sources_)

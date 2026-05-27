@@ -1138,6 +1138,48 @@ OMEGA_API omega_status_t omega_smpte_to_tick(const omega_engine_t* e,
                                              const omega_smpte_time_t* t,
                                              uint64_t* out);
 
+/* ── Transport loop ───────────────────────────────────────────────────────── */
+
+/*
+ * Sets the transport loop region and enables looping. While the transport
+ * is playing, whenever the position reaches end, it automatically locates
+ * back to start (sending note-offs and resetting source cursors).
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL, or end <= start.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_loop_set(omega_engine_t* e, omega_tick_t start, omega_tick_t end);
+
+/*
+ * Disables looping and clears the loop region.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_loop_clear(omega_engine_t* e);
+
+/*
+ * Enables (enabled != 0) or disables (enabled == 0) looping without
+ * changing the stored loop region.
+ *
+ * Thread: Mutation thread only. Must not be called concurrently with
+ * omega_engine_process().
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_loop_enable(omega_engine_t* e, int enabled);
+
 /* ── SMF import / export ──────────────────────────────────────────────────── */
 
 /*
