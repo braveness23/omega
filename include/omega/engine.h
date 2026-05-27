@@ -614,6 +614,16 @@ public:
      */
     [[nodiscard]] uint64_t transport_position_tick() const;
 
+    /*
+     * Returns a position snapshot updated at the end of each process() call.
+     * Each field is individually atomic. In rare cases, fields from two
+     * adjacent cycles may appear together; this is imperceptible at normal
+     * display refresh rates.
+     *
+     * Thread: Any thread.
+     */
+    [[nodiscard]] omega_position_t position() const noexcept;
+
 private:
     void apply(const AddEventCmd& cmd);
     void apply(const DeleteEventCmd& cmd);
@@ -693,6 +703,22 @@ private:
     uint64_t loop_start_tick_{0};
     uint64_t loop_end_tick_{0};
     bool loop_enabled_{false};
+
+    // Loop wrap counter — incremented each time the loop region wraps;
+    // reset to 0 whenever the loop region itself changes. Timing-thread-only
+    // (only modified/read inside process() and apply(SetLoopCmd)).
+    uint64_t loop_count_{0};
+
+    // Position snapshot — five individually-atomic fields written by the
+    // timing thread at the end of each process() cycle. Any thread may read
+    // them. Each field is lock-free on all target platforms. In rare cases,
+    // a reader may observe fields from two adjacent cycles; this is
+    // imperceptible at normal display refresh rates.
+    std::atomic<uint32_t> snap_bar_{0};
+    std::atomic<uint8_t> snap_beat_{0};
+    std::atomic<uint32_t> snap_sub_{0};
+    std::atomic<uint64_t> snap_loop_count_{0};
+    std::atomic<uint64_t> snap_tick_{0};
 };
 
 }  // namespace omega

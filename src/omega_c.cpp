@@ -255,6 +255,16 @@ omega_tick_t omega_engine_position_tick(const omega_engine_t* eng)
     return eng->engine.transport_position_tick();
 }
 
+omega_status_t omega_engine_position(const omega_engine_t* e, omega_position_t* out)
+{
+    if (e == nullptr || out == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    *out = e->engine.position();
+    return OMEGA_OK;
+}
+
 omega_pattern_id_t omega_pattern_create(omega_engine_t* eng,
                                         const char* name,
                                         omega_tick_t length_ticks)

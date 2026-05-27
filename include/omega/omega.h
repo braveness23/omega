@@ -382,6 +382,44 @@ OMEGA_API uint64_t omega_engine_position_ns(const omega_engine_t* e);
  */
 OMEGA_API omega_tick_t omega_engine_position_tick(const omega_engine_t* e);
 
+/*
+ * Atomic position snapshot: bar, beat, subdivision, loop_count, and raw tick,
+ * all updated together at the end of each process() call.
+ *
+ * bar and beat are 1-based. subdivision is the number of ticks past the beat
+ * boundary (0 to PPQN-1 in typical usage). When the session is in freeform
+ * mode (no time signature set), bar, beat, and subdivision are all 0; tick
+ * and loop_count are always valid.
+ *
+ * loop_count is incremented each time the active loop region wraps and is
+ * reset to 0 whenever the loop region is changed via omega_loop_set() or
+ * omega_loop_clear().
+ */
+typedef struct
+{
+    uint32_t bar;         /* 1-based bar number (0 = freeform/no meter) */
+    uint8_t beat;         /* 1-based beat within bar (0 = freeform/no meter) */
+    uint32_t subdivision; /* ticks past the beat boundary (0 in freeform mode) */
+    uint64_t loop_count;  /* number of loop-region wraps since last loop_set/clear */
+    omega_tick_t tick;    /* raw tick for further computation */
+} omega_position_t;
+
+/*
+ * Fills *out with a consistent position snapshot updated at the end of the
+ * most recent process() call. bar, beat, and subdivision are computed from
+ * the engine's TimeSignatureMap; all three are 0 in freeform mode. tick and
+ * loop_count are always valid. Each field is written atomically; in rare
+ * cases, fields from two adjacent process() cycles may appear together — this
+ * is imperceptible at normal display refresh rates (<=100 Hz).
+ *
+ * Thread: Any thread.
+ *
+ * Returns:
+ *   OMEGA_OK          — out filled.
+ *   OMEGA_ERR_INVALID — e or out is NULL.
+ */
+OMEGA_API omega_status_t omega_engine_position(const omega_engine_t* e, omega_position_t* out);
+
 /* ── Patterns ─────────────────────────────────────────────────────────────── */
 
 /*
