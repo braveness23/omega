@@ -51,6 +51,7 @@ add_executable(omega_integration_tests
     integration/test_c_api_smf.cpp
     integration/test_c_api_markers.cpp
     integration/test_c_api_tempo.cpp
+    integration/test_c_api_utils.cpp
 )
 
 target_link_libraries(omega_integration_tests

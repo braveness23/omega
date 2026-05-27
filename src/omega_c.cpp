@@ -17,6 +17,7 @@
 #include <omega/types.h>
 
 #include <algorithm>
+#include <cstdio>
 #include <new>
 #include <string>
 
@@ -1316,6 +1317,56 @@ omega_status_t omega_loop_enable(omega_engine_t* eng, int enabled)
         return OMEGA_ERR_INVALID;
     }
     return eng->engine.loop_enable(enabled != 0);
+}
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+
+void omega_midi_note_name(uint8_t pitch, char* out, size_t out_size)
+{
+    if (out == nullptr || out_size == 0)
+    {
+        return;
+    }
+
+    static constexpr const char* k_names[12] = {
+        "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+
+    // Clamp to valid MIDI range.
+    if (pitch > 127)
+    {
+        pitch = 127;
+    }
+
+    const int octave = static_cast<int>(pitch / 12) - 1;  // MIDI: C4 = 60
+    const int name_idx = pitch % 12;
+    std::snprintf(out, out_size, "%s%d", k_names[name_idx], octave);
+}
+
+omega_status_t omega_format_position(const omega_engine_t* e,
+                                     omega_tick_t tick,
+                                     char* out,
+                                     size_t out_size)
+{
+    if (e == nullptr || out == nullptr || out_size == 0)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+
+    omega::MeterCursor cursor(e->engine.timesig_map());
+    omega::BeatPosition pos{};
+    const omega_status_t st = cursor.tick_to_beat_pos(tick, pos);
+    if (st != OMEGA_OK)
+    {
+        return st;
+    }
+
+    std::snprintf(out,
+                  out_size,
+                  "%u:%u.%u",
+                  static_cast<unsigned>(pos.bar),
+                  static_cast<unsigned>(pos.beat),
+                  static_cast<unsigned>(pos.subdivision));
+    return OMEGA_OK;
 }
 
 }  // extern "C"

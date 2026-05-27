@@ -26,6 +26,7 @@
 #include <omega/export.h>
 
 #include <cstdint>
+#include <stddef.h> /* size_t — compatible with both C and C++ */
 
 #ifdef __cplusplus
 extern "C" {
@@ -410,6 +411,13 @@ OMEGA_API omega_status_t omega_pattern_destroy(omega_engine_t* e, omega_pattern_
 /*
  * Inserts an event into a pattern in tick-sorted order.
  * Call before playback starts.
+ *
+ * Ordering constraint: the sink_id embedded in ev must refer to a sink that
+ * has already been created (via omega_sink_create_midi_out() or a custom sink)
+ * and registered with omega_engine_add_sink().  Create all sinks first, read
+ * their IDs with omega_sink_id(), then build your patterns.  Events that
+ * reference a sink_id that does not exist at dispatch time will be silently
+ * dropped.
  *
  * Thread: Mutation thread only, before playback starts.
  *
@@ -1006,6 +1014,11 @@ OMEGA_API const omega_event_t* omega_ctx_input_at(const omega_process_context_t*
  * use omega_sink_id(sink) to route events to it.
  * Destroy with omega_sink_destroy_midi_out() — do NOT pass to omega_sink_destroy().
  *
+ * Ordering constraint: create and register all sinks before building patterns
+ * that embed their sink_id.  The sink_id is assigned at construction time.
+ * Passing a sink_id to omega_pattern_add_event() before the corresponding
+ * sink exists will cause those events to be silently dropped at dispatch time.
+ *
  * Thread: Any thread, before playback starts.
  */
 OMEGA_API omega_sink_t* omega_sink_create_midi_out(const char* port_name);
@@ -1245,6 +1258,27 @@ OMEGA_API omega_status_t omega_next_bar_tick(const omega_engine_t* e,
 OMEGA_API omega_status_t omega_quantize_to_beat(const omega_engine_t* e,
                                                 uint64_t tick,
                                                 uint64_t* out);
+
+/*
+ * Formats a tick position as a human-readable bar:beat.subdivision string.
+ *
+ * Converts tick through the engine's TimeSignatureMap using MeterCursor and
+ * writes a NUL-terminated string of the form "3:2.120" (1-based bar, 1-based
+ * beat, ticks-past-beat-boundary) into the out buffer.  At most out_size
+ * bytes are written (including the NUL terminator); the output is always
+ * NUL-terminated when out_size > 0.
+ *
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ *
+ * Returns:
+ *   OMEGA_OK            — out filled.
+ *   OMEGA_ERR_INVALID   — e or out is NULL, or out_size is 0.
+ *   OMEGA_ERR_NO_METER  — session is in freeform mode (no time signature set).
+ */
+OMEGA_API omega_status_t omega_format_position(const omega_engine_t* e,
+                                               omega_tick_t tick,
+                                               char* out,
+                                               size_t out_size);
 
 /* ── SMPTE config ─────────────────────────────────────────────────────────── */
 
@@ -1640,6 +1674,23 @@ OMEGA_API omega_status_t omega_event_remove_anchor(omega_engine_t* e,
                                                    omega_track_id_t track,
                                                    uint32_t event_index,
                                                    const char* name);
+
+/* ── Utilities ────────────────────────────────────────────────────────────── */
+
+/*
+ * Converts a MIDI pitch byte to a human-readable note name string.
+ *
+ * Writes a NUL-terminated string such as "C4", "F#3", or "A-1" into out.
+ * At most out_size bytes are written (including the NUL terminator); the
+ * output is always NUL-terminated when out_size > 0.  pitch must be in the
+ * range 0–127 (standard MIDI); values above 127 are clamped.
+ *
+ * Sharp names are used: C, C#, D, D#, E, F, F#, G, G#, A, A#, B.
+ * Octave follows the MIDI convention: middle C (pitch 60) is C4.
+ *
+ * Thread: Any thread.
+ */
+OMEGA_API void omega_midi_note_name(uint8_t pitch, char* out, size_t out_size);
 
 /* ── Timer ────────────────────────────────────────────────────────────────── */
 
