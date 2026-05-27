@@ -31,6 +31,23 @@ struct DeleteEventCmd
     uint32_t index;  // 0-based position among events sharing the same tick
 };
 
+/*
+ * Replaces a pattern event at the given 0-based index.
+ *
+ * If the replacement tick differs from the original, the vector is re-sorted
+ * after the replacement. Safe during playback because it goes through the SPSC
+ * queue (timing thread applies it at the start of the next process() cycle).
+ *
+ * Returns OMEGA_ERR_NOT_FOUND if pattern_id is invalid or event_index is out
+ * of bounds.
+ */
+struct ReplaceEventCmd
+{
+    PatternId pattern_id;
+    uint32_t event_index;  // 0-based index in the sorted event vector
+    Event replacement;
+};
+
 /* Sets the global tempo. bpm_milli is BPM × 1000 (e.g. 120 BPM = 120000). */
 struct SetTempoCmd
 {
@@ -257,6 +274,7 @@ struct RemoveSourceCmd
 
 using Command = std::variant<AddEventCmd,
                              DeleteEventCmd,
+                             ReplaceEventCmd,
                              SetTempoCmd,
                              SetTempoPointCmd,
                              RemoveTempoPointCmd,
