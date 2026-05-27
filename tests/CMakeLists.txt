@@ -25,6 +25,7 @@ add_executable(omega_tests
     unit/test_anchor_point.cpp
     unit/test_event_anchor_table.cpp
     unit/test_snap.cpp
+    unit/test_loop.cpp
 )
 
 target_link_libraries(omega_tests
