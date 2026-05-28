@@ -17,10 +17,10 @@ jobs:
     outputs:
       code: ${{ steps.f.outputs.code }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 2
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: f
         with:
           filters: |
@@ -76,7 +76,7 @@ jobs:
     continue-on-error: ${{ matrix.informational }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -88,7 +88,7 @@ jobs:
             cmake ninja-build
 
       - name: Cache FetchContent dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ github.workspace }}/.cache/fetchcontent
           key: fetchcontent-${{ matrix.compiler }}-${{ matrix.std }}-${{ hashFiles('CMakeLists.txt') }}
@@ -124,7 +124,7 @@ jobs:
     if: needs.filter.outputs.code == 'true' || github.event_name == 'push'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install dependencies
         run: |
@@ -132,7 +132,7 @@ jobs:
           sudo apt-get install -y libasound2-dev cmake ninja-build clang-18
 
       - name: Cache FetchContent dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ github.workspace }}/.cache/fetchcontent
           key: fetchcontent-clang-18-san-${{ hashFiles('CMakeLists.txt') }}
@@ -169,7 +169,7 @@ jobs:
     if: needs.filter.outputs.code == 'true' || github.event_name == 'push'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install dependencies
         run: |
@@ -177,7 +177,7 @@ jobs:
           sudo apt-get install -y libasound2-dev cmake ninja-build clang-18
 
       - name: Cache FetchContent dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ github.workspace }}/.cache/fetchcontent
           key: fetchcontent-clang-18-tsan-${{ hashFiles('CMakeLists.txt') }}
@@ -211,10 +211,10 @@ jobs:
     runs-on: arc-runner-omega
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install clang-format
-        run: sudo apt-get install -y clang-format-18
+        run: sudo apt-get update && sudo apt-get install -y clang-format-18
 
       - name: Check formatting
         run: |
@@ -228,7 +228,7 @@ jobs:
     if: github.event_name == 'pull_request'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -238,7 +238,7 @@ jobs:
           sudo apt-get install -y libasound2-dev cmake ninja-build clang-18 clang-tidy-18
 
       - name: Cache FetchContent dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ github.workspace }}/.cache/fetchcontent
           key: fetchcontent-clang-18-tidy-${{ hashFiles('CMakeLists.txt') }}
@@ -278,7 +278,7 @@ jobs:
     if: github.event_name == 'pull_request'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -308,7 +308,7 @@ jobs:
     if: github.event_name == 'pull_request'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Check for ABI baseline
         run: |
@@ -328,7 +328,7 @@ jobs:
     if: needs.filter.outputs.code == 'true' || github.event_name == 'push'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install dependencies
         run: |
@@ -336,7 +336,7 @@ jobs:
           sudo apt-get install -y libasound2-dev cmake ninja-build
 
       - name: Cache FetchContent dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ github.workspace }}/.cache/fetchcontent
           key: fetchcontent-smoke-${{ hashFiles('CMakeLists.txt') }}
@@ -395,7 +395,7 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install dependencies
         run: |
@@ -403,7 +403,7 @@ jobs:
           sudo apt-get install -y libasound2-dev cmake ninja-build gcovr
 
       - name: Cache FetchContent dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ github.workspace }}/.cache/fetchcontent
           key: fetchcontent-gcc-12-cov-${{ hashFiles('CMakeLists.txt') }}
@@ -441,7 +441,7 @@ jobs:
             build_cov
 
       - name: Upload to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v6
         with:
           files: coverage.xml
           fail_ci_if_error: false
@@ -457,7 +457,7 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install dependencies
         run: |
@@ -465,7 +465,7 @@ jobs:
           sudo apt-get install -y libasound2-dev cmake ninja-build
 
       - name: Cache FetchContent dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ github.workspace }}/.cache/fetchcontent
           key: fetchcontent-gcc-12-bench-${{ hashFiles('CMakeLists.txt') }}
@@ -494,7 +494,7 @@ jobs:
             -T Test
 
       - name: Upload benchmark results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: benchmark-results-${{ github.sha }}
           path: build_bench/Testing/
