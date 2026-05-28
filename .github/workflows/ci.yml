@@ -360,6 +360,9 @@ jobs:
           cmake --install build_install
 
       - name: Build consumer project
+        env:
+          CC: gcc-12
+          CXX: g++-12
         run: |
           cmake -B build_consumer cmake/smoke_test \
             -DCMAKE_PREFIX_PATH=${{ github.workspace }}/install \
