@@ -338,10 +338,7 @@ The test suite has 388 tests and runs in under 2 seconds. All tests are determin
 - **Full API reference**: [`include/omega/omega.h`](../include/omega/omega.h) — every function
   documents its thread requirement, parameters, return value, and error codes.
 - **Architecture overview**: [`docs/ARCHITECTURE.md`](ARCHITECTURE.md) — the three-layer design
-  with ASCII diagram and links to all 14 design documents.
-- **Diagrams**: [`docs/diagrams/`](diagrams/) — Mermaid class, flow, and state diagrams.
-- **Design documents**: [`docs/design/`](design/) — full specifications for timing, threading,
-  memory, the C API, pattern state machine, orchestration layer, and more.
+  with ASCII diagram and key decisions table.
 - **Migration from v0.x**: [`docs/migration/v0-to-v1.md`](migration/v0-to-v1.md)
 - **Examples**: the smoke test in [`cmake/smoke_test/main.cpp`](../cmake/smoke_test/main.cpp)
   is a minimal C API example that compiles and runs as part of the install CI job.
