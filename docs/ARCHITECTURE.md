@@ -37,65 +37,35 @@ Omega is organized in three layers: a C++ core, a stable C API, and optional pla
 └──────────────────────────────────────────────────────────────┘
 ```
 
-## Diagrams
-
-Interactive Mermaid diagrams (rendered by GitHub):
-
-- [Architecture Layers](diagrams/architecture.md) — three-layer stack and responsibilities
-- [engine.process() Flow](diagrams/process_loop.md) — full timing-thread execution sequence
-- [PerformanceSource State Machine](diagrams/perf_state_machine.md) — slot states and all transitions
-- [Class Relationships](diagrams/class_diagram.md) — key classes, inheritance, and ownership
-
----
-
-## Design Documents
-
-Start here if you're new to the codebase:
-
-1. [Timing Model](design/01-timing-model.md) — ticks, BPM, tempo map, integer arithmetic
-2. [Thread Model](design/02-thread-model.md) — caller-driven engine, lock-free command queue
-3. [Memory and Storage](design/03-memory-storage.md) — PMR allocators, sorted event vectors, blob store
-4. [C API Design](design/04-c-api-design.md) — opaque handles, ownership, `omega.h` sketch
-5. [Pattern State Machine](design/05-pattern-state-machine.md) — slot states, cuing, loop boundaries
-6. [Session Container](design/06-session-container.md) — what owns what, mode switching, persistence
-7. [Extensions](design/07-extensions.md) — sinks, clocks, custom payloads, Ableton Link
-8. [Testing Strategy](design/08-testing-strategy.md) — MockClock, CapturingSink, CI
-9. [Prior Art](design/09-prior-art.md) — libraries studied, what was borrowed, license compatibility
-10. [EventSource Abstraction](design/10-event-source-abstraction.md) — pluggable playback modes via EventSource; new mode catalogue
-11. [Orchestration Layer](design/11-orchestration-layer.md) — EventInput, TransformSource routing, ModulationBus, PerformanceContext, chasing
-12. [Library Foundation](design/12-library-foundation.md) — build system, versioning, ABI policy, CI quality gates, release process, header conventions
-13. [Time Signature Support](design/13-time-signature.md) — TimeSignatureMap, MeterCursor, SmpteConverter, PositionConverter, OMEGA_CUE_BAR, freeform mode
-14. [Markers, Regions, and Anchors](design/14-markers-regions-anchors.md) — MarkerList, RegionList, AnchorPoint, EventAnchorTable, snap framework
-
 ## Key Decisions at a Glance
 
-| Decision | Choice | Document |
-|---|---|---|
-| Tick resolution | 480 PPQN | [01](design/01-timing-model.md) |
-| Time unit | nanoseconds (uint64_t) | [01](design/01-timing-model.md) |
-| Thread model | Caller-driven + SPSC queue | [02](design/02-thread-model.md) |
-| Memory | std::pmr (swappable allocator) | [03](design/03-memory-storage.md) |
-| Event storage | Sorted vector per track | [03](design/03-memory-storage.md) |
-| Event size | 24 bytes | [03](design/03-memory-storage.md) |
-| Public API | C (extern "C") | [04](design/04-c-api-design.md) |
-| Error handling | Error codes (no exceptions in API) | [04](design/04-c-api-design.md) |
-| Playback modes | Pluggable EventSource abstraction | [10](design/10-event-source-abstraction.md) |
-| Built-in modes | Timeline · Pattern · Performance (all simultaneous) | [06](design/06-session-container.md) |
-| Event input | Pluggable EventInput abstraction | [11](design/11-orchestration-layer.md) |
-| Source routing | TransformSource composition (no graph registry) | [11](design/11-orchestration-layer.md) |
-| Param modulation | ModulationBus (float channels, updated each cycle) | [11](design/11-orchestration-layer.md) |
-| Shared context | PerformanceContext (scale, chord, groove, chaos) | [11](design/11-orchestration-layer.md) |
-| Time signature | TimeSignatureMap (empty = freeform) | [13](design/13-time-signature.md) |
-| Bar/beat navigation | MeterCursor (non-realtime) | [13](design/13-time-signature.md) |
-| SMPTE timecode | SmpteConverter + SmpteConfig (optional) | [13](design/13-time-signature.md) |
-| Coordinate interface | PositionConverter base class | [13](design/13-time-signature.md) |
-| MIDI I/O | libremidi (MIT) | [09](design/09-prior-art.md) |
-| SMF parsing | midifile/Stanford (BSD) | [09](design/09-prior-art.md) |
-| Markers/regions | MarkerList + RegionList (session-level) | [14](design/14-markers-regions-anchors.md) |
-| Anchors | AnchorPoint + EventAnchorTable (sparse side table) | [14](design/14-markers-regions-anchors.md) |
-| Snap | snap_to_nearest() with grid/marker/region/anchor targets | [14](design/14-markers-regions-anchors.md) |
-| Timer thread | OmegaTimer (RAII, drift-compensating) | [02](design/02-thread-model.md) |
-| Native format | JSON (v1) | [06](design/06-session-container.md) |
-| Undo/redo | Command pattern | [07](design/07-extensions.md) |
-| Core license | MIT | LICENSE |
-| Link (optional) | GPL v2+ when enabled | [07](design/07-extensions.md) |
+| Decision | Choice |
+|---|---|
+| Tick resolution | 480 PPQN |
+| Time unit | nanoseconds (uint64_t) |
+| Thread model | Caller-driven + SPSC queue |
+| Memory | std::pmr (swappable allocator) |
+| Event storage | Sorted vector per track |
+| Event size | 24 bytes |
+| Public API | C (extern "C") |
+| Error handling | Error codes (no exceptions in API) |
+| Playback modes | Pluggable EventSource abstraction |
+| Built-in modes | Timeline · Pattern · Performance (all simultaneous) |
+| Event input | Pluggable EventInput abstraction |
+| Source routing | TransformSource composition (no graph registry) |
+| Param modulation | ModulationBus (float channels, updated each cycle) |
+| Shared context | PerformanceContext (scale, chord, groove, chaos) |
+| Time signature | TimeSignatureMap (empty = freeform) |
+| Bar/beat navigation | MeterCursor (non-realtime) |
+| SMPTE timecode | SmpteConverter + SmpteConfig (optional) |
+| Coordinate interface | PositionConverter base class |
+| MIDI I/O | libremidi (MIT) |
+| SMF parsing | midifile/Stanford (BSD) |
+| Markers/regions | MarkerList + RegionList (session-level) |
+| Anchors | AnchorPoint + EventAnchorTable (sparse side table) |
+| Snap | snap_to_nearest() with grid/marker/region/anchor targets |
+| Timer thread | OmegaTimer (RAII, drift-compensating) |
+| Native format | JSON (v1) |
+| Undo/redo | Command pattern |
+| Core license | MIT |
+| Link (optional) | GPL v2+ when enabled |

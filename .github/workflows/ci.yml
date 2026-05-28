@@ -293,7 +293,7 @@ jobs:
 
       - name: Run clang-tidy on changed files
         run: |
-          CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD \
+          CHANGED=$(git diff --name-only --diff-filter=ACM origin/${{ github.base_ref }}...HEAD \
             | grep -E '\.(cpp|h|hpp)$' || true)
           if [ -z "$CHANGED" ]; then
             echo "No C++ files changed."

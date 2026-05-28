@@ -20,7 +20,6 @@ set(OMEGA_SOVERSION 1)
 # ── Build options ────────────────────────────────────────────────────────────
 option(OMEGA_BUILD_TESTS       "Build the test suite"                         ON)
 option(OMEGA_BUILD_BENCHMARKS  "Build benchmark targets (requires test suite)" OFF)
-option(OMEGA_BUILD_EXAMPLES    "Build example applications"                   OFF)
 option(OMEGA_WITH_LINK         "Enable Ableton Link sync (requires GPL v2+)"  OFF)
 option(OMEGA_WITH_SANITIZERS   "Build with AddressSanitizer and UBSanitizer"  OFF)
 option(OMEGA_WITH_TSAN         "Build with ThreadSanitizer"                   OFF)
@@ -181,11 +180,6 @@ endif()
 
 if(OMEGA_BUILD_BENCHMARKS AND NOT OMEGA_BUILD_TESTS)
     message(FATAL_ERROR "OMEGA_BUILD_BENCHMARKS requires OMEGA_BUILD_TESTS=ON (benchmarks use Catch2).")
-endif()
-
-# ── Examples ──────────────────────────────────────────────────────────────────
-if(OMEGA_BUILD_EXAMPLES)
-    add_subdirectory(examples)
 endif()
 
 # ── Install rules ─────────────────────────────────────────────────────────────
