@@ -344,6 +344,9 @@ jobs:
           restore-keys: fetchcontent-smoke-
 
       - name: Build and install Omega
+        env:
+          CC: gcc-12
+          CXX: g++-12
         run: |
           cmake -B build_install \
             -DCMAKE_BUILD_TYPE=Release \
@@ -473,6 +476,9 @@ jobs:
           restore-keys: fetchcontent-gcc-12-bench-
 
       - name: Configure
+        env:
+          CC: gcc-12
+          CXX: g++-12
         run: |
           cmake -B build_bench \
             -DCMAKE_BUILD_TYPE=Release \
