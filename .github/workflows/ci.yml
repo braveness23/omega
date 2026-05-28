@@ -13,14 +13,14 @@ jobs:
   # Expensive build jobs depend on this output and skip on docs-only changes.
   # On push-to-main the build always runs regardless (|| github.event_name == 'push').
   filter:
-    runs-on: ubuntu-latest
+    runs-on: arc-runner-omega
     outputs:
       code: ${{ steps.f.outputs.code }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 2
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: f
         with:
           filters: |
@@ -34,11 +34,12 @@ jobs:
               - '.github/workflows/ci.yml'
 
   # ── Compiler matrix ──────────────────────────────────────────────────────────
-  # Officially supported matrix per docs/design/12-library-foundation.md §4.1.
+  # Linux-only matrix (self-hosted k3s runners). macOS and Windows builds are
+  # skipped — add them back with GitHub-hosted runners if needed in future.
   # C++20 jobs are informational (continue-on-error) until C++20 is formally declared.
   build-and-test:
-    name: ${{ matrix.os }} / ${{ matrix.compiler }} / C++${{ matrix.std }}
-    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.compiler }} / C++${{ matrix.std }}
+    runs-on: arc-runner-omega
     needs: [filter]
     if: needs.filter.outputs.code == 'true' || github.event_name == 'push'
 
@@ -47,101 +48,68 @@ jobs:
       matrix:
         include:
           # GCC (minimum: 10) — tested with 12 on Ubuntu 24.04
-          - os: ubuntu-latest
-            compiler: gcc
+          - compiler: gcc
             cc: gcc-12
             cxx: g++-12
             std: "17"
             informational: false
 
-          - os: ubuntu-latest
-            compiler: gcc
+          - compiler: gcc
             cc: gcc-12
             cxx: g++-12
             std: "20"
             informational: true
 
           # Clang (minimum: 14) — tested with 18 on Ubuntu 24.04
-          - os: ubuntu-latest
-            compiler: clang-18
+          - compiler: clang-18
             cc: clang-18
             cxx: clang++-18
             std: "17"
             informational: false
 
-          - os: ubuntu-latest
-            compiler: clang-18
+          - compiler: clang-18
             cc: clang-18
             cxx: clang++-18
             std: "20"
             informational: true
 
-          # Apple Clang (minimum: 14) — macos-latest provides a recent version
-          - os: macos-latest
-            compiler: apple-clang
-            cc: clang
-            cxx: clang++
-            std: "17"
-            informational: false
-
-          # MSVC 19.30+ (VS 2022) — C++17 only
-          - os: windows-latest
-            compiler: msvc
-            cc: cl
-            cxx: cl
-            std: "17"
-            informational: false
-
     continue-on-error: ${{ matrix.informational }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - name: Install dependencies (Ubuntu)
-        if: runner.os == 'Linux'
+      - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             libasound2-dev \
-            cmake ninja-build
-
-      - name: Install dependencies (macOS)
-        if: runner.os == 'macOS'
-        run: brew install cmake ninja
-
-      - name: Setup MSVC developer environment
-        if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
+            cmake ninja-build \
+            gcc-12 g++-12 clang-18
 
       - name: Cache FetchContent dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ github.workspace }}/.cache/fetchcontent
-          key: fetchcontent-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
-          restore-keys: fetchcontent-${{ runner.os }}-
+          key: fetchcontent-${{ matrix.compiler }}-${{ matrix.std }}-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: fetchcontent-${{ matrix.compiler }}-${{ matrix.std }}-
 
       - name: Configure
-        shell: bash
         env:
           CC: ${{ matrix.cc }}
           CXX: ${{ matrix.cxx }}
         run: |
-          NO_ALSA=""
-          if [ "${{ runner.os }}" == "Linux" ]; then
-            NO_ALSA="-DLIBREMIDI_NO_ALSA=ON"
-          fi
           cmake -B build \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
             -DCMAKE_CXX_STANDARD=${{ matrix.std }} \
             -DOMEGA_BUILD_TESTS=ON \
             -DOMEGA_BUILD_EXAMPLES=OFF \
             -DOMEGA_WITH_LINK=OFF \
+            -DLIBREMIDI_NO_ALSA=ON \
             "-DFETCHCONTENT_BASE_DIR=$GITHUB_WORKSPACE/.cache/fetchcontent" \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
-            -G Ninja \
-            $NO_ALSA
+            -G Ninja
 
       - name: Build
         run: cmake --build build --parallel
@@ -151,13 +119,13 @@ jobs:
 
   # ── ASan + UBSan ─────────────────────────────────────────────────────────────
   sanitizers:
-    name: ASan/UBSan (Linux / Clang 18)
-    runs-on: ubuntu-latest
+    name: ASan/UBSan (Clang 18)
+    runs-on: arc-runner-omega
     needs: [filter]
     if: needs.filter.outputs.code == 'true' || github.event_name == 'push'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install dependencies
         run: |
@@ -165,11 +133,11 @@ jobs:
           sudo apt-get install -y libasound2-dev cmake ninja-build clang-18
 
       - name: Cache FetchContent dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ github.workspace }}/.cache/fetchcontent
-          key: fetchcontent-Linux-${{ hashFiles('CMakeLists.txt') }}
-          restore-keys: fetchcontent-Linux-
+          key: fetchcontent-clang-18-san-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: fetchcontent-clang-18-san-
 
       - name: Configure
         env:
@@ -196,13 +164,13 @@ jobs:
 
   # ── ThreadSanitizer ───────────────────────────────────────────────────────────
   tsan:
-    name: TSan (Linux / Clang 18)
-    runs-on: ubuntu-latest
+    name: TSan (Clang 18)
+    runs-on: arc-runner-omega
     needs: [filter]
     if: needs.filter.outputs.code == 'true' || github.event_name == 'push'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install dependencies
         run: |
@@ -210,11 +178,11 @@ jobs:
           sudo apt-get install -y libasound2-dev cmake ninja-build clang-18
 
       - name: Cache FetchContent dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ github.workspace }}/.cache/fetchcontent
-          key: fetchcontent-Linux-${{ hashFiles('CMakeLists.txt') }}
-          restore-keys: fetchcontent-Linux-
+          key: fetchcontent-clang-18-tsan-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: fetchcontent-clang-18-tsan-
 
       - name: Configure
         env:
@@ -241,13 +209,13 @@ jobs:
   # ── clang-format ─────────────────────────────────────────────────────────────
   format-check:
     name: clang-format
-    runs-on: ubuntu-latest
+    runs-on: arc-runner-omega
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install clang-format
-        run: sudo apt-get install -y clang-format-18
+        run: sudo apt-get update && sudo apt-get install -y clang-format-18
 
       - name: Check formatting
         run: |
@@ -257,11 +225,11 @@ jobs:
   # ── clang-tidy ───────────────────────────────────────────────────────────────
   clang-tidy:
     name: clang-tidy
-    runs-on: ubuntu-latest
+    runs-on: arc-runner-omega
     if: github.event_name == 'pull_request'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -271,11 +239,11 @@ jobs:
           sudo apt-get install -y libasound2-dev cmake ninja-build clang-18 clang-tidy-18
 
       - name: Cache FetchContent dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ github.workspace }}/.cache/fetchcontent
-          key: fetchcontent-Linux-${{ hashFiles('CMakeLists.txt') }}
-          restore-keys: fetchcontent-Linux-
+          key: fetchcontent-clang-18-tidy-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: fetchcontent-clang-18-tidy-
 
       - name: Configure (generate compile_commands.json)
         env:
@@ -286,6 +254,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Debug \
             -DOMEGA_BUILD_TESTS=ON \
             -DOMEGA_BUILD_EXAMPLES=ON \
+            -DLIBREMIDI_NO_ALSA=ON \
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
             -DFETCHCONTENT_BASE_DIR=${{ github.workspace }}/.cache/fetchcontent \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
@@ -306,11 +275,11 @@ jobs:
   # ── CHANGELOG lint ────────────────────────────────────────────────────────────
   changelog-lint:
     name: CHANGELOG lint
-    runs-on: ubuntu-latest
+    runs-on: arc-runner-omega
     if: github.event_name == 'pull_request'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -336,11 +305,11 @@ jobs:
   # See abi/PLACEHOLDER and docs/design/12-library-foundation.md §2.3.
   abi-check:
     name: ABI compliance (stub)
-    runs-on: ubuntu-latest
+    runs-on: arc-runner-omega
     if: github.event_name == 'pull_request'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Check for ABI baseline
         run: |
@@ -354,31 +323,35 @@ jobs:
 
   # ── Install smoke test ────────────────────────────────────────────────────────
   install-smoke-test:
-    name: Install smoke test (Linux)
-    runs-on: ubuntu-latest
+    name: Install smoke test
+    runs-on: arc-runner-omega
     needs: [filter]
     if: needs.filter.outputs.code == 'true' || github.event_name == 'push'
+    env:
+      CC: gcc-12
+      CXX: g++-12
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev cmake ninja-build
+          sudo apt-get install -y libasound2-dev cmake ninja-build gcc-12 g++-12
 
       - name: Cache FetchContent dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ github.workspace }}/.cache/fetchcontent
-          key: fetchcontent-Linux-${{ hashFiles('CMakeLists.txt') }}
-          restore-keys: fetchcontent-Linux-
+          key: fetchcontent-smoke-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: fetchcontent-smoke-
 
       - name: Build and install Omega
         run: |
           cmake -B build_install \
             -DCMAKE_BUILD_TYPE=Release \
             -DOMEGA_BUILD_TESTS=OFF \
+            -DLIBREMIDI_NO_ALSA=ON \
             -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install \
             -DFETCHCONTENT_BASE_DIR=${{ github.workspace }}/.cache/fetchcontent \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
@@ -405,7 +378,7 @@ jobs:
     name: Build gate
     if: always()
     needs: [build-and-test, sanitizers, tsan, install-smoke-test]
-    runs-on: ubuntu-latest
+    runs-on: arc-runner-omega
     steps:
       - name: All build jobs passed or were skipped
         run: |
@@ -421,24 +394,24 @@ jobs:
   # Runs on main pushes only; uploads LCOV report to Codecov.
   # Coverage regressions are flagged as warnings on PRs (not hard failures).
   coverage:
-    name: Coverage (Linux / GCC)
-    runs-on: ubuntu-latest
+    name: Coverage (GCC 12)
+    runs-on: arc-runner-omega
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev cmake ninja-build gcovr
+          sudo apt-get install -y libasound2-dev cmake ninja-build gcc-12 g++-12 gcovr
 
       - name: Cache FetchContent dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ github.workspace }}/.cache/fetchcontent
-          key: fetchcontent-Linux-${{ hashFiles('CMakeLists.txt') }}
-          restore-keys: fetchcontent-Linux-
+          key: fetchcontent-gcc-12-cov-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: fetchcontent-gcc-12-cov-
 
       - name: Configure with coverage
         env:
@@ -472,7 +445,7 @@ jobs:
             build_cov
 
       - name: Upload to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v6
         with:
           files: coverage.xml
           fail_ci_if_error: false
@@ -483,24 +456,27 @@ jobs:
   # Runs on main pushes only. Results stored as CI artifacts for regression tracking.
   # See docs/design/12-library-foundation.md §4.5 for required benchmarks.
   benchmarks:
-    name: Benchmarks (Linux / GCC)
-    runs-on: ubuntu-latest
+    name: Benchmarks (GCC 12)
+    runs-on: arc-runner-omega
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    env:
+      CC: gcc-12
+      CXX: g++-12
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev cmake ninja-build
+          sudo apt-get install -y libasound2-dev cmake ninja-build gcc-12 g++-12
 
       - name: Cache FetchContent dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ github.workspace }}/.cache/fetchcontent
-          key: fetchcontent-Linux-${{ hashFiles('CMakeLists.txt') }}
-          restore-keys: fetchcontent-Linux-
+          key: fetchcontent-gcc-12-bench-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: fetchcontent-gcc-12-bench-
 
       - name: Configure
         run: |
@@ -508,6 +484,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DOMEGA_BUILD_TESTS=ON \
             -DOMEGA_BUILD_BENCHMARKS=ON \
+            -DLIBREMIDI_NO_ALSA=ON \
             -DFETCHCONTENT_BASE_DIR=${{ github.workspace }}/.cache/fetchcontent \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
             -G Ninja
@@ -524,7 +501,7 @@ jobs:
             -T Test
 
       - name: Upload benchmark results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: benchmark-results-${{ github.sha }}
           path: build_bench/Testing/
