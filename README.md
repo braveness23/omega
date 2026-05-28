@@ -1,9 +1,5 @@
 # Omega
 
-<p align="center">
-  <img src="assets/icon-omega-symbol.svg" alt="Omega" width="96" height="96"/>
-</p>
-
 [![CI](https://github.com/braveness23/omega/actions/workflows/ci.yml/badge.svg)](https://github.com/braveness23/omega/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![C++17](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://en.cppreference.com/w/cpp/17)
