@@ -127,6 +127,7 @@ add_library(omega_core STATIC
     src/libremidi_input.cpp
     src/timer.cpp
     src/recorder.cpp
+    src/control_sink.cpp
     src/engine.cpp
 )
 add_library(omega::core ALIAS omega_core)

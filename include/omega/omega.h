@@ -102,6 +102,14 @@ OMEGA_API const char* omega_status_string(omega_status_t status);
 #define OMEGA_AFTERTOUCH 0x05u /* data[0]=pressure (0-127) */
 #define OMEGA_POLY_AT 0x06u    /* data[0]=note, data[1]=pressure (0-127) */
 
+/* Control-sequence event tags (range 0x0B–0x0E). These are dispatched to a
+ * ControlSink, which executes them as engine mutations on the timing thread
+ * rather than sending MIDI bytes. */
+#define OMEGA_CTRL_START_SLOT 0x0Bu /* data[0..3]=slot_id, data[4]=cue_mode */
+#define OMEGA_CTRL_STOP_SLOT 0x0Cu  /* data[0..3]=slot_id, data[4]=cue_mode */
+#define OMEGA_CTRL_SET_TEMPO 0x0Du  /* data[0..3]=bpm_milli (uint32_t)       */
+#define OMEGA_CTRL_TRANSPOSE 0x0Eu  /* data[0..3]=slot_id, data[4]=semitones (int8_t cast) */
+
 typedef struct
 {
     uint64_t tick;       /* absolute musical position from session start */
@@ -229,6 +237,43 @@ typedef enum
     OMEGA_CUE_AT_BOUNDARY = 1, /* wait for the next loop boundary */
     OMEGA_CUE_BAR = 2,         /* wait for the next musical bar boundary */
 } omega_cue_mode_t;
+
+/* ── Control-sequence event constructors ─────────────────────────────────── */
+
+/*
+ * Construct a CTRL_START_SLOT event: when played back through a ControlSink,
+ * starts the given performance slot with the specified cue mode.
+ */
+OMEGA_API omega_event_t omega_make_ctrl_start_slot(uint64_t tick,
+                                                   uint32_t sink_id,
+                                                   uint32_t slot,
+                                                   omega_cue_mode_t mode);
+
+/*
+ * Construct a CTRL_STOP_SLOT event: stops the given slot at the given cue mode
+ * boundary.
+ */
+OMEGA_API omega_event_t omega_make_ctrl_stop_slot(uint64_t tick,
+                                                  uint32_t sink_id,
+                                                  uint32_t slot,
+                                                  omega_cue_mode_t mode);
+
+/*
+ * Construct a CTRL_SET_TEMPO event: sets the engine tempo to bpm_milli
+ * (BPM × 1000) at the event's tick position.
+ */
+OMEGA_API omega_event_t omega_make_ctrl_set_tempo(uint64_t tick,
+                                                  uint32_t sink_id,
+                                                  uint32_t bpm_milli);
+
+/*
+ * Construct a CTRL_TRANSPOSE event: applies a semitone transpose to the given
+ * performance slot (−128 to +127, typically −24 to +24).
+ */
+OMEGA_API omega_event_t omega_make_ctrl_transpose(uint64_t tick,
+                                                  uint32_t sink_id,
+                                                  uint32_t slot,
+                                                  int8_t semitones);
 
 typedef enum
 {

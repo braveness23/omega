@@ -146,4 +146,60 @@ uint8_t omega_event_cc_value(const omega_event_t* e)
     return e->data[1];
 }
 
+omega_event_t omega_make_ctrl_start_slot(uint64_t tick,
+                                         uint32_t sink_id,
+                                         uint32_t slot,
+                                         omega_cue_mode_t mode)
+{
+    omega_event_t e;
+    memset(&e, 0, sizeof(e));
+    e.tick = tick;
+    e.sink_id = sink_id;
+    e.payload_tag = OMEGA_CTRL_START_SLOT;
+    memcpy(&e.data[0], &slot, sizeof(slot));
+    e.data[4] = static_cast<uint8_t>(mode);
+    return e;
+}
+
+omega_event_t omega_make_ctrl_stop_slot(uint64_t tick,
+                                        uint32_t sink_id,
+                                        uint32_t slot,
+                                        omega_cue_mode_t mode)
+{
+    omega_event_t e;
+    memset(&e, 0, sizeof(e));
+    e.tick = tick;
+    e.sink_id = sink_id;
+    e.payload_tag = OMEGA_CTRL_STOP_SLOT;
+    memcpy(&e.data[0], &slot, sizeof(slot));
+    e.data[4] = static_cast<uint8_t>(mode);
+    return e;
+}
+
+omega_event_t omega_make_ctrl_set_tempo(uint64_t tick, uint32_t sink_id, uint32_t bpm_milli)
+{
+    omega_event_t e;
+    memset(&e, 0, sizeof(e));
+    e.tick = tick;
+    e.sink_id = sink_id;
+    e.payload_tag = OMEGA_CTRL_SET_TEMPO;
+    memcpy(&e.data[0], &bpm_milli, sizeof(bpm_milli));
+    return e;
+}
+
+omega_event_t omega_make_ctrl_transpose(uint64_t tick,
+                                        uint32_t sink_id,
+                                        uint32_t slot,
+                                        int8_t semitones)
+{
+    omega_event_t e;
+    memset(&e, 0, sizeof(e));
+    e.tick = tick;
+    e.sink_id = sink_id;
+    e.payload_tag = OMEGA_CTRL_TRANSPOSE;
+    memcpy(&e.data[0], &slot, sizeof(slot));
+    e.data[4] = static_cast<uint8_t>(semitones);
+    return e;
+}
+
 }  // extern "C"

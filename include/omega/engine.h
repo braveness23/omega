@@ -532,6 +532,12 @@ public:
     [[nodiscard]] const TimelineSource& timeline_source() const noexcept { return timeline_; }
     [[nodiscard]] TimelineSource& timeline_source() noexcept { return timeline_; }
 
+    /* Raw access to the built-in performance source. The non-const overload is
+     * provided so ControlSink can hold a direct reference and call cue/stop/
+     * set_transpose directly on the timing thread. Same contract as timeline_source(). */
+    [[nodiscard]] const PerformanceSource& perf_source() const noexcept { return perf_; }
+    [[nodiscard]] PerformanceSource& perf_source() noexcept { return perf_; }
+
     /* ── Markers and regions ─────────────────────────────────────────────────── */
 
     /*
