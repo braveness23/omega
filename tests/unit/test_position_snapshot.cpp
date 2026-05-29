@@ -228,6 +228,82 @@ TEST_CASE("loop_count resets to 0 after loop_clear")
     REQUIRE(e.position().loop_count == 0u);
 }
 
+// ── Tempo / meter / loop-enabled snapshot ──────────────────────────────────────
+
+TEST_CASE("position snapshot reports the tempo and meter active at tick")
+{
+    MockClock clock;
+    Engine e{&clock};
+
+    REQUIRE(e.timesig_set(0, 3, 8) == OMEGA_OK);
+    REQUIRE(e.tempo_set(0, 140'000) == OMEGA_OK);
+    REQUIRE(e.enqueue(TransportCmd{TransportAction::PLAY, 0u}) == OMEGA_OK);
+
+    clock.advance_ticks(1);
+    e.process();
+
+    omega_position_t pos = e.position();
+    REQUIRE(pos.bpm_milli == 140'000u);
+    REQUIRE(pos.numerator == 3u);
+    REQUIRE(pos.denominator == 8u);
+}
+
+TEST_CASE("position snapshot follows a tempo change mid-playback")
+{
+    MockClock clock;
+    Engine e{&clock};
+
+    REQUIRE(e.tempo_set(0, 120'000) == OMEGA_OK);
+    REQUIRE(e.tempo_set(960, 90'000) == OMEGA_OK);
+    REQUIRE(e.enqueue(TransportCmd{TransportAction::PLAY, 0u}) == OMEGA_OK);
+
+    clock.advance_ticks(1);
+    e.process();
+    REQUIRE(e.position().bpm_milli == 120'000u);
+
+    // Cross the tick-960 tempo point.
+    clock.advance_ticks(960);
+    e.process();
+    REQUIRE(e.position().bpm_milli == 90'000u);
+}
+
+TEST_CASE("position snapshot reports numerator/denominator 0 in freeform mode")
+{
+    MockClock clock;
+    Engine e{&clock};
+
+    REQUIRE(e.enqueue(TransportCmd{TransportAction::PLAY, 0u}) == OMEGA_OK);
+    clock.advance_ticks(1);
+    e.process();
+
+    omega_position_t pos = e.position();
+    REQUIRE(pos.numerator == 0u);
+    REQUIRE(pos.denominator == 0u);
+    // Tempo still reports the default 120 BPM even without a meter.
+    REQUIRE(pos.bpm_milli == 120'000u);
+}
+
+TEST_CASE("position snapshot reports loop_enabled")
+{
+    MockClock clock;
+    Engine e{&clock};
+
+    REQUIRE(e.enqueue(TransportCmd{TransportAction::PLAY, 0u}) == OMEGA_OK);
+    clock.advance_ticks(1);
+    e.process();
+    REQUIRE(e.position().loop_enabled == 0u);
+
+    REQUIRE(e.loop_set(0, 960) == OMEGA_OK);
+    clock.advance_ticks(1);
+    e.process();
+    REQUIRE(e.position().loop_enabled == 1u);
+
+    REQUIRE(e.loop_clear() == OMEGA_OK);
+    clock.advance_ticks(1);
+    e.process();
+    REQUIRE(e.position().loop_enabled == 0u);
+}
+
 // ── C API integration ─────────────────────────────────────────────────────────
 
 TEST_CASE("omega_engine_position returns OMEGA_OK and fills struct")

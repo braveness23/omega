@@ -486,6 +486,12 @@ OMEGA_API omega_tick_t omega_engine_position_tick(const omega_engine_t* e);
  * loop_count is incremented each time the active loop region wraps and is
  * reset to 0 whenever the loop region is changed via omega_loop_set() or
  * omega_loop_clear().
+ *
+ * bpm_milli, numerator, and denominator report the tempo and meter active at
+ * tick. They are written atomically with the rest of the snapshot each cycle,
+ * giving any-thread readers (e.g. a UI) a race-free view of tempo/meter that
+ * follows changes during playback. numerator/denominator are 0 in freeform
+ * mode. loop_enabled is 1 while a loop region is active, else 0.
  */
 typedef struct
 {
@@ -494,6 +500,10 @@ typedef struct
     uint32_t subdivision; /* ticks past the beat boundary (0 in freeform mode) */
     uint64_t loop_count;  /* number of loop-region wraps since last loop_set/clear */
     omega_tick_t tick;    /* raw tick for further computation */
+    uint32_t bpm_milli;   /* tempo at tick, BPM x 1000 */
+    uint8_t numerator;    /* meter numerator at tick (0 = freeform/no meter) */
+    uint8_t denominator;  /* meter denominator at tick (0 = freeform/no meter) */
+    uint8_t loop_enabled; /* 1 if a loop region is active, else 0 */
 } omega_position_t;
 
 /*

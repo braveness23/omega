@@ -232,6 +232,46 @@ public:
      */
     omega_status_t set_track_sink(TrackId track_id, uint32_t sink_id);
 
+    /*
+     * Sets a track's representative MIDI channel (display/metadata only).
+     * Thread: Mutation thread only, before playback starts.
+     *
+     * Returns OMEGA_ERR_NOT_FOUND if track_id is not registered.
+     */
+    omega_status_t set_track_channel(TrackId track_id, uint8_t channel);
+
+    /*
+     * Renames a track. Safe during playback (the timing thread never reads
+     * Track::name). Applied directly, not via the command queue, so it does not
+     * allocate on the timing thread.
+     * Thread: Mutation thread only.
+     *
+     * Returns OMEGA_ERR_NOT_FOUND if track_id is not registered.
+     */
+    omega_status_t set_track_name(TrackId track_id, std::string name);
+
+    /*
+     * Enqueues a command to mute/solo a timeline track. While any track is
+     * soloed, only soloed tracks produce output. A muted/suppressed track stops
+     * dispatching new events; notes already started with an inline duration
+     * release at their scheduled note-off (no stuck notes). Safe during playback.
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t set_track_mute(TrackId track_id, bool muted);
+    omega_status_t set_track_solo(TrackId track_id, bool soloed);
+
+    /*
+     * Per-track mute/solo queries. Return false for an unregistered track_id.
+     * Thread: Any thread (may return a stale value if read concurrently with a
+     * mute/solo change being applied).
+     */
+    [[nodiscard]] bool track_is_muted(TrackId track_id) const noexcept;
+    [[nodiscard]] bool track_is_soloed(TrackId track_id) const noexcept;
+
     /* ── Performance source ──────────────────────────────────────────────── */
 
     /*
@@ -791,6 +831,8 @@ private:
     void apply(const ClearSmpteConfigCmd& cmd);
     void apply(const SetSinkMuteCmd& cmd);
     void apply(const SetSinkSoloCmd& cmd);
+    void apply(const SetTrackMuteCmd& cmd);
+    void apply(const SetTrackSoloCmd& cmd);
 
     /*
      * Flushes active notes for a given channel mask.
@@ -872,6 +914,10 @@ private:
     std::atomic<uint32_t> snap_sub_{0};
     std::atomic<uint64_t> snap_loop_count_{0};
     std::atomic<uint64_t> snap_tick_{0};
+    std::atomic<uint32_t> snap_bpm_milli_{120'000};
+    std::atomic<uint8_t> snap_numerator_{0};
+    std::atomic<uint8_t> snap_denominator_{0};
+    std::atomic<uint8_t> snap_loop_enabled_{0};
 
     using EventCallbackFn = void (*)(omega_engine_event_t, uint32_t, void*);
     std::atomic<EventCallbackFn> event_cb_fn_{nullptr};

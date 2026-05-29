@@ -1,20 +1,16 @@
 #include <omega/engine.h>
 #include <omega/omega.h>
+#include <omega/smf.h>
 #include <omega/test/capturing_sink.h>
 #include <omega/test/mock_clock.h>
 
 #include <catch2/catch_test_macros.hpp>
 #include <cstdio>
 #include <filesystem>
+#include <set>
 #include <string>
 
 #include "MidiFile.h"
-
-// Forward declaration from src/smf_import.cpp
-namespace omega
-{
-omega_status_t smf_import(Engine& engine, const char* path);
-}
 
 static std::string tmp_path(const char* suffix)
 {
@@ -157,6 +153,116 @@ TEST_CASE("SMF import: time signatures imported into TimeSignatureMap", "[smf_im
     REQUIRE(p1 != nullptr);
     CHECK(p1->numerator == 3u);
     CHECK(p1->denominator == 4u);
+
+    std::remove(path.c_str());
+}
+
+// ── Import options: channel, sink routing, split-by-channel ─────────────────────
+
+TEST_CASE("SMF import: sets Track::channel from the track's first note", "[smf_import]")
+{
+    const std::string path = tmp_path("channel");
+    smf::MidiFile mf;
+    mf.setTPQ(480);
+    mf.addNoteOn(0, 0, 5, 60, 100);  // channel 5
+    mf.addNoteOff(0, 480, 5, 60, 0);
+    mf.sortTracks();
+    REQUIRE(mf.write(path) != 0);
+
+    omega::Engine engine;
+    REQUIRE(omega::smf_import(engine, path.c_str()) == OMEGA_OK);
+
+    const auto& tracks = engine.timeline_source().tracks();
+    REQUIRE(tracks.size() == 1u);
+    CHECK(tracks[0].channel == 5u);
+
+    std::remove(path.c_str());
+}
+
+TEST_CASE("SMF import: routes events and tracks to opts.sink_id", "[smf_import]")
+{
+    const std::string path = tmp_path("sinkroute");
+    smf::MidiFile mf;
+    mf.setTPQ(480);
+    mf.addNoteOn(0, 0, 0, 60, 100);
+    mf.addNoteOff(0, 480, 0, 60, 0);
+    mf.sortTracks();
+    REQUIRE(mf.write(path) != 0);
+
+    omega::Engine engine;
+    omega::SmfImportOptions opts;
+    opts.sink_id = 7u;
+    REQUIRE(omega::smf_import(engine, path.c_str(), opts) == OMEGA_OK);
+
+    const auto& tracks = engine.timeline_source().tracks();
+    REQUIRE(tracks.size() == 1u);
+    CHECK(tracks[0].sink_id == 7u);
+    REQUIRE(!tracks[0].events.empty());
+    CHECK(tracks[0].events.front().sink_id == 7u);
+
+    std::remove(path.c_str());
+}
+
+TEST_CASE("SMF import: split_by_channel creates one track per channel", "[smf_import]")
+{
+    const std::string path = tmp_path("split");
+    smf::MidiFile mf;
+    mf.setTPQ(480);
+    // One Type 0 track carrying three channels.
+    mf.addNoteOn(0, 0, 0, 60, 100);
+    mf.addNoteOff(0, 240, 0, 60, 0);
+    mf.addNoteOn(0, 480, 1, 62, 100);
+    mf.addNoteOff(0, 720, 1, 62, 0);
+    mf.addNoteOn(0, 960, 2, 64, 100);
+    mf.addNoteOff(0, 1200, 2, 64, 0);
+    mf.sortTracks();
+    REQUIRE(mf.write(path) != 0);
+
+    omega::Engine engine;
+    omega::SmfImportOptions opts;
+    opts.split_by_channel = true;
+    opts.sink_id = 3u;
+    REQUIRE(omega::smf_import(engine, path.c_str(), opts) == OMEGA_OK);
+
+    const auto& tracks = engine.timeline_source().tracks();
+    REQUIRE(tracks.size() == 3u);
+
+    std::set<uint8_t> channels;
+    for (const auto& trk : tracks)
+    {
+        channels.insert(trk.channel);
+        CHECK(trk.sink_id == 3u);
+        REQUIRE(!trk.events.empty());
+        // Every event on a split track shares the track's channel.
+        for (const auto& ev : trk.events)
+        {
+            CHECK(ev.channel == trk.channel);
+        }
+    }
+    CHECK(channels == std::set<uint8_t>{0u, 1u, 2u});
+
+    std::remove(path.c_str());
+}
+
+TEST_CASE("SMF import: non-split keeps multi-channel events in one track", "[smf_import]")
+{
+    const std::string path = tmp_path("nosplit");
+    smf::MidiFile mf;
+    mf.setTPQ(480);
+    mf.addNoteOn(0, 0, 0, 60, 100);
+    mf.addNoteOff(0, 240, 0, 60, 0);
+    mf.addNoteOn(0, 480, 1, 62, 100);
+    mf.addNoteOff(0, 720, 1, 62, 0);
+    mf.sortTracks();
+    REQUIRE(mf.write(path) != 0);
+
+    omega::Engine engine;
+    REQUIRE(omega::smf_import(engine, path.c_str()) == OMEGA_OK);
+
+    const auto& tracks = engine.timeline_source().tracks();
+    REQUIRE(tracks.size() == 1u);
+    // Representative channel comes from the first note (channel 0).
+    CHECK(tracks[0].channel == 0u);
 
     std::remove(path.c_str());
 }

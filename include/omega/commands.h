@@ -293,6 +293,31 @@ struct SetSinkSoloCmd
     uint8_t soloed;   // non-zero = solo
 };
 
+// ── Track mute / solo commands ────────────────────────────────────────────────
+
+/*
+ * Sets the mute state for a timeline track. Applied on the timing thread at the
+ * start of the next process() cycle; safe during playback. A muted track stops
+ * dispatching new events; notes already started with an inline duration release
+ * at their scheduled note-off.
+ */
+struct SetTrackMuteCmd
+{
+    TrackId track;
+    uint8_t muted;  // non-zero = mute
+};
+
+/*
+ * Sets the solo state for a timeline track. While any track is soloed, only
+ * soloed tracks produce output. Applied on the timing thread; safe during
+ * playback.
+ */
+struct SetTrackSoloCmd
+{
+    TrackId track;
+    uint8_t soloed;  // non-zero = solo
+};
+
 // ── Custom source commands ────────────────────────────────────────────────────
 
 /*
@@ -345,7 +370,9 @@ using Command = std::variant<AddEventCmd,
                              SetSmpteConfigCmd,
                              ClearSmpteConfigCmd,
                              SetSinkMuteCmd,
-                             SetSinkSoloCmd>;
+                             SetSinkSoloCmd,
+                             SetTrackMuteCmd,
+                             SetTrackSoloCmd>;
 
 static_assert(sizeof(Command) <= 64, "Command must fit within 64 bytes");
 

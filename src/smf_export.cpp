@@ -1,6 +1,7 @@
 #include <omega/engine.h>
 #include <omega/marker_list.h>
 #include <omega/omega.h>
+#include <omega/smf.h>
 #include <omega/tempo_map.h>
 #include <omega/time_signature_map.h>
 #include <omega/timeline.h>

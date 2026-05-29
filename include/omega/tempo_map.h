@@ -48,6 +48,29 @@ public:
     /* Convert nanoseconds from session start to absolute ticks. */
     [[nodiscard]] uint64_t ns_to_ticks(uint64_t ns) const;
 
+    /*
+     * Returns the tempo (BPM × 1000) active at tick — the bpm_milli of the last
+     * point with tick <= the argument. Returns the first point's value for ticks
+     * before it, or 0 if the map is empty (never, given the default point).
+     * Integer-only; safe to call from the timing thread.
+     */
+    [[nodiscard]] uint32_t bpm_milli_at(uint64_t tick) const noexcept
+    {
+        uint32_t bpm = points_.empty() ? 0u : points_.front().bpm_milli;
+        for (const auto& p : points_)
+        {
+            if (p.tick <= tick)
+            {
+                bpm = p.bpm_milli;
+            }
+            else
+            {
+                break;
+            }
+        }
+        return bpm;
+    }
+
     /* Raw access for serialization (non-timing-thread). */
     [[nodiscard]] const std::vector<TempoPoint>& points() const noexcept { return points_; }
 

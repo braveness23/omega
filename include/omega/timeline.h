@@ -43,6 +43,44 @@ public:
     omega_status_t set_sink(TrackId track_id, uint32_t sink_id);
 
     /*
+     * Sets the representative MIDI channel for a track (display/metadata only;
+     * playback routes each event by its own channel). Thread: Mutation thread
+     * only, before playback starts.
+     *
+     * Returns OMEGA_ERR_NOT_FOUND if track_id is not registered.
+     */
+    omega_status_t set_channel(TrackId track_id, uint8_t channel);
+
+    /*
+     * Replaces a track's name. Safe during playback: advance() never reads
+     * Track::name, so the only constraint is the usual single-mutation-thread
+     * rule. Thread: Mutation thread only.
+     *
+     * Returns OMEGA_ERR_NOT_FOUND if track_id is not registered.
+     */
+    omega_status_t set_name(TrackId track_id, std::string name);
+
+    /*
+     * Per-track mute/solo. While any track is soloed, only soloed tracks play.
+     * A muted (or solo-suppressed) track dispatches no new events; notes it has
+     * already started with an inline duration still release at their scheduled
+     * note-off (no stuck notes, no abrupt cut). Thread: Timing thread only
+     * (applied from the engine command queue).
+     *
+     * Returns OMEGA_ERR_NOT_FOUND if track_id is not registered.
+     */
+    omega_status_t set_track_mute(TrackId track_id, bool muted);
+    omega_status_t set_track_solo(TrackId track_id, bool soloed);
+
+    /*
+     * Per-track mute/solo queries. Return false for an unregistered track_id.
+     * Thread: Any thread (may return a stale value if read concurrently with a
+     * mute/solo change being applied on the timing thread).
+     */
+    [[nodiscard]] bool track_is_muted(TrackId track_id) const noexcept;
+    [[nodiscard]] bool track_is_soloed(TrackId track_id) const noexcept;
+
+    /*
      * Inserts an event in tick-sorted order.
      * Thread: Timing thread only (called from engine command queue drain).
      *

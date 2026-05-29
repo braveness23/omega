@@ -24,6 +24,62 @@ omega_status_t TimelineSource::set_sink(TrackId track_id, uint32_t sink_id)
     return OMEGA_OK;
 }
 
+omega_status_t TimelineSource::set_channel(TrackId track_id, uint8_t channel)
+{
+    Track* trk = find_track(track_id);
+    if (trk == nullptr)
+    {
+        return OMEGA_ERR_NOT_FOUND;
+    }
+    trk->channel = channel;
+    return OMEGA_OK;
+}
+
+omega_status_t TimelineSource::set_name(TrackId track_id, std::string name)
+{
+    Track* trk = find_track(track_id);
+    if (trk == nullptr)
+    {
+        return OMEGA_ERR_NOT_FOUND;
+    }
+    trk->name = std::move(name);
+    return OMEGA_OK;
+}
+
+omega_status_t TimelineSource::set_track_mute(TrackId track_id, bool muted)
+{
+    Track* trk = find_track(track_id);
+    if (trk == nullptr)
+    {
+        return OMEGA_ERR_NOT_FOUND;
+    }
+    trk->muted = muted;
+    return OMEGA_OK;
+}
+
+omega_status_t TimelineSource::set_track_solo(TrackId track_id, bool soloed)
+{
+    Track* trk = find_track(track_id);
+    if (trk == nullptr)
+    {
+        return OMEGA_ERR_NOT_FOUND;
+    }
+    trk->soloed = soloed;
+    return OMEGA_OK;
+}
+
+bool TimelineSource::track_is_muted(TrackId track_id) const noexcept
+{
+    const Track* trk = find_track(track_id);
+    return trk != nullptr && trk->muted;
+}
+
+bool TimelineSource::track_is_soloed(TrackId track_id) const noexcept
+{
+    const Track* trk = find_track(track_id);
+    return trk != nullptr && trk->soloed;
+}
+
 omega_status_t TimelineSource::add_event(TrackId track_id, const Event& event)
 {
     Track* trk = find_track(track_id);
@@ -70,9 +126,23 @@ void TimelineSource::advance(uint64_t to_tick, EventDispatcher& dispatcher, Proc
 {
     const uint64_t from_tick = started_ ? next_tick_ : 0u;
 
+    bool any_soloed = false;
+    for (const auto& track : tracks_)
+    {
+        if (track.soloed)
+        {
+            any_soloed = true;
+            break;
+        }
+    }
+
     for (auto& track : tracks_)
     {
-        if (track.muted || track.events.empty())
+        // A track is silent if explicitly muted, or if some track is soloed and
+        // this one is not. Already-scheduled note-offs (active_notes_) still
+        // fire below regardless, so muting never leaves a hanging note.
+        const bool silent = track.muted || (any_soloed && !track.soloed);
+        if (silent || track.events.empty())
         {
             continue;
         }

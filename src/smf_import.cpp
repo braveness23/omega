@@ -1,8 +1,11 @@
 #include <omega/engine.h>
 #include <omega/omega.h>
+#include <omega/smf.h>
 #include <omega/types.h>
 
+#include <array>
 #include <cstring>
+#include <optional>
 #include <string>
 
 #include "MidiFile.h"
@@ -10,7 +13,61 @@
 namespace omega
 {
 
-omega_status_t smf_import(Engine& engine, const char* path)
+namespace
+{
+
+// Per-SMF-track helper that lazily creates omega tracks and routes them.
+//
+// In non-split mode there is at most one omega track per SMF track; its channel
+// is taken from the first musical event written. In split mode there is one
+// omega track per MIDI channel, created on first use, each stamped with its
+// channel. Either way the track (and the caller's events) route to opts.sink_id.
+class TrackFactory
+{
+public:
+    TrackFactory(Engine& engine, int smf_track, const SmfImportOptions& opts) noexcept
+        : engine_(engine), smf_track_(smf_track), opts_(opts)
+    {}
+
+    // Returns the omega TrackId that should receive an event on `channel`,
+    // creating and routing the track on first use.
+    TrackId track_for(uint8_t channel)
+    {
+        if (opts_.split_by_channel)
+        {
+            auto& slot = channel_tracks_[channel & 0x0Fu];
+            if (!slot)
+            {
+                TrackId id = engine_.add_track("track_" + std::to_string(smf_track_) + "_ch" +
+                                               std::to_string((channel & 0x0Fu) + 1u));
+                engine_.set_track_channel(id, static_cast<uint8_t>(channel & 0x0Fu));
+                engine_.set_track_sink(id, opts_.sink_id);
+                slot = id;
+            }
+            return *slot;
+        }
+
+        if (!single_track_)
+        {
+            TrackId id = engine_.add_track("track_" + std::to_string(smf_track_));
+            engine_.set_track_channel(id, static_cast<uint8_t>(channel & 0x0Fu));
+            engine_.set_track_sink(id, opts_.sink_id);
+            single_track_ = id;
+        }
+        return *single_track_;
+    }
+
+private:
+    Engine& engine_;
+    int smf_track_;
+    const SmfImportOptions& opts_;
+    std::optional<TrackId> single_track_;
+    std::array<std::optional<TrackId>, 16> channel_tracks_{};
+};
+
+}  // namespace
+
+omega_status_t smf_import(Engine& engine, const char* path, const SmfImportOptions& opts)
 {
     if (path == nullptr)
     {
@@ -36,7 +93,10 @@ omega_status_t smf_import(Engine& engine, const char* path)
 
     for (int t = 0; t < num_tracks; ++t)
     {
-        TrackId track_id = engine.add_track("track_" + std::to_string(t));
+        // Tracks are created lazily on the first musical event so that tracks
+        // carrying only meta events (tempo, time sig, markers) do not appear as
+        // empty tracks in the engine.
+        TrackFactory factory{engine, t, opts};
 
         for (int e = 0; e < mf[t].size(); ++e)
         {
@@ -108,14 +168,14 @@ omega_status_t smf_import(Engine& engine, const char* path)
 
                 Event note_ev{};
                 note_ev.tick = omega_tick;
-                note_ev.sink_id = 0u;
+                note_ev.sink_id = opts.sink_id;
                 note_ev.payload_tag = OMEGA_NOTE_ON;
                 note_ev.channel = channel;
                 note_ev.data[0] = note;
                 note_ev.data[1] = velocity;
                 std::memcpy(&note_ev.data[2], &duration, sizeof(duration));
 
-                engine.add_track_event(track_id, note_ev);
+                engine.add_track_event(factory.track_for(channel), note_ev);
             }
             else if (ev.isController())
             {
@@ -125,13 +185,13 @@ omega_status_t smf_import(Engine& engine, const char* path)
 
                 Event cc_ev{};
                 cc_ev.tick = omega_tick;
-                cc_ev.sink_id = 0u;
+                cc_ev.sink_id = opts.sink_id;
                 cc_ev.payload_tag = OMEGA_CC;
                 cc_ev.channel = channel;
                 cc_ev.data[0] = controller;
                 cc_ev.data[1] = value;
 
-                engine.add_track_event(track_id, cc_ev);
+                engine.add_track_event(factory.track_for(channel), cc_ev);
             }
             else if (ev.isPatchChange())
             {
@@ -140,17 +200,22 @@ omega_status_t smf_import(Engine& engine, const char* path)
 
                 Event prog_ev{};
                 prog_ev.tick = omega_tick;
-                prog_ev.sink_id = 0u;
+                prog_ev.sink_id = opts.sink_id;
                 prog_ev.payload_tag = OMEGA_PROGRAM;
                 prog_ev.channel = channel;
                 prog_ev.data[0] = program;
 
-                engine.add_track_event(track_id, prog_ev);
+                engine.add_track_event(factory.track_for(channel), prog_ev);
             }
         }
     }
 
     return OMEGA_OK;
+}
+
+omega_status_t smf_import(Engine& engine, const char* path)
+{
+    return smf_import(engine, path, SmfImportOptions{});
 }
 
 }  // namespace omega
