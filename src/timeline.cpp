@@ -24,6 +24,62 @@ omega_status_t TimelineSource::set_sink(TrackId track_id, uint32_t sink_id)
     return OMEGA_OK;
 }
 
+omega_status_t TimelineSource::set_channel(TrackId track_id, uint8_t channel)
+{
+    Track* trk = find_track(track_id);
+    if (trk == nullptr)
+    {
+        return OMEGA_ERR_NOT_FOUND;
+    }
+    trk->channel = channel;
+    return OMEGA_OK;
+}
+
+omega_status_t TimelineSource::set_name(TrackId track_id, std::string name)
+{
+    Track* trk = find_track(track_id);
+    if (trk == nullptr)
+    {
+        return OMEGA_ERR_NOT_FOUND;
+    }
+    trk->name = std::move(name);
+    return OMEGA_OK;
+}
+
+omega_status_t TimelineSource::set_track_mute(TrackId track_id, bool muted)
+{
+    Track* trk = find_track(track_id);
+    if (trk == nullptr)
+    {
+        return OMEGA_ERR_NOT_FOUND;
+    }
+    trk->muted = muted;
+    return OMEGA_OK;
+}
+
+omega_status_t TimelineSource::set_track_solo(TrackId track_id, bool soloed)
+{
+    Track* trk = find_track(track_id);
+    if (trk == nullptr)
+    {
+        return OMEGA_ERR_NOT_FOUND;
+    }
+    trk->soloed = soloed;
+    return OMEGA_OK;
+}
+
+bool TimelineSource::track_is_muted(TrackId track_id) const noexcept
+{
+    const Track* trk = find_track(track_id);
+    return trk != nullptr && trk->muted;
+}
+
+bool TimelineSource::track_is_soloed(TrackId track_id) const noexcept
+{
+    const Track* trk = find_track(track_id);
+    return trk != nullptr && trk->soloed;
+}
+
 omega_status_t TimelineSource::add_event(TrackId track_id, const Event& event)
 {
     Track* trk = find_track(track_id);
@@ -66,13 +122,118 @@ omega_status_t TimelineSource::remove_event(TrackId track_id, uint64_t tick, uin
     return OMEGA_ERR_NOT_FOUND;
 }
 
+omega_status_t TimelineSource::replace_event(TrackId track_id,
+                                             uint64_t tick,
+                                             uint32_t index,
+                                             const Event& replacement)
+{
+    Track* trk = find_track(track_id);
+    if (trk == nullptr)
+    {
+        return OMEGA_ERR_NOT_FOUND;
+    }
+
+    auto pos = std::lower_bound(
+        trk->events.begin(), trk->events.end(), tick, [](const Event& ev, uint64_t v) {
+            return ev.tick < v;
+        });
+    uint32_t idx = 0;
+    while (pos != trk->events.end() && pos->tick == tick)
+    {
+        if (idx == index)
+        {
+            *pos = replacement;
+            // Re-sort only if the tick changed; otherwise the order is still valid.
+            if (replacement.tick != tick)
+            {
+                std::stable_sort(trk->events.begin(),
+                                 trk->events.end(),
+                                 [](const Event& a, const Event& b) { return a.tick < b.tick; });
+            }
+            return OMEGA_OK;
+        }
+        ++pos;
+        ++idx;
+    }
+    return OMEGA_ERR_NOT_FOUND;
+}
+
+omega_status_t TimelineSource::shift_events(TrackId track_id, int64_t offset_ticks)
+{
+    Track* trk = find_track(track_id);
+    if (trk == nullptr)
+    {
+        return OMEGA_ERR_NOT_FOUND;
+    }
+    for (auto& ev : trk->events)
+    {
+        int64_t new_tick = static_cast<int64_t>(ev.tick) + offset_ticks;
+        ev.tick = (new_tick < 0) ? 0u : static_cast<uint64_t>(new_tick);
+    }
+    // Re-sort once after all ticks are updated.
+    std::stable_sort(trk->events.begin(), trk->events.end(), [](const Event& a, const Event& b) {
+        return a.tick < b.tick;
+    });
+    return OMEGA_OK;
+}
+
+omega_status_t TimelineSource::swap_tracks(TrackId a, TrackId b)
+{
+    if (a == b)
+    {
+        return OMEGA_OK;
+    }
+    size_t idx_a = tracks_.size();
+    size_t idx_b = tracks_.size();
+    for (size_t i = 0; i < tracks_.size(); ++i)
+    {
+        if (tracks_[i].id == a)
+        {
+            idx_a = i;
+        }
+        else if (tracks_[i].id == b)
+        {
+            idx_b = i;
+        }
+    }
+    if (idx_a >= tracks_.size() || idx_b >= tracks_.size())
+    {
+        return OMEGA_ERR_NOT_FOUND;
+    }
+    std::swap(tracks_[idx_a], tracks_[idx_b]);
+    return OMEGA_OK;
+}
+
+void TimelineSource::clear_tracks() noexcept
+{
+    tracks_.clear();
+    next_id_ = 1;
+    next_tick_ = 0;
+    started_ = false;
+    active_notes_.clear();
+}
+
 void TimelineSource::advance(uint64_t to_tick, EventDispatcher& dispatcher, ProcessContext& /*ctx*/)
 {
     const uint64_t from_tick = started_ ? next_tick_ : 0u;
 
+    bool any_soloed = false;
+    for (const auto& track : tracks_)
+    {
+        if (track.soloed)
+        {
+            any_soloed = true;
+            break;
+        }
+    }
+
     for (auto& track : tracks_)
     {
-        if (track.muted || track.events.empty())
+        // A track is silent if explicitly muted, or if some track is soloed and
+        // this one is not. Already-scheduled note-offs (active_notes_) still
+        // fire below regardless, so muting never leaves a hanging note.
+        const bool silent = track.muted || (any_soloed && !track.soloed);
+        if (silent || track.events.empty())
         {
             continue;
         }

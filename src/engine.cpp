@@ -152,6 +152,24 @@ omega_status_t Engine::add_track_event(TrackId track_id, const Event& event)
     return timeline_.add_event(track_id, event);
 }
 
+omega_status_t Engine::replace_track_event(TrackId track_id,
+                                           uint64_t tick,
+                                           uint32_t index,
+                                           const Event& replacement)
+{
+    return enqueue(ReplaceTrackEventCmd{track_id, tick, index, replacement});
+}
+
+omega_status_t Engine::shift_track_events(TrackId track_id, int64_t offset_ticks)
+{
+    return timeline_.shift_events(track_id, offset_ticks);
+}
+
+omega_status_t Engine::swap_tracks(TrackId a, TrackId b)
+{
+    return timeline_.swap_tracks(a, b);
+}
+
 PatternLibrary& Engine::pattern_library() noexcept
 {
     return patterns_;
@@ -170,6 +188,36 @@ TrackId Engine::add_track(std::string name)
 omega_status_t Engine::set_track_sink(TrackId track_id, uint32_t sink_id)
 {
     return timeline_.set_sink(track_id, sink_id);
+}
+
+omega_status_t Engine::set_track_channel(TrackId track_id, uint8_t channel)
+{
+    return timeline_.set_channel(track_id, channel);
+}
+
+omega_status_t Engine::set_track_name(TrackId track_id, std::string name)
+{
+    return timeline_.set_name(track_id, std::move(name));
+}
+
+omega_status_t Engine::set_track_mute(TrackId track_id, bool muted)
+{
+    return enqueue(SetTrackMuteCmd{track_id, static_cast<uint8_t>(muted ? 1u : 0u)});
+}
+
+omega_status_t Engine::set_track_solo(TrackId track_id, bool soloed)
+{
+    return enqueue(SetTrackSoloCmd{track_id, static_cast<uint8_t>(soloed ? 1u : 0u)});
+}
+
+bool Engine::track_is_muted(TrackId track_id) const noexcept
+{
+    return timeline_.track_is_muted(track_id);
+}
+
+bool Engine::track_is_soloed(TrackId track_id) const noexcept
+{
+    return timeline_.track_is_soloed(track_id);
 }
 
 omega_status_t Engine::sink_set_mute(uint32_t sink_id, uint8_t channel, bool muted)
@@ -466,6 +514,10 @@ void Engine::apply(const TransportCmd& cmd)
             ctx.perf_ctx = perf_ctx_;
             FilteringDispatcher dispatcher{
                 sinks_, sink_filters_, any_soloed_.load(std::memory_order_relaxed)};
+            for (auto& [pri, src] : custom_sources_)
+            {
+                src->on_locate(cmd.locate_tick, dispatcher, ctx);
+            }
             timeline_.on_locate(cmd.locate_tick, dispatcher, ctx);
             song_.on_locate(cmd.locate_tick, dispatcher, ctx);
             perf_.on_locate(cmd.locate_tick, dispatcher, ctx);
@@ -767,6 +819,21 @@ void Engine::apply(const SetSinkSoloCmd& cmd)
     }
 }
 
+void Engine::apply(const SetTrackMuteCmd& cmd)
+{
+    timeline_.set_track_mute(cmd.track, cmd.muted != 0u);
+}
+
+void Engine::apply(const SetTrackSoloCmd& cmd)
+{
+    timeline_.set_track_solo(cmd.track, cmd.soloed != 0u);
+}
+
+void Engine::apply(const ReplaceTrackEventCmd& cmd)
+{
+    timeline_.replace_event(cmd.track, cmd.tick, cmd.index, cmd.replacement);
+}
+
 void Engine::process()
 {
     // Snapshot slot states at the top of the cycle so we can detect transitions
@@ -925,6 +992,18 @@ void Engine::process()
                 {
                     apply(c);
                 }
+                else if constexpr (std::is_same_v<T, SetTrackMuteCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, SetTrackSoloCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, ReplaceTrackEventCmd>)
+                {
+                    apply(c);
+                }
             },
             cmd);
     }
@@ -967,6 +1046,10 @@ void Engine::process()
         position = loop_pos_ns;
         to_tick = loop_start_tick_;
 
+        for (auto& [pri, src] : custom_sources_)
+        {
+            src->on_locate(loop_start_tick_, dispatcher, ctx);
+        }
         timeline_.on_locate(loop_start_tick_, dispatcher, ctx);
         song_.on_locate(loop_start_tick_, dispatcher, ctx);
         perf_.on_locate(loop_start_tick_, dispatcher, ctx);
@@ -1026,6 +1109,16 @@ void Engine::process()
         snap_beat_.store(has_meter ? bp.beat : 0u, std::memory_order_relaxed);
         snap_sub_.store(has_meter ? bp.subdivision : 0u, std::memory_order_relaxed);
         snap_loop_count_.store(loop_count_, std::memory_order_relaxed);
+
+        // Tempo and meter active at to_tick, for any-thread display. The maps
+        // were fully updated during the command-drain phase, so these reads do
+        // not race with a mutation-thread write.
+        snap_bpm_milli_.store(tempo_map_.bpm_milli_at(to_tick), std::memory_order_relaxed);
+        const TimeSigPoint* ts = timesig_map_.at(to_tick);
+        snap_numerator_.store(ts != nullptr ? ts->numerator : 0u, std::memory_order_relaxed);
+        snap_denominator_.store(ts != nullptr ? ts->denominator : 0u, std::memory_order_relaxed);
+        snap_loop_enabled_.store(loop_enabled_ ? 1u : 0u, std::memory_order_relaxed);
+
         // tick written last with release so readers that load tick first with
         // acquire will see all preceding stores.
         snap_tick_.store(to_tick, std::memory_order_release);
@@ -1056,6 +1149,10 @@ omega_position_t Engine::position() const noexcept
     out.beat = snap_beat_.load(std::memory_order_relaxed);
     out.subdivision = snap_sub_.load(std::memory_order_relaxed);
     out.loop_count = snap_loop_count_.load(std::memory_order_relaxed);
+    out.bpm_milli = snap_bpm_milli_.load(std::memory_order_relaxed);
+    out.numerator = snap_numerator_.load(std::memory_order_relaxed);
+    out.denominator = snap_denominator_.load(std::memory_order_relaxed);
+    out.loop_enabled = snap_loop_enabled_.load(std::memory_order_relaxed);
     return out;
 }
 

@@ -13,7 +13,7 @@
 namespace omega
 {
 
-static constexpr uint32_t PERF_MAX_SLOTS = 64u;
+static constexpr uint32_t PERF_MAX_SLOTS = 128u;
 
 enum class SlotState : uint8_t
 {
@@ -27,7 +27,7 @@ enum class SlotState : uint8_t
 /*
  * Built-in performance playback source.
  *
- * Manages 64 independent pattern slots. Each slot runs a pattern state machine
+ * Manages up to PERF_MAX_SLOTS independent pattern slots. Each slot runs a pattern state machine
  * (EMPTY → IDLE → QUEUED → PLAYING → STOPPING → IDLE). Slots play simultaneously
  * and independently. Per-slot parameters (transpose, velocity scale, random bias)
  * are applied at dispatch time.

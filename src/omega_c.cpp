@@ -9,6 +9,7 @@
 #include <omega/perf_slot.h>
 #include <omega/region_list.h>
 #include <omega/sink.h>
+#include <omega/smf.h>
 #include <omega/smpte_converter.h>
 #include <omega/snap.h>
 #include <omega/tempo_map.h>
@@ -19,13 +20,6 @@
 #include <algorithm>
 #include <new>
 #include <string>
-
-// Forward declarations from src/smf_import.cpp and src/smf_export.cpp
-namespace omega
-{
-omega_status_t smf_import(Engine& engine, const char* path);
-omega_status_t smf_export(Engine& engine, const char* path, int smf_type);
-}  // namespace omega
 
 namespace
 {

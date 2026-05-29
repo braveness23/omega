@@ -102,6 +102,14 @@ OMEGA_API const char* omega_status_string(omega_status_t status);
 #define OMEGA_AFTERTOUCH 0x05u /* data[0]=pressure (0-127) */
 #define OMEGA_POLY_AT 0x06u    /* data[0]=note, data[1]=pressure (0-127) */
 
+/* Control-sequence event tags (range 0x0B–0x0E). These are dispatched to a
+ * ControlSink, which executes them as engine mutations on the timing thread
+ * rather than sending MIDI bytes. */
+#define OMEGA_CTRL_START_SLOT 0x0Bu /* data[0..3]=slot_id, data[4]=cue_mode */
+#define OMEGA_CTRL_STOP_SLOT 0x0Cu  /* data[0..3]=slot_id, data[4]=cue_mode */
+#define OMEGA_CTRL_SET_TEMPO 0x0Du  /* data[0..3]=bpm_milli (uint32_t)       */
+#define OMEGA_CTRL_TRANSPOSE 0x0Eu  /* data[0..3]=slot_id, data[4]=semitones (int8_t cast) */
+
 typedef struct
 {
     uint64_t tick;       /* absolute musical position from session start */
@@ -221,7 +229,7 @@ typedef uint32_t omega_pattern_id_t;
 typedef uint32_t omega_slot_id_t;
 
 /* Number of performance slots (0 to OMEGA_SLOT_MAX-1 are valid). */
-#define OMEGA_SLOT_MAX 64u
+#define OMEGA_SLOT_MAX 128u
 
 typedef enum
 {
@@ -229,6 +237,43 @@ typedef enum
     OMEGA_CUE_AT_BOUNDARY = 1, /* wait for the next loop boundary */
     OMEGA_CUE_BAR = 2,         /* wait for the next musical bar boundary */
 } omega_cue_mode_t;
+
+/* ── Control-sequence event constructors ─────────────────────────────────── */
+
+/*
+ * Construct a CTRL_START_SLOT event: when played back through a ControlSink,
+ * starts the given performance slot with the specified cue mode.
+ */
+OMEGA_API omega_event_t omega_make_ctrl_start_slot(uint64_t tick,
+                                                   uint32_t sink_id,
+                                                   uint32_t slot,
+                                                   omega_cue_mode_t mode);
+
+/*
+ * Construct a CTRL_STOP_SLOT event: stops the given slot at the given cue mode
+ * boundary.
+ */
+OMEGA_API omega_event_t omega_make_ctrl_stop_slot(uint64_t tick,
+                                                  uint32_t sink_id,
+                                                  uint32_t slot,
+                                                  omega_cue_mode_t mode);
+
+/*
+ * Construct a CTRL_SET_TEMPO event: sets the engine tempo to bpm_milli
+ * (BPM × 1000) at the event's tick position.
+ */
+OMEGA_API omega_event_t omega_make_ctrl_set_tempo(uint64_t tick,
+                                                  uint32_t sink_id,
+                                                  uint32_t bpm_milli);
+
+/*
+ * Construct a CTRL_TRANSPOSE event: applies a semitone transpose to the given
+ * performance slot (−128 to +127, typically −24 to +24).
+ */
+OMEGA_API omega_event_t omega_make_ctrl_transpose(uint64_t tick,
+                                                  uint32_t sink_id,
+                                                  uint32_t slot,
+                                                  int8_t semitones);
 
 typedef enum
 {
@@ -486,6 +531,12 @@ OMEGA_API omega_tick_t omega_engine_position_tick(const omega_engine_t* e);
  * loop_count is incremented each time the active loop region wraps and is
  * reset to 0 whenever the loop region is changed via omega_loop_set() or
  * omega_loop_clear().
+ *
+ * bpm_milli, numerator, and denominator report the tempo and meter active at
+ * tick. They are written atomically with the rest of the snapshot each cycle,
+ * giving any-thread readers (e.g. a UI) a race-free view of tempo/meter that
+ * follows changes during playback. numerator/denominator are 0 in freeform
+ * mode. loop_enabled is 1 while a loop region is active, else 0.
  */
 typedef struct
 {
@@ -494,6 +545,10 @@ typedef struct
     uint32_t subdivision; /* ticks past the beat boundary (0 in freeform mode) */
     uint64_t loop_count;  /* number of loop-region wraps since last loop_set/clear */
     omega_tick_t tick;    /* raw tick for further computation */
+    uint32_t bpm_milli;   /* tempo at tick, BPM x 1000 */
+    uint8_t numerator;    /* meter numerator at tick (0 = freeform/no meter) */
+    uint8_t denominator;  /* meter denominator at tick (0 = freeform/no meter) */
+    uint8_t loop_enabled; /* 1 if a loop region is active, else 0 */
 } omega_position_t;
 
 /*

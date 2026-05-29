@@ -232,6 +232,46 @@ public:
      */
     omega_status_t set_track_sink(TrackId track_id, uint32_t sink_id);
 
+    /*
+     * Sets a track's representative MIDI channel (display/metadata only).
+     * Thread: Mutation thread only, before playback starts.
+     *
+     * Returns OMEGA_ERR_NOT_FOUND if track_id is not registered.
+     */
+    omega_status_t set_track_channel(TrackId track_id, uint8_t channel);
+
+    /*
+     * Renames a track. Safe during playback (the timing thread never reads
+     * Track::name). Applied directly, not via the command queue, so it does not
+     * allocate on the timing thread.
+     * Thread: Mutation thread only.
+     *
+     * Returns OMEGA_ERR_NOT_FOUND if track_id is not registered.
+     */
+    omega_status_t set_track_name(TrackId track_id, std::string name);
+
+    /*
+     * Enqueues a command to mute/solo a timeline track. While any track is
+     * soloed, only soloed tracks produce output. A muted/suppressed track stops
+     * dispatching new events; notes already started with an inline duration
+     * release at their scheduled note-off (no stuck notes). Safe during playback.
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t set_track_mute(TrackId track_id, bool muted);
+    omega_status_t set_track_solo(TrackId track_id, bool soloed);
+
+    /*
+     * Per-track mute/solo queries. Return false for an unregistered track_id.
+     * Thread: Any thread (may return a stale value if read concurrently with a
+     * mute/solo change being applied).
+     */
+    [[nodiscard]] bool track_is_muted(TrackId track_id) const noexcept;
+    [[nodiscard]] bool track_is_soloed(TrackId track_id) const noexcept;
+
     /* ── Performance source ──────────────────────────────────────────────── */
 
     /*
@@ -487,8 +527,16 @@ public:
     [[nodiscard]] const TempoMap& tempo_map() const noexcept { return tempo_map_; }
     [[nodiscard]] TempoMap& tempo_map() noexcept { return tempo_map_; }
 
-    /* Raw access to the built-in timeline source for serialization (mutation thread only). */
+    /* Raw access to the built-in timeline source for serialization / recording (mutation thread
+     * or timing thread — callers must respect each method's own thread contract). */
     [[nodiscard]] const TimelineSource& timeline_source() const noexcept { return timeline_; }
+    [[nodiscard]] TimelineSource& timeline_source() noexcept { return timeline_; }
+
+    /* Raw access to the built-in performance source. The non-const overload is
+     * provided so ControlSink can hold a direct reference and call cue/stop/
+     * set_transpose directly on the timing thread. Same contract as timeline_source(). */
+    [[nodiscard]] const PerformanceSource& perf_source() const noexcept { return perf_; }
+    [[nodiscard]] PerformanceSource& perf_source() noexcept { return perf_; }
 
     /* ── Markers and regions ─────────────────────────────────────────────────── */
 
@@ -522,6 +570,44 @@ public:
      * Returns OMEGA_ERR_NOT_FOUND if track_id is not registered.
      */
     omega_status_t add_track_event(TrackId track_id, const Event& event);
+
+    /*
+     * Enqueues a command to replace the timeline track event at (tick, index)
+     * with replacement. If replacement.tick differs from tick, the event vector
+     * is re-sorted after the replacement. Safe during playback.
+     *
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t replace_track_event(TrackId track_id,
+                                       uint64_t tick,
+                                       uint32_t index,
+                                       const Event& replacement);
+
+    /*
+     * Shifts all events in a track by offset_ticks. Positive values delay the
+     * track; negative values advance it. Events that would shift before tick 0
+     * are clamped to tick 0. Re-sorts the event vector once at the end.
+     *
+     * Thread: Mutation thread only, engine must be stopped.
+     *
+     * Returns OMEGA_ERR_NOT_FOUND if track_id is not registered.
+     */
+    omega_status_t shift_track_events(TrackId track_id, int64_t offset_ticks);
+
+    /*
+     * Swaps the display/playback order of two tracks in the TimelineSource.
+     * Playback order follows the tracks_ vector order, so swapping changes which
+     * track's events take precedence when two tracks share a tick and channel.
+     *
+     * Thread: Mutation thread only, engine must be stopped.
+     *
+     * Returns OMEGA_ERR_NOT_FOUND if either track_id is not registered.
+     */
+    omega_status_t swap_tracks(TrackId a, TrackId b);
 
     /* ── Loop region ─────────────────────────────────────────────────────────── */
 
@@ -791,6 +877,9 @@ private:
     void apply(const ClearSmpteConfigCmd& cmd);
     void apply(const SetSinkMuteCmd& cmd);
     void apply(const SetSinkSoloCmd& cmd);
+    void apply(const SetTrackMuteCmd& cmd);
+    void apply(const SetTrackSoloCmd& cmd);
+    void apply(const ReplaceTrackEventCmd& cmd);
 
     /*
      * Flushes active notes for a given channel mask.
@@ -872,6 +961,10 @@ private:
     std::atomic<uint32_t> snap_sub_{0};
     std::atomic<uint64_t> snap_loop_count_{0};
     std::atomic<uint64_t> snap_tick_{0};
+    std::atomic<uint32_t> snap_bpm_milli_{120'000};
+    std::atomic<uint8_t> snap_numerator_{0};
+    std::atomic<uint8_t> snap_denominator_{0};
+    std::atomic<uint8_t> snap_loop_enabled_{0};
 
     using EventCallbackFn = void (*)(omega_engine_event_t, uint32_t, void*);
     std::atomic<EventCallbackFn> event_cb_fn_{nullptr};

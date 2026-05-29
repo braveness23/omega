@@ -23,6 +23,7 @@ struct Track
     uint32_t sink_id{0};
     uint8_t channel{0};
     bool muted{false};
+    bool soloed{false};
 
     Track(TrackId id_,
           std::string name_,
