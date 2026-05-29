@@ -221,7 +221,7 @@ typedef uint32_t omega_pattern_id_t;
 typedef uint32_t omega_slot_id_t;
 
 /* Number of performance slots (0 to OMEGA_SLOT_MAX-1 are valid). */
-#define OMEGA_SLOT_MAX 64u
+#define OMEGA_SLOT_MAX 128u
 
 typedef enum
 {

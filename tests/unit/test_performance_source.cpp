@@ -827,3 +827,21 @@ TEST_CASE("Perf unassign: any state to EMPTY via assign(0)")
 
     REQUIRE(r.sink.count() == 0u);
 }
+
+// ── Slot capacity: slot 127 works with expanded PERF_MAX_SLOTS ────────────────
+
+TEST_CASE("Perf slot 127: assign and cue works after PERF_MAX_SLOTS expansion to 128")
+{
+    Rig r;
+    PatternId pid = r.engine.create_pattern("Z", 960u);
+    r.engine.pattern_add_event(pid, omega_make_note_on(0u, r.sink.sink_id(), 0, 72, 100, 240u));
+
+    REQUIRE(r.engine.perf_assign(127u, pid) == OMEGA_OK);
+    REQUIRE(r.engine.perf_cue(127u, CueMode::IMMEDIATE) == OMEGA_OK);
+    r.play();
+    r.engine.process();  // apply commands
+    r.step(1u);
+
+    REQUIRE(r.engine.perf_slot_state(127u) == SlotState::PLAYING);
+    REQUIRE(r.sink.has_note_on(72, 0));
+}
