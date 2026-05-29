@@ -565,6 +565,22 @@ public:
      */
     omega_status_t add_track_event(TrackId track_id, const Event& event);
 
+    /*
+     * Enqueues a command to replace the timeline track event at (tick, index)
+     * with replacement. If replacement.tick differs from tick, the event vector
+     * is re-sorted after the replacement. Safe during playback.
+     *
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t replace_track_event(TrackId track_id,
+                                       uint64_t tick,
+                                       uint32_t index,
+                                       const Event& replacement);
+
     /* ── Loop region ─────────────────────────────────────────────────────────── */
 
     /* Snapshot of the transport loop region (returned by loop_region()). */
@@ -835,6 +851,7 @@ private:
     void apply(const SetSinkSoloCmd& cmd);
     void apply(const SetTrackMuteCmd& cmd);
     void apply(const SetTrackSoloCmd& cmd);
+    void apply(const ReplaceTrackEventCmd& cmd);
 
     /*
      * Flushes active notes for a given channel mask.

@@ -293,6 +293,29 @@ struct SetSinkSoloCmd
     uint8_t soloed;   // non-zero = solo
 };
 
+// ── Timeline track event replace ─────────────────────────────────────────────
+
+/*
+ * Replaces the timeline track event at (tick, index) with replacement.
+ *
+ * tick     — absolute tick of the event to replace.
+ * index    — 0-based position among events sharing that tick (same addressing
+ *            as DeleteEventCmd).
+ *
+ * If replacement.tick differs from tick, the track's event vector is re-sorted
+ * after the replacement. Safe during playback; applied on the timing thread at
+ * the start of the next process() cycle.
+ *
+ * Returns OMEGA_ERR_NOT_FOUND if no event exists at (tick, index).
+ */
+struct ReplaceTrackEventCmd
+{
+    TrackId track;
+    uint64_t tick;
+    uint32_t index;
+    Event replacement;
+};
+
 // ── Track mute / solo commands ────────────────────────────────────────────────
 
 /*
@@ -372,7 +395,8 @@ using Command = std::variant<AddEventCmd,
                              SetSinkMuteCmd,
                              SetSinkSoloCmd,
                              SetTrackMuteCmd,
-                             SetTrackSoloCmd>;
+                             SetTrackSoloCmd,
+                             ReplaceTrackEventCmd>;
 
 static_assert(sizeof(Command) <= 64, "Command must fit within 64 bytes");
 

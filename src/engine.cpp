@@ -152,6 +152,14 @@ omega_status_t Engine::add_track_event(TrackId track_id, const Event& event)
     return timeline_.add_event(track_id, event);
 }
 
+omega_status_t Engine::replace_track_event(TrackId track_id,
+                                           uint64_t tick,
+                                           uint32_t index,
+                                           const Event& replacement)
+{
+    return enqueue(ReplaceTrackEventCmd{track_id, tick, index, replacement});
+}
+
 PatternLibrary& Engine::pattern_library() noexcept
 {
     return patterns_;
@@ -811,6 +819,11 @@ void Engine::apply(const SetTrackSoloCmd& cmd)
     timeline_.set_track_solo(cmd.track, cmd.soloed != 0u);
 }
 
+void Engine::apply(const ReplaceTrackEventCmd& cmd)
+{
+    timeline_.replace_event(cmd.track, cmd.tick, cmd.index, cmd.replacement);
+}
+
 void Engine::process()
 {
     // Snapshot slot states at the top of the cycle so we can detect transitions
@@ -974,6 +987,10 @@ void Engine::process()
                     apply(c);
                 }
                 else if constexpr (std::is_same_v<T, SetTrackSoloCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, ReplaceTrackEventCmd>)
                 {
                     apply(c);
                 }

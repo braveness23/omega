@@ -97,6 +97,19 @@ public:
     omega_status_t remove_event(TrackId track_id, uint64_t tick, uint32_t index);
 
     /*
+     * Replaces the event at (tick, index) with replacement.
+     * If replacement.tick != tick, the event vector is re-sorted after the
+     * replacement so the timeline remains ordered.
+     * Thread: Timing thread only (called from engine command queue drain).
+     *
+     * Returns OMEGA_ERR_NOT_FOUND if the event does not exist.
+     */
+    omega_status_t replace_event(TrackId track_id,
+                                 uint64_t tick,
+                                 uint32_t index,
+                                 const Event& replacement);
+
+    /*
      * Dispatches all events in (next_tick_, to_tick] across all non-muted
      * tracks, then fires any scheduled note-offs.
      *

@@ -157,6 +157,131 @@ TEST_CASE("add_event inserts events in tick-sorted order")
     REQUIRE(sink.at(2).data[0] == 64);
 }
 
+// ── replace_event ─────────────────────────────────────────────────────────────
+
+TEST_CASE("replace_event: changed pitch fires on playback")
+{
+    MockClock clock;
+    CapturingSink sink;
+    Engine e{&clock};
+    e.add_sink(&sink);
+
+    TrackId track = e.add_track("t");
+    e.set_track_sink(track, sink.sink_id());
+
+    omega_event_t ev = omega_make_note_on(0u, sink.sink_id(), 0, 60, 100, OMEGA_PPQN);
+    e.add_track_event(track, ev);
+
+    // Replace pitch 60 → 64.
+    omega_event_t rep = ev;
+    omega_event_set_pitch(&rep, 64);
+    REQUIRE(e.replace_track_event(track, 0u, 0u, rep) == OMEGA_OK);
+
+    e.enqueue(TransportCmd{TransportAction::PLAY, 0u});
+    clock.advance_ticks(1u);
+    e.process();
+
+    REQUIRE(sink.has_note_on(64, 0));
+    REQUIRE_FALSE(sink.has_note_on(60, 0));
+}
+
+TEST_CASE("replace_event: changed tick re-sorts and fires at new position")
+{
+    MockClock clock;
+    CapturingSink sink;
+    Engine e{&clock};
+    e.add_sink(&sink);
+
+    TrackId track = e.add_track("t");
+    e.set_track_sink(track, sink.sink_id());
+
+    omega_event_t ev = omega_make_note_on(0u, sink.sink_id(), 0, 60, 100, 240u);
+    e.add_track_event(track, ev);  // originally at tick 0
+
+    // Move to tick 480.
+    omega_event_t rep = ev;
+    rep.tick = 480u;
+    REQUIRE(e.replace_track_event(track, 0u, 0u, rep) == OMEGA_OK);
+
+    e.enqueue(TransportCmd{TransportAction::PLAY, 0u});
+    clock.advance_ticks(1u);
+    e.process();
+    // At tick 1, event has not fired yet.
+    REQUIRE_FALSE(sink.has_note_on(60, 0));
+
+    clock.advance_ticks(480u);
+    e.process();
+    REQUIRE(sink.has_note_on(60, 0));
+}
+
+TEST_CASE("replace_event: changed velocity dispatched on playback")
+{
+    MockClock clock;
+    CapturingSink sink;
+    Engine e{&clock};
+    e.add_sink(&sink);
+
+    TrackId track = e.add_track("t");
+    e.set_track_sink(track, sink.sink_id());
+
+    omega_event_t ev = omega_make_note_on(0u, sink.sink_id(), 0, 60, 64, 240u);
+    e.add_track_event(track, ev);
+
+    omega_event_t rep = ev;
+    omega_event_set_velocity(&rep, 127u);
+    REQUIRE(e.replace_track_event(track, 0u, 0u, rep) == OMEGA_OK);
+
+    e.enqueue(TransportCmd{TransportAction::PLAY, 0u});
+    clock.advance_ticks(1u);
+    e.process();
+
+    REQUIRE(sink.count() >= 1u);
+    REQUIRE(omega_event_note_velocity(&sink.at(0)) == 127u);
+}
+
+TEST_CASE("replace_event: changed duration fires note-off at new time")
+{
+    MockClock clock;
+    CapturingSink sink;
+    Engine e{&clock};
+    e.add_sink(&sink);
+
+    TrackId track = e.add_track("t");
+    e.set_track_sink(track, sink.sink_id());
+
+    omega_event_t ev = omega_make_note_on(0u, sink.sink_id(), 0, 60, 100, 480u);
+    e.add_track_event(track, ev);
+
+    // Shorten duration to 240.
+    omega_event_t rep = ev;
+    omega_event_set_duration(&rep, 240u);
+    REQUIRE(e.replace_track_event(track, 0u, 0u, rep) == OMEGA_OK);
+
+    e.enqueue(TransportCmd{TransportAction::PLAY, 0u});
+    clock.advance_ticks(1u);
+    e.process();
+    REQUIRE(sink.has_note_on(60, 0));
+    REQUIRE_FALSE(sink.has_note_off(60, 0));
+
+    clock.advance_ticks(240u);
+    e.process();
+    REQUIRE(sink.has_note_off(60, 0));
+}
+
+TEST_CASE("replace_event: OMEGA_ERR_NOT_FOUND for missing tick")
+{
+    Engine e;
+    TrackId track = e.add_track("t");
+    omega_event_t ev = omega_make_note_on(0u, 1u, 0, 60, 100, 240u);
+    e.add_track_event(track, ev);
+
+    // Wrong tick — no event at tick 999.
+    REQUIRE(e.replace_track_event(track, 999u, 0u, ev) == OMEGA_OK);  // command enqueued
+    e.process();  // applied — OMEGA_ERR_NOT_FOUND silently ignored (applied from timing thread)
+    // Verify original event is unchanged (still at tick 0).
+    REQUIRE(e.timeline_source().tracks()[0].events[0].tick == 0u);
+}
+
 // ── Full engine integration ───────────────────────────────────────────────────
 
 TEST_CASE("Engine end-to-end: note fires then note-off fires")

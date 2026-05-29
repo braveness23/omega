@@ -122,6 +122,42 @@ omega_status_t TimelineSource::remove_event(TrackId track_id, uint64_t tick, uin
     return OMEGA_ERR_NOT_FOUND;
 }
 
+omega_status_t TimelineSource::replace_event(TrackId track_id,
+                                             uint64_t tick,
+                                             uint32_t index,
+                                             const Event& replacement)
+{
+    Track* trk = find_track(track_id);
+    if (trk == nullptr)
+    {
+        return OMEGA_ERR_NOT_FOUND;
+    }
+
+    auto pos = std::lower_bound(
+        trk->events.begin(), trk->events.end(), tick, [](const Event& ev, uint64_t v) {
+            return ev.tick < v;
+        });
+    uint32_t idx = 0;
+    while (pos != trk->events.end() && pos->tick == tick)
+    {
+        if (idx == index)
+        {
+            *pos = replacement;
+            // Re-sort only if the tick changed; otherwise the order is still valid.
+            if (replacement.tick != tick)
+            {
+                std::stable_sort(trk->events.begin(),
+                                 trk->events.end(),
+                                 [](const Event& a, const Event& b) { return a.tick < b.tick; });
+            }
+            return OMEGA_OK;
+        }
+        ++pos;
+        ++idx;
+    }
+    return OMEGA_ERR_NOT_FOUND;
+}
+
 void TimelineSource::advance(uint64_t to_tick, EventDispatcher& dispatcher, ProcessContext& /*ctx*/)
 {
     const uint64_t from_tick = started_ ? next_tick_ : 0u;
