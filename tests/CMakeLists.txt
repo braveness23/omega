@@ -30,6 +30,7 @@ add_executable(omega_tests
     unit/test_replace_event.cpp
     unit/test_mute_solo.cpp
     unit/test_track_mute_solo.cpp
+    unit/test_recorder.cpp
     unit/test_query_boundary.cpp
     unit/test_event_callback.cpp
 )

@@ -496,6 +496,10 @@ void Engine::apply(const TransportCmd& cmd)
             ctx.perf_ctx = perf_ctx_;
             FilteringDispatcher dispatcher{
                 sinks_, sink_filters_, any_soloed_.load(std::memory_order_relaxed)};
+            for (auto& [pri, src] : custom_sources_)
+            {
+                src->on_locate(cmd.locate_tick, dispatcher, ctx);
+            }
             timeline_.on_locate(cmd.locate_tick, dispatcher, ctx);
             song_.on_locate(cmd.locate_tick, dispatcher, ctx);
             perf_.on_locate(cmd.locate_tick, dispatcher, ctx);
@@ -1015,6 +1019,10 @@ void Engine::process()
         position = loop_pos_ns;
         to_tick = loop_start_tick_;
 
+        for (auto& [pri, src] : custom_sources_)
+        {
+            src->on_locate(loop_start_tick_, dispatcher, ctx);
+        }
         timeline_.on_locate(loop_start_tick_, dispatcher, ctx);
         song_.on_locate(loop_start_tick_, dispatcher, ctx);
         perf_.on_locate(loop_start_tick_, dispatcher, ctx);
