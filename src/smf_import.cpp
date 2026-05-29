@@ -58,9 +58,11 @@ public:
     }
 
 private:
+    // NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
     Engine& engine_;
-    int smf_track_;
     const SmfImportOptions& opts_;
+    // NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
+    int smf_track_;
     std::optional<TrackId> single_track_;
     std::array<std::optional<TrackId>, 16> channel_tracks_{};
 };
