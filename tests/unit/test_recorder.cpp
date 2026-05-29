@@ -31,7 +31,7 @@ namespace
 
 // Standard fixture: engine + sink + MockEventInput + Recorder wired up.
 // The Recorder runs at MODULATOR priority so it captures before TimelineSource plays back.
-struct Fixture
+struct Fixture  // NOLINT(clang-analyzer-optin.performance.Padding)
 {
     MockClock clock;
     Engine engine{&clock};
@@ -102,7 +102,7 @@ TEST_CASE("Recorder: NOTE_ON + NOTE_OFF produces one timeline event with correct
     CHECK(evts[0].payload_tag == OMEGA_NOTE_ON);
     CHECK(evts[0].data[0] == 60u);
     CHECK(evts[0].data[1] == 100u);
-    CHECK(omega_event_note_duration(&evts[0]) == 240u);
+    CHECK(omega_event_note_duration(evts.data()) == 240u);
 }
 
 // ── Channel filter ────────────────────────────────────────────────────────────
@@ -171,7 +171,7 @@ TEST_CASE("Recorder: stop_recording flushes pending notes with duration up to st
     REQUIRE(evts.size() == 1u);
     CHECK(evts[0].payload_tag == OMEGA_NOTE_ON);
     // Duration should be > 0 (stop_tick > on_tick).
-    CHECK(omega_event_note_duration(&evts[0]) > 0u);
+    CHECK(omega_event_note_duration(evts.data()) > 0u);
 }
 
 // ── Not recording ─────────────────────────────────────────────────────────────

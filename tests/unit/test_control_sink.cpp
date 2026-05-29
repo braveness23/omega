@@ -28,7 +28,7 @@ namespace
 
 // Fixture: engine + a MIDI CapturingSink + a ControlSink; one pattern
 // ready to assign to any slot.
-struct Fixture
+struct Fixture  // NOLINT(clang-analyzer-optin.performance.Padding)
 {
     MockClock clock;
     Engine engine{&clock};
