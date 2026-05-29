@@ -74,6 +74,17 @@ omega_status_t smf_import(Engine& engine, const char* path, const SmfImportOptio
         return OMEGA_ERR_INVALID;
     }
 
+    if (opts.clear_existing)
+    {
+        // Clear existing session content so the imported file replaces rather
+        // than appends. Reset tempo to default (120 BPM at tick 0) after clear.
+        engine.timeline_source().clear_tracks();
+        engine.tempo_map().remove(0u);  // remove any existing; then insert default
+        engine.tempo_map().insert(0u, 120'000u);
+        engine.timesig_map().clear();
+        engine.marker_list().clear();
+    }
+
     smf::MidiFile mf;
     if (!mf.read(path))
     {

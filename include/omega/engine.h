@@ -587,6 +587,28 @@ public:
                                        uint32_t index,
                                        const Event& replacement);
 
+    /*
+     * Shifts all events in a track by offset_ticks. Positive values delay the
+     * track; negative values advance it. Events that would shift before tick 0
+     * are clamped to tick 0. Re-sorts the event vector once at the end.
+     *
+     * Thread: Mutation thread only, engine must be stopped.
+     *
+     * Returns OMEGA_ERR_NOT_FOUND if track_id is not registered.
+     */
+    omega_status_t shift_track_events(TrackId track_id, int64_t offset_ticks);
+
+    /*
+     * Swaps the display/playback order of two tracks in the TimelineSource.
+     * Playback order follows the tracks_ vector order, so swapping changes which
+     * track's events take precedence when two tracks share a tick and channel.
+     *
+     * Thread: Mutation thread only, engine must be stopped.
+     *
+     * Returns OMEGA_ERR_NOT_FOUND if either track_id is not registered.
+     */
+    omega_status_t swap_tracks(TrackId a, TrackId b);
+
     /* ── Loop region ─────────────────────────────────────────────────────────── */
 
     /* Snapshot of the transport loop region (returned by loop_region()). */

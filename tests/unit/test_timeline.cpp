@@ -308,3 +308,86 @@ TEST_CASE("Engine end-to-end: note fires then note-off fires")
     e.process();
     REQUIRE(sink.has_note_off(60, 0));
 }
+
+// ── shift_track_events ────────────────────────────────────────────────────────
+
+TEST_CASE("shift_track_events: positive offset delays all events")
+{
+    Engine e;
+    CapturingSink sink;
+    e.add_sink(&sink);
+    TrackId track = e.add_track("t");
+    e.set_track_sink(track, sink.sink_id());
+
+    e.add_track_event(track, omega_make_note_on(0u, sink.sink_id(), 0, 60, 100, 240u));
+    e.add_track_event(track, omega_make_note_on(480u, sink.sink_id(), 0, 62, 100, 240u));
+
+    REQUIRE(e.shift_track_events(track, 240) == OMEGA_OK);
+
+    const auto& evts = e.timeline_source().tracks()[0].events;
+    REQUIRE(evts.size() == 2u);
+    CHECK(evts[0].tick == 240u);
+    CHECK(evts[0].data[0] == 60u);
+    CHECK(evts[1].tick == 720u);
+    CHECK(evts[1].data[0] == 62u);
+}
+
+TEST_CASE("shift_track_events: negative offset advances; clamps to 0")
+{
+    Engine e;
+    CapturingSink sink;
+    e.add_sink(&sink);
+    TrackId track = e.add_track("t");
+    e.set_track_sink(track, sink.sink_id());
+
+    e.add_track_event(track, omega_make_note_on(100u, sink.sink_id(), 0, 60, 100, 0u));
+    e.add_track_event(track, omega_make_note_on(480u, sink.sink_id(), 0, 62, 100, 0u));
+
+    REQUIRE(e.shift_track_events(track, -200) == OMEGA_OK);
+
+    const auto& evts = e.timeline_source().tracks()[0].events;
+    REQUIRE(evts.size() == 2u);
+    // 100 - 200 → clamped to 0
+    CHECK(evts[0].tick == 0u);
+    // 480 - 200 = 280
+    CHECK(evts[1].tick == 280u);
+}
+
+TEST_CASE("shift_track_events: OMEGA_ERR_NOT_FOUND for invalid track")
+{
+    Engine e;
+    CHECK(e.shift_track_events(9999u, 10) == OMEGA_ERR_NOT_FOUND);
+}
+
+// ── swap_tracks ───────────────────────────────────────────────────────────────
+
+TEST_CASE("swap_tracks: exchanges playback order of two tracks")
+{
+    MockClock clock;
+    CapturingSink sink;
+    Engine e{&clock};
+    e.add_sink(&sink);
+
+    TrackId t0 = e.add_track("A");
+    TrackId t1 = e.add_track("B");
+    e.set_track_sink(t0, sink.sink_id());
+    e.set_track_sink(t1, sink.sink_id());
+
+    e.add_track_event(t0, omega_make_note_on(0u, sink.sink_id(), 0, 60, 100, 0u));
+    e.add_track_event(t1, omega_make_note_on(0u, sink.sink_id(), 0, 67, 100, 0u));
+
+    REQUIRE(e.swap_tracks(t0, t1) == OMEGA_OK);
+
+    // After swap, t1 (note 67) is at index 0, t0 (note 60) at index 1.
+    const auto& tracks = e.timeline_source().tracks();
+    CHECK(tracks[0].id == t1);
+    CHECK(tracks[1].id == t0);
+}
+
+TEST_CASE("swap_tracks: OMEGA_ERR_NOT_FOUND if either track is missing")
+{
+    Engine e;
+    TrackId real = e.add_track("real");
+    CHECK(e.swap_tracks(real, 9999u) == OMEGA_ERR_NOT_FOUND);
+    CHECK(e.swap_tracks(9999u, real) == OMEGA_ERR_NOT_FOUND);
+}

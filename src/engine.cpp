@@ -160,6 +160,16 @@ omega_status_t Engine::replace_track_event(TrackId track_id,
     return enqueue(ReplaceTrackEventCmd{track_id, tick, index, replacement});
 }
 
+omega_status_t Engine::shift_track_events(TrackId track_id, int64_t offset_ticks)
+{
+    return timeline_.shift_events(track_id, offset_ticks);
+}
+
+omega_status_t Engine::swap_tracks(TrackId a, TrackId b)
+{
+    return timeline_.swap_tracks(a, b);
+}
+
 PatternLibrary& Engine::pattern_library() noexcept
 {
     return patterns_;

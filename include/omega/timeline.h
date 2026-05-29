@@ -110,6 +110,29 @@ public:
                                  const Event& replacement);
 
     /*
+     * Shifts all events in a track by offset_ticks (positive = delay, negative
+     * = advance). Events that would move before tick 0 are clamped to 0.
+     * Re-sorts the event vector once at the end.
+     * Thread: Mutation thread only, engine stopped.
+     *
+     * Returns OMEGA_ERR_NOT_FOUND if track_id is not registered.
+     */
+    omega_status_t shift_events(TrackId track_id, int64_t offset_ticks);
+
+    /*
+     * Swaps the vector positions of the two tracks (changes playback/display
+     * order). Thread: Mutation thread only, engine stopped.
+     *
+     * Returns OMEGA_ERR_NOT_FOUND if either track_id is not registered.
+     */
+    omega_status_t swap_tracks(TrackId a, TrackId b);
+
+    /*
+     * Removes all tracks and their events. Thread: Mutation thread only, engine stopped.
+     */
+    void clear_tracks() noexcept;
+
+    /*
      * Dispatches all events in (next_tick_, to_tick] across all non-muted
      * tracks, then fires any scheduled note-offs.
      *

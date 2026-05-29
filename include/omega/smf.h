@@ -27,6 +27,13 @@ struct SmfImportOptions
 {
     uint32_t sink_id = 0;
     bool split_by_channel = false;
+    /*
+     * When true, clears the engine's timeline tracks, tempo map (reset to
+     * 120 BPM), time-signature map, and marker list before importing. Use for
+     * a "replace session" load so the new file replaces existing content.
+     * Default false (appends to existing content).
+     */
+    bool clear_existing = false;
 };
 
 /*

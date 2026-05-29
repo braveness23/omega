@@ -158,6 +158,61 @@ omega_status_t TimelineSource::replace_event(TrackId track_id,
     return OMEGA_ERR_NOT_FOUND;
 }
 
+omega_status_t TimelineSource::shift_events(TrackId track_id, int64_t offset_ticks)
+{
+    Track* trk = find_track(track_id);
+    if (trk == nullptr)
+    {
+        return OMEGA_ERR_NOT_FOUND;
+    }
+    for (auto& ev : trk->events)
+    {
+        int64_t new_tick = static_cast<int64_t>(ev.tick) + offset_ticks;
+        ev.tick = (new_tick < 0) ? 0u : static_cast<uint64_t>(new_tick);
+    }
+    // Re-sort once after all ticks are updated.
+    std::stable_sort(trk->events.begin(), trk->events.end(), [](const Event& a, const Event& b) {
+        return a.tick < b.tick;
+    });
+    return OMEGA_OK;
+}
+
+omega_status_t TimelineSource::swap_tracks(TrackId a, TrackId b)
+{
+    if (a == b)
+    {
+        return OMEGA_OK;
+    }
+    size_t idx_a = tracks_.size();
+    size_t idx_b = tracks_.size();
+    for (size_t i = 0; i < tracks_.size(); ++i)
+    {
+        if (tracks_[i].id == a)
+        {
+            idx_a = i;
+        }
+        else if (tracks_[i].id == b)
+        {
+            idx_b = i;
+        }
+    }
+    if (idx_a >= tracks_.size() || idx_b >= tracks_.size())
+    {
+        return OMEGA_ERR_NOT_FOUND;
+    }
+    std::swap(tracks_[idx_a], tracks_[idx_b]);
+    return OMEGA_OK;
+}
+
+void TimelineSource::clear_tracks() noexcept
+{
+    tracks_.clear();
+    next_id_ = 1;
+    next_tick_ = 0;
+    started_ = false;
+    active_notes_.clear();
+}
+
 void TimelineSource::advance(uint64_t to_tick, EventDispatcher& dispatcher, ProcessContext& /*ctx*/)
 {
     const uint64_t from_tick = started_ ? next_tick_ : 0u;
