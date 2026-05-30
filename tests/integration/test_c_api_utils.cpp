@@ -117,7 +117,8 @@ TEST_CASE("omega_midi_note_from_name: flats")
 
 TEST_CASE("omega_midi_note_from_name: case-insensitive")
 {
-    uint8_t a = 0, b = 0;
+    uint8_t a = 0;
+    uint8_t b = 0;
 
     REQUIRE(omega_midi_note_from_name("c4", &a) == OMEGA_OK);
     REQUIRE(omega_midi_note_from_name("C4", &b) == OMEGA_OK);

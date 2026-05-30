@@ -37,9 +37,8 @@ struct Fixture
     TrackId track{0};
     uint32_t sink_id{0};
 
-    Fixture()
+    Fixture() : sink_id(sink.sink_id())
     {
-        sink_id = sink.sink_id();
         engine.add_sink(&sink);
         track = engine.add_track("t");
         engine.set_track_sink(track, sink_id);
@@ -385,6 +384,7 @@ TEST_CASE("omega_engine_undo reverts pattern replace via C API")
 {
     // Use CapturingSink via the reinterpret_cast idiom from integration tests.
     CapturingSink sink;
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto* snk = reinterpret_cast<omega_sink_t*>(&sink);
 
     omega_engine_t* e = omega_engine_create();
