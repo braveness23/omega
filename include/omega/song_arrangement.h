@@ -50,6 +50,9 @@ public:
     void advance(uint64_t to_tick, EventDispatcher& dispatcher, ProcessContext& ctx) override;
     void on_locate(uint64_t tick, EventDispatcher& dispatcher, ProcessContext& ctx) override;
 
+    /* Raw access for serialization (mutation thread only, engine stopped). */
+    [[nodiscard]] const std::vector<ArrangementEntry>& entries() const noexcept { return entries_; }
+
 private:
     struct ActiveNote
     {

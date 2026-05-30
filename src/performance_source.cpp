@@ -699,4 +699,21 @@ SlotState PerformanceSource::slot_state(uint32_t slot) const noexcept
     return static_cast<SlotState>(slots_[slot].state.load(std::memory_order_relaxed));
 }
 
+PerformanceSource::SlotSnapshot PerformanceSource::slot_snapshot(uint32_t slot) const noexcept
+{
+    if (slot >= PERF_MAX_SLOTS)
+    {
+        return {};
+    }
+    const PerfSlot& s = slots_[slot];
+    SlotSnapshot snap;
+    snap.assigned = s.assigned;
+    snap.transpose = s.transpose;
+    snap.velocity_scale = s.velocity_scale;
+    snap.random_bias = s.random_bias;
+    snap.repeat_count = s.repeat_count;
+    snap.muted = s.muted;
+    return snap;
+}
+
 }  // namespace omega

@@ -1955,6 +1955,40 @@ OMEGA_API omega_status_t omega_loop_enable(omega_engine_t* e, int enabled);
  */
 OMEGA_API omega_status_t omega_loop_activate_region(omega_engine_t* e, uint32_t region_index);
 
+/* ── Session save / load ─────────────────────────────────────────────────── */
+
+/*
+ * Serialize the full engine session to a file. Captures all state: tempo map,
+ * time signatures, timeline tracks, patterns, performance slots, song
+ * arrangement, markers, regions, loop region, SMPTE config, and performance
+ * context. Writes atomically (temp file + rename).
+ *
+ * The engine must be stopped before calling this function.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK          -- saved successfully.
+ *   OMEGA_ERR_INVALID -- e or path is NULL.
+ *   OMEGA_ERR_IO      -- file write failure.
+ */
+OMEGA_API omega_status_t omega_session_save(omega_engine_t* e, const char* path);
+
+/*
+ * Restore a previously saved session. Replaces ALL existing engine state.
+ * After loading, call omega_engine_play() to begin playback from tick 0.
+ *
+ * The engine must be stopped before calling this function.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK          -- loaded successfully.
+ *   OMEGA_ERR_INVALID -- e or path is NULL.
+ *   OMEGA_ERR_IO      -- file not found, unreadable, or corrupt.
+ */
+OMEGA_API omega_status_t omega_session_load(omega_engine_t* e, const char* path);
+
 /* ── SMF import / export ──────────────────────────────────────────────────── */
 
 /*

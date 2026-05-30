@@ -108,6 +108,25 @@ public:
      */
     [[nodiscard]] SlotState slot_state(uint32_t slot) const noexcept;
 
+    /* Snapshot of serializable per-slot configuration. */
+    struct SlotSnapshot
+    {
+        PatternId assigned{0};
+        int8_t transpose{0};
+        uint8_t velocity_scale{100};
+        uint8_t random_bias{0};
+        uint32_t repeat_count{0};
+        bool muted{false};
+    };
+
+    /*
+     * Returns a snapshot of the serializable configuration for the given slot.
+     * Returns defaults for out-of-range slot indices.
+     *
+     * Thread: Mutation thread only. Must not be called concurrently with process().
+     */
+    [[nodiscard]] SlotSnapshot slot_snapshot(uint32_t slot) const noexcept;
+
     void advance(uint64_t to_tick, EventDispatcher& dispatcher, ProcessContext& ctx) override;
     void on_locate(uint64_t tick, EventDispatcher& dispatcher, ProcessContext& ctx) override;
 

@@ -9,6 +9,7 @@
 #include <omega/omega.h>
 #include <omega/perf_slot.h>
 #include <omega/region_list.h>
+#include <omega/session.h>
 #include <omega/sink.h>
 #include <omega/smf.h>
 #include <omega/smpte_converter.h>
@@ -1305,6 +1306,26 @@ void omega_input_destroy_midi_in(omega_input_t* input)
 {
     // NOLINTNEXTLINE(cppcoreguidelines-owning-memory,cppcoreguidelines-pro-type-reinterpret-cast)
     delete reinterpret_cast<omega::EventInput*>(input);
+}
+
+// ── Session save / load ───────────────────────────────────────────────────────
+
+omega_status_t omega_session_save(omega_engine_t* eng, const char* path)
+{
+    if (eng == nullptr || path == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return omega::session_save(eng->engine, path);
+}
+
+omega_status_t omega_session_load(omega_engine_t* eng, const char* path)
+{
+    if (eng == nullptr || path == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return omega::session_load(eng->engine, path);
 }
 
 // ── SMF import / export ───────────────────────────────────────────────────────

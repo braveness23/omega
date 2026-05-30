@@ -9,6 +9,9 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **Native session serialization** (closes #62): `omega_session_save(e, path)` / `omega_session_load(e, path)` (C API) and `omega::session_save` / `omega::session_load` (C++ API in `<omega/session.h>`). Saves and restores all engine state not captured by SMF: tempo map, time-signature map, SMPTE config, loop region, markers, regions, pattern library (all patterns and their events), performance slot assignments (pattern, transpose, velocity scale, random bias, repeat count, mute), song arrangement, performance context (scale, chord, groove, chaos, global transpose/velocity), track mute/solo flags, and transport state. Uses a versioned binary format with tagged sections (4-byte tag + 4-byte length) for forward-compatible file reading — unknown sections are skipped. Writes atomically via a `.tmp` rename. 16 new unit tests in `tests/unit/test_session.cpp`.
+
 ### Fixed
 - **`loop_set_immediate()`**: `loop_set()` enqueues a `SetLoopCmd` that is applied only on the next `process()` call, so `loop_region()` returned stale values when queried before the engine had ticked. Added `Engine::loop_set_immediate(start_tick, end_tick)` (C API: `omega_loop_set_immediate()`) as a synchronous variant that applies the loop region directly — valid only when the engine is stopped (`OMEGA_ERR_UNSUPPORTED` if playing). 3 new unit tests. Closes #58.
 

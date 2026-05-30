@@ -36,6 +36,7 @@ add_executable(omega_tests
     unit/test_event_callback.cpp
     unit/test_undo_redo.cpp
     unit/test_convert_tracks.cpp
+    unit/test_session.cpp
 )
 
 target_link_libraries(omega_tests
