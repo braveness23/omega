@@ -93,6 +93,14 @@ public:
     void set_mute(SlotId slot, bool muted);
 
     /*
+     * Blocks ctrl_slot's event dispatch until slots_[target_slot] reaches
+     * IDLE or EMPTY. Called by Engine::execute_ctrl_event() when a
+     * CTRL_START_SLOT_WAIT event fires. No-op if ctrl_slot is out of range.
+     * Thread: Timing thread only.
+     */
+    void set_slot_wait(SlotId ctrl_slot, uint32_t target_slot);
+
+    /*
      * Returns the current state of the given performance slot.
      * Returns SlotState::EMPTY for out-of-range slot indices.
      *
@@ -114,6 +122,8 @@ private:
 
     struct PerfSlot
     {
+        static constexpr uint32_t kNoWait = UINT32_MAX;
+
         std::atomic<uint8_t> state{static_cast<uint8_t>(SlotState::EMPTY)};
         PatternId assigned{0};
         PatternId playing{0};
@@ -125,6 +135,8 @@ private:
         uint8_t random_bias{0};
         uint32_t rng_state{0};
         uint32_t repeat_count{0};  // 0 = loop indefinitely; N = stop after N full iterations
+        uint32_t wait_for_slot_{
+            kNoWait};  // kNoWait = not waiting; else = blocked until that slot is IDLE
         bool muted{false};
         bool needs_silence{false};  // set when mute transitions true; cleared by advance()
         std::vector<ActiveNote> active_notes;
@@ -142,6 +154,7 @@ private:
             random_bias = 0;
             rng_state = 0;
             repeat_count = 0;
+            wait_for_slot_ = kNoWait;
             muted = false;
             needs_silence = false;
             active_notes.clear();

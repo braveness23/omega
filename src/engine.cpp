@@ -871,6 +871,14 @@ void Engine::execute_ctrl_event(const Event& event) noexcept
             std::memcpy(&slot, &event.data[0], sizeof(slot));
             perf_.set_transpose(slot, static_cast<int8_t>(event.data[4]));
             break;
+        case OMEGA_CTRL_START_SLOT_WAIT:
+        {
+            uint32_t target_slot = 0;
+            std::memcpy(&target_slot, &event.data[0], sizeof(target_slot));
+            perf_.cue(target_slot, static_cast<CueMode>(event.data[4]), event.tick);
+            perf_.set_slot_wait(static_cast<SlotId>(event.data[5]), target_slot);
+            break;
+        }
         default:
             break;
     }

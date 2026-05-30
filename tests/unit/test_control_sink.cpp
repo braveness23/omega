@@ -7,6 +7,7 @@
  *  - CTRL_STOP_SLOT stops a playing slot.
  *  - CTRL_SET_TEMPO changes the engine's tempo at the event's tick.
  *  - CTRL_TRANSPOSE applies a semitone offset to a slot.
+ *  - CTRL_START_SLOT_WAIT starts a slot and blocks the ctrl slot until it finishes.
  *  - Non-control events (NOTE_ON routed to ControlSink) are silently dropped.
  */
 
@@ -173,6 +174,61 @@ TEST_CASE("ControlSink: CTRL_TRANSPOSE applies semitone offset to target slot")
         }
     }
     CHECK(has_transposed);
+}
+
+// ── CTRL_START_SLOT_WAIT ─────────────────────────────────────────────────────
+
+TEST_CASE("CTRL_START_SLOT_WAIT starts target slot and blocks ctrl slot dispatch")
+{
+    Fixture f;
+    f.make_note_pattern(0, 960u);  // slot 0: infinite looping music
+
+    // Slot 1 ctrl pattern (length=960): tick 0 = Wait-start slot 0,
+    //                                   tick 200 = SET_TEMPO(200000).
+    // While slot 0 is playing, tick 200 should be blocked.
+    PatternId cpid = f.engine.create_pattern("ctrl", 960u);
+    f.engine.pattern_add_event(
+        cpid, omega_make_ctrl_start_slot_wait(0u, f.csid, 0u, OMEGA_CUE_IMMEDIATE, 1u));
+    f.engine.pattern_add_event(cpid, omega_make_ctrl_set_tempo(200u, f.csid, 200'000u));
+    f.engine.perf_assign(1u, cpid);
+
+    f.start();
+    f.engine.perf_cue(1u, CueMode::IMMEDIATE);
+    f.tick(2u);  // Wait event fires → slot 0 starts, slot 1 blocked
+
+    // Slot 0 is playing. Advance well past tick 200 — SET_TEMPO must NOT fire yet.
+    f.tick(500u);
+
+    CHECK(f.engine.perf_slot_state(0u) == SlotState::PLAYING);
+    // Tempo at tick 200 should still be the default (120000), not 200000.
+    CHECK(f.engine.tempo_map().bpm_milli_at(202u) == 120'000u);
+}
+
+TEST_CASE("CTRL_START_SLOT_WAIT clears and ctrl slot resumes when target goes IDLE")
+{
+    Fixture f;
+    // Both slots play exactly once so the ctrl pattern does not loop and re-fire
+    // the Wait event in a second iteration.
+    f.make_note_pattern(0, 960u);
+    f.engine.perf_set_repeat_count(0u, 1u);  // slot 0: plays once → IDLE at tick ~961
+
+    // Slot 1 ctrl (length=4000, repeat_count=1): tick 0 = Wait-start,
+    //                                             tick 2000 = SET_TEMPO(200000).
+    // After slot 0 finishes (~960 ticks), wait clears and SET_TEMPO fires at ~2001.
+    PatternId cpid = f.engine.create_pattern("ctrl", 4000u);
+    f.engine.pattern_add_event(
+        cpid, omega_make_ctrl_start_slot_wait(0u, f.csid, 0u, OMEGA_CUE_IMMEDIATE, 1u));
+    f.engine.pattern_add_event(cpid, omega_make_ctrl_set_tempo(2000u, f.csid, 200'000u));
+    f.engine.perf_assign(1u, cpid);
+    f.engine.perf_set_repeat_count(1u, 1u);  // ctrl plays once — prevents Wait re-firing
+
+    f.start();
+    f.engine.perf_cue(1u, CueMode::IMMEDIATE);
+    f.tick(2u);     // Wait event fires; slot 0 starts; slot 1 blocked
+    f.tick(4000u);  // slot 0 → IDLE at ~961; wait clears; SET_TEMPO fires at ~2001
+
+    CHECK(f.engine.perf_slot_state(0u) == SlotState::IDLE);
+    CHECK(f.engine.tempo_map().bpm_milli_at(2002u) == 200'000u);
 }
 
 // ── Non-control events silently dropped ─────────────────────────────────────

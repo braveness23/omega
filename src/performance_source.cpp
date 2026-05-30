@@ -314,6 +314,14 @@ void PerformanceSource::set_mute(SlotId slot_id, bool muted)
     slot.muted = muted;
 }
 
+void PerformanceSource::set_slot_wait(SlotId ctrl_slot_id, uint32_t target_slot_id)
+{
+    if (ctrl_slot_id < PERF_MAX_SLOTS)
+    {
+        slots_[ctrl_slot_id].wait_for_slot_ = target_slot_id;
+    }
+}
+
 // ── Event dispatch helpers ────────────────────────────────────────────────────
 
 void PerformanceSource::dispatch_slot_events(PerfSlot& slot,
@@ -428,6 +436,11 @@ void PerformanceSource::dispatch_slot_events(PerfSlot& slot,
             ev.tick = iter_start + pos->tick;
             dispatcher.dispatch(ev);
 
+            if (slot.wait_for_slot_ != PerfSlot::kNoWait)
+            {
+                return;  // CTRL_START_SLOT_WAIT fired — stop dispatching until wait clears
+            }
+
             if (pos->payload_tag == OMEGA_NOTE_ON)
             {
                 uint32_t duration = 0u;
@@ -521,6 +534,19 @@ void PerformanceSource::advance(uint64_t to_tick,
 
             case SlotState::PLAYING:
             {
+                if (slot.wait_for_slot_ != PerfSlot::kNoWait)
+                {
+                    auto ws = static_cast<SlotState>(
+                        slots_[slot.wait_for_slot_].state.load(std::memory_order_relaxed));
+                    if (ws == SlotState::IDLE || ws == SlotState::EMPTY)
+                    {
+                        slot.wait_for_slot_ = PerfSlot::kNoWait;
+                    }
+                    else
+                    {
+                        break;  // still waiting — skip event dispatch for this slot
+                    }
+                }
                 if (slot.needs_silence)
                 {
                     silence_slot(slot, from_tick, dispatcher);
@@ -622,6 +648,7 @@ void PerformanceSource::on_locate(uint64_t tick,
     for (auto& slot : slots_)
     {
         slot.active_notes.clear();
+        slot.wait_for_slot_ = PerfSlot::kNoWait;
 
         auto cur = static_cast<SlotState>(slot.state.load(std::memory_order_relaxed));
         switch (cur)

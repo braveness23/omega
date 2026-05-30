@@ -102,13 +102,16 @@ OMEGA_API const char* omega_status_string(omega_status_t status);
 #define OMEGA_AFTERTOUCH 0x05u /* data[0]=pressure (0-127) */
 #define OMEGA_POLY_AT 0x06u    /* data[0]=note, data[1]=pressure (0-127) */
 
-/* Control-sequence event tags (range 0x0B–0x0E). These are dispatched to a
+/* Control-sequence event tags (range 0x0B–0x0F). These are dispatched to a
  * ControlSink, which executes them as engine mutations on the timing thread
  * rather than sending MIDI bytes. */
 #define OMEGA_CTRL_START_SLOT 0x0Bu /* data[0..3]=slot_id, data[4]=cue_mode */
 #define OMEGA_CTRL_STOP_SLOT 0x0Cu  /* data[0..3]=slot_id, data[4]=cue_mode */
 #define OMEGA_CTRL_SET_TEMPO 0x0Du  /* data[0..3]=bpm_milli (uint32_t)       */
 #define OMEGA_CTRL_TRANSPOSE 0x0Eu  /* data[0..3]=slot_id, data[4]=semitones (int8_t cast) */
+/* Start target_slot AND block ctrl_slot's advance until target_slot reaches IDLE.
+ * data[0..3]=target_slot, data[4]=cue_mode, data[5]=ctrl_slot (0-127) */
+#define OMEGA_CTRL_START_SLOT_WAIT 0x0Fu
 
 typedef struct
 {
@@ -274,6 +277,22 @@ OMEGA_API omega_event_t omega_make_ctrl_transpose(uint64_t tick,
                                                   uint32_t sink_id,
                                                   uint32_t slot,
                                                   int8_t semitones);
+
+/*
+ * Construct a CTRL_START_SLOT_WAIT event: starts target_slot at the given cue
+ * mode boundary AND blocks ctrl_slot's event dispatch until target_slot
+ * returns to IDLE. This implements KCS-style "Wait" (W) flag semantics —
+ * the control sequence pauses at this event until the triggered sequence
+ * finishes all its repeats.
+ *
+ * ctrl_slot must be the SlotId of the control-sequence pattern that contains
+ * this event (0–127). target_slot is the slot to start and wait for.
+ */
+OMEGA_API omega_event_t omega_make_ctrl_start_slot_wait(uint64_t tick,
+                                                        uint32_t sink_id,
+                                                        uint32_t target_slot,
+                                                        omega_cue_mode_t mode,
+                                                        uint8_t ctrl_slot);
 
 typedef enum
 {
