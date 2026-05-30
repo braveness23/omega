@@ -187,6 +187,19 @@ public:
     [[nodiscard]] PatternLibrary& pattern_library() noexcept;
     [[nodiscard]] const PatternLibrary& pattern_library() const noexcept;
 
+    /*
+     * Creates one Pattern per timeline track (in track-vector order), assigns
+     * each to the corresponding PerformanceSource slot (slot N = track index N),
+     * and routes all events to sink_id. loop_end_ticks sets the pattern length
+     * for every created pattern.
+     *
+     * Returns the number of patterns created (min of track count and
+     * PERF_MAX_SLOTS).
+     *
+     * Thread: Mutation thread only, engine must be stopped.
+     */
+    uint32_t convert_tracks_to_patterns(uint32_t sink_id, uint64_t loop_end_ticks);
+
     /* ── Song arrangement ────────────────────────────────────────────────── */
 
     /*

@@ -480,6 +480,41 @@ omega_status_t omega_pattern_for_each_event(const omega_engine_t* eng,
     return OMEGA_OK;
 }
 
+uint32_t omega_pattern_library_count(const omega_engine_t* eng)
+{
+    if (eng == nullptr)
+    {
+        return 0u;
+    }
+    return eng->engine.pattern_library().count();
+}
+
+omega_status_t omega_pattern_for_each(const omega_engine_t* eng,
+                                      void (*cb)(omega_pattern_id_t, void*),
+                                      void* userdata)
+{
+    if (eng == nullptr || cb == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    eng->engine.pattern_library().for_each(
+        [cb, userdata](omega::PatternId id, const omega::Pattern& /*pat*/) { cb(id, userdata); });
+    return OMEGA_OK;
+}
+
+omega_status_t omega_convert_tracks_to_patterns(omega_engine_t* eng,
+                                                uint32_t sink_id,
+                                                omega_tick_t loop_end_ticks,
+                                                uint32_t* count_out)
+{
+    if (eng == nullptr || count_out == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    *count_out = eng->engine.convert_tracks_to_patterns(sink_id, loop_end_ticks);
+    return OMEGA_OK;
+}
+
 omega_status_t omega_song_append(omega_engine_t* eng,
                                  omega_pattern_id_t pattern_id,
                                  uint32_t repeats)

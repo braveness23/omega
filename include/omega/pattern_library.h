@@ -4,6 +4,7 @@
 #include <omega/pattern.h>
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -72,6 +73,18 @@ public:
      *   OMEGA_ERR_NOT_FOUND — id not found.
      */
     omega_status_t set_length(PatternId id, uint64_t length_ticks);
+
+    /*
+     * Returns the number of live (non-destroyed) patterns in the library.
+     * Thread: Mutation thread only. Must not be called concurrently with process().
+     */
+    [[nodiscard]] uint32_t count() const noexcept;
+
+    /*
+     * Invokes fn once per live pattern in unspecified order.
+     * Thread: Mutation thread only. Must not be called concurrently with process().
+     */
+    void for_each(const std::function<void(PatternId, const Pattern&)>& fn) const;
 
 private:
     std::unordered_map<PatternId, std::unique_ptr<Pattern>> patterns_;

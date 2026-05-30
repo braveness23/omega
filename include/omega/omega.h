@@ -776,6 +776,50 @@ OMEGA_API omega_status_t omega_pattern_for_each_event(const omega_engine_t* e,
                                                                  void* userdata),
                                                       void* userdata);
 
+/*
+ * Returns the number of live (non-destroyed) patterns in the library.
+ *
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ */
+OMEGA_API uint32_t omega_pattern_library_count(const omega_engine_t* e);
+
+/*
+ * Iterates all live patterns in the library, invoking cb once per pattern.
+ * The callback receives the pattern ID and the caller-supplied userdata pointer.
+ * Iteration order is unspecified.
+ *
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ *
+ * Returns:
+ *   OMEGA_OK          — iteration completed (zero or more patterns visited).
+ *   OMEGA_ERR_INVALID — e or cb is NULL.
+ */
+OMEGA_API omega_status_t omega_pattern_for_each(const omega_engine_t* e,
+                                                void (*cb)(omega_pattern_id_t id, void* userdata),
+                                                void* userdata);
+
+/* ── Pattern conversion helpers ───────────────────────────────────────────── */
+
+/*
+ * Creates one Pattern per timeline track (in track-vector order), assigns each
+ * to the corresponding PerformanceSource slot (slot N = track index N), and
+ * routes all events to sink_id. loop_end_ticks sets the pattern length for
+ * every created pattern.
+ *
+ * Writes the number of patterns created (min of track count and
+ * OMEGA_SLOT_MAX) to *count_out.
+ *
+ * Thread: Mutation thread only, engine must be stopped.
+ *
+ * Returns:
+ *   OMEGA_OK          — conversion complete; *count_out written.
+ *   OMEGA_ERR_INVALID — e or count_out is NULL.
+ */
+OMEGA_API omega_status_t omega_convert_tracks_to_patterns(omega_engine_t* e,
+                                                          uint32_t sink_id,
+                                                          omega_tick_t loop_end_ticks,
+                                                          uint32_t* count_out);
+
 /* ── Song arrangement ─────────────────────────────────────────────────────── */
 
 /*

@@ -223,6 +223,26 @@ const PatternLibrary& Engine::pattern_library() const noexcept
     return patterns_;
 }
 
+uint32_t Engine::convert_tracks_to_patterns(uint32_t sink_id, uint64_t loop_end_ticks)
+{
+    const std::vector<Track>& tracks = timeline_.tracks();
+    uint32_t count = 0;
+    for (uint32_t i = 0; i < static_cast<uint32_t>(tracks.size()) && i < PERF_MAX_SLOTS; ++i)
+    {
+        const Track& trk = tracks[i];
+        PatternId pid = patterns_.create(trk.name, loop_end_ticks);
+        for (const Event& ev : trk.events)
+        {
+            Event copy = ev;
+            copy.sink_id = sink_id;
+            patterns_.add_event(pid, copy);
+        }
+        perf_.assign(i, pid);
+        ++count;
+    }
+    return count;
+}
+
 TrackId Engine::add_track(std::string name)
 {
     return timeline_.add_track(std::move(name));

@@ -63,4 +63,17 @@ omega_status_t PatternLibrary::set_length(PatternId id, uint64_t length_ticks)
     return OMEGA_OK;
 }
 
+uint32_t PatternLibrary::count() const noexcept
+{
+    return static_cast<uint32_t>(patterns_.size());
+}
+
+void PatternLibrary::for_each(const std::function<void(PatternId, const Pattern&)>& fn) const
+{
+    for (const auto& [id, pat] : patterns_)
+    {
+        fn(id, *pat);
+    }
+}
+
 }  // namespace omega
