@@ -1,5 +1,6 @@
 #include <omega/commands.h>
 #include <omega/engine.h>
+#include <omega/region_list.h>
 #include <omega/test/capturing_sink.h>
 #include <omega/test/mock_clock.h>
 
@@ -14,6 +15,37 @@ TEST_CASE("loop_set rejects end_tick <= start_tick")
     Engine e;
     REQUIRE(e.loop_set(100, 100) == OMEGA_ERR_INVALID);
     REQUIRE(e.loop_set(200, 100) == OMEGA_ERR_INVALID);
+}
+
+// ── loop_set_immediate ────────────────────────────────────────────────────────
+
+TEST_CASE("loop_set_immediate rejects end_tick <= start_tick")
+{
+    Engine e;
+    REQUIRE(e.loop_set_immediate(100, 100) == OMEGA_ERR_INVALID);
+    REQUIRE(e.loop_set_immediate(200, 100) == OMEGA_ERR_INVALID);
+}
+
+TEST_CASE("loop_set_immediate updates loop_region without process() round-trip")
+{
+    Engine e;
+    REQUIRE(e.loop_set_immediate(0, 960) == OMEGA_OK);
+
+    auto region = e.loop_region();
+    REQUIRE(region.start_tick == 0);
+    REQUIRE(region.end_tick == 960);
+    REQUIRE(region.enabled);
+}
+
+TEST_CASE("loop_set_immediate rejects call while engine is playing")
+{
+    MockClock clock;
+    Engine e{&clock};
+    REQUIRE(e.enqueue(TransportCmd{TransportAction::PLAY, 0u}) == OMEGA_OK);
+    clock.advance_ticks(1);
+    e.process();
+
+    REQUIRE(e.loop_set_immediate(0, 960) == OMEGA_ERR_UNSUPPORTED);
 }
 
 TEST_CASE("loop_set accepts valid region and loop_region reflects it after process")
@@ -182,6 +214,60 @@ TEST_CASE("loop_enable(false) stops wrapping; loop_enable(true) resumes it")
     clock.advance_ticks(960);
     e.process();
     REQUIRE(sink.has_note_on(60, 0));
+}
+
+// ── loop_activate_region ──────────────────────────────────────────────────────
+
+TEST_CASE("loop_activate_region activates a LOOP-typed region as transport loop")
+{
+    MockClock clock;
+    Engine e{&clock};
+
+    e.region_list().add("chorus", 480, 960, RegionType::LOOP);
+
+    REQUIRE(e.loop_activate_region(0) == OMEGA_OK);
+    clock.advance_ticks(1);
+    e.process();
+
+    auto region = e.loop_region();
+    REQUIRE(region.start_tick == 480);
+    REQUIRE(region.end_tick == 960);
+    REQUIRE(region.enabled);
+}
+
+TEST_CASE("loop_activate_region returns NOT_FOUND for out-of-range index")
+{
+    Engine e;
+    REQUIRE(e.loop_activate_region(0) == OMEGA_ERR_NOT_FOUND);
+    REQUIRE(e.loop_activate_region(99) == OMEGA_ERR_NOT_FOUND);
+}
+
+TEST_CASE("loop_activate_region returns NOT_FOUND for non-LOOP region types")
+{
+    Engine e;
+    e.region_list().add("intro", 0, 480, RegionType::SECTION);
+    e.region_list().add("punch", 480, 960, RegionType::PUNCH);
+
+    REQUIRE(e.loop_activate_region(0) == OMEGA_ERR_NOT_FOUND);
+    REQUIRE(e.loop_activate_region(1) == OMEGA_ERR_NOT_FOUND);
+}
+
+TEST_CASE("loop_activate_region selects among multiple regions by index")
+{
+    MockClock clock;
+    Engine e{&clock};
+
+    e.region_list().add("loop-a", 0, 480, RegionType::LOOP);
+    e.region_list().add("loop-b", 960, 1920, RegionType::LOOP);
+
+    REQUIRE(e.loop_activate_region(1) == OMEGA_OK);
+    clock.advance_ticks(1);
+    e.process();
+
+    auto region = e.loop_region();
+    REQUIRE(region.start_tick == 960);
+    REQUIRE(region.end_tick == 1920);
+    REQUIRE(region.enabled);
 }
 
 TEST_CASE("non-zero loop start: transport wraps from end to start (not tick 0)")

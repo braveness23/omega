@@ -167,6 +167,27 @@ struct PerfSetRandomBiasCmd
     uint8_t bias;
 };
 
+/*
+ * Sets the repeat count for a PerformanceSource slot.
+ * 0 = loop indefinitely (default). N > 0 = auto-stop after N full pattern iterations.
+ */
+struct PerfSetRepeatCountCmd
+{
+    SlotId slot;
+    uint32_t count;
+};
+
+/*
+ * Mutes or unmutes a PerformanceSource slot.
+ * While muted, the pattern cursor advances but no events are dispatched.
+ * Active notes receive immediate note-offs when mute is engaged.
+ */
+struct PerfSetMuteCmd
+{
+    SlotId slot;
+    bool muted;
+};
+
 /* Registers an EventInput with the engine so it is polled each process() cycle. */
 struct AddInputCmd
 {
@@ -359,6 +380,16 @@ struct RemoveSourceCmd
     EventSource* source;  // non-owning
 };
 
+// ── Undo / redo commands ──────────────────────────────────────────────────────
+
+/* Pops the most recent undoable edit from the engine's undo history and reverts it. */
+struct UndoCmd
+{};
+
+/* Re-applies the most recently undone edit from the redo history. */
+struct RedoCmd
+{};
+
 using Command = std::variant<AddEventCmd,
                              DeleteEventCmd,
                              ReplaceEventCmd,
@@ -377,6 +408,8 @@ using Command = std::variant<AddEventCmd,
                              PerfSetTransposeCmd,
                              PerfSetVelocityScaleCmd,
                              PerfSetRandomBiasCmd,
+                             PerfSetRepeatCountCmd,
+                             PerfSetMuteCmd,
                              AddInputCmd,
                              RemoveInputCmd,
                              SetCtxScaleCmd,
@@ -396,7 +429,9 @@ using Command = std::variant<AddEventCmd,
                              SetSinkSoloCmd,
                              SetTrackMuteCmd,
                              SetTrackSoloCmd,
-                             ReplaceTrackEventCmd>;
+                             ReplaceTrackEventCmd,
+                             UndoCmd,
+                             RedoCmd>;
 
 static_assert(sizeof(Command) <= 64, "Command must fit within 64 bytes");
 

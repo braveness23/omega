@@ -187,6 +187,19 @@ public:
     [[nodiscard]] PatternLibrary& pattern_library() noexcept;
     [[nodiscard]] const PatternLibrary& pattern_library() const noexcept;
 
+    /*
+     * Creates one Pattern per timeline track (in track-vector order), assigns
+     * each to the corresponding PerformanceSource slot (slot N = track index N),
+     * and routes all events to sink_id. loop_end_ticks sets the pattern length
+     * for every created pattern.
+     *
+     * Returns the number of patterns created (min of track count and
+     * PERF_MAX_SLOTS).
+     *
+     * Thread: Mutation thread only, engine must be stopped.
+     */
+    uint32_t convert_tracks_to_patterns(uint32_t sink_id, uint64_t loop_end_ticks);
+
     /* ── Song arrangement ────────────────────────────────────────────────── */
 
     /*
@@ -344,6 +357,30 @@ public:
      *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
      */
     omega_status_t perf_set_random_bias(SlotId slot, uint8_t bias);
+
+    /*
+     * Sets the number of times a slot loops before auto-stopping.
+     * 0 = infinite (default). N > 0 = stop after N full pattern iterations.
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t perf_set_repeat_count(SlotId slot, uint32_t count);
+
+    /*
+     * Mutes or unmutes a slot. While muted, the pattern cursor advances normally
+     * but no events are dispatched. Active notes receive immediate note-offs when
+     * mute is engaged. Unmuting resumes from the current position. Safe during
+     * playback.
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t perf_set_mute(SlotId slot, bool muted);
 
     /* ── Inputs ──────────────────────────────────────────────────────────────── */
 
@@ -532,11 +569,20 @@ public:
     [[nodiscard]] const TimelineSource& timeline_source() const noexcept { return timeline_; }
     [[nodiscard]] TimelineSource& timeline_source() noexcept { return timeline_; }
 
-    /* Raw access to the built-in performance source. The non-const overload is
-     * provided so ControlSink can hold a direct reference and call cue/stop/
-     * set_transpose directly on the timing thread. Same contract as timeline_source(). */
+    /* Raw access to the built-in performance source.
+     * Same contract as timeline_source(). */
     [[nodiscard]] const PerformanceSource& perf_source() const noexcept { return perf_; }
     [[nodiscard]] PerformanceSource& perf_source() noexcept { return perf_; }
+
+    /*
+     * Apply a control-sequence event on the timing thread.
+     * Called from ControlSink::send(). Dispatches OMEGA_CTRL_* payloads to the
+     * appropriate engine internals (perf_, tempo_map_, etc.).
+     * All other payload tags are silently ignored.
+     *
+     * Thread: timing thread only.
+     */
+    void execute_ctrl_event(const Event& event) noexcept;
 
     /* ── Markers and regions ─────────────────────────────────────────────────── */
 
@@ -634,6 +680,20 @@ public:
     omega_status_t loop_set(uint64_t start_tick, uint64_t end_tick);
 
     /*
+     * Sets the transport loop region immediately, without going through the
+     * command queue. Use this when the engine is stopped and code needs to
+     * read back loop_region() before the next process() call.
+     *
+     * Thread: Mutation thread only, engine must be stopped.
+     *
+     * Returns:
+     *   OMEGA_OK              — applied immediately.
+     *   OMEGA_ERR_INVALID     — end_tick <= start_tick.
+     *   OMEGA_ERR_UNSUPPORTED — engine is playing.
+     */
+    omega_status_t loop_set_immediate(uint64_t start_tick, uint64_t end_tick);
+
+    /*
      * Enqueues a command to disable looping and clear the loop region.
      *
      * Thread: Mutation thread only.
@@ -656,6 +716,21 @@ public:
      *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
      */
     omega_status_t loop_enable(bool enabled);
+
+    /*
+     * Activates the region at region_index in region_list() as the transport
+     * loop. Equivalent to loop_set(region.start_tick, region.end_tick).
+     *
+     * The region must have type RegionType::LOOP and end_tick > start_tick.
+     *
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_NOT_FOUND  — index out of range, or region is not RegionType::LOOP.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t loop_activate_region(uint32_t region_index);
 
     /*
      * Returns a snapshot of the current loop region (start, end, enabled).
@@ -710,6 +785,31 @@ public:
      *   OMEGA_ERR_QUEUE_FULL — queue at capacity; command was NOT enqueued.
      */
     omega_status_t enqueue(Command cmd);
+
+    /*
+     * Enqueues an undo command that reverts the most recent undoable edit
+     * (AddEventCmd, DeleteEventCmd, ReplaceTrackEventCmd, or ReplaceEventCmd).
+     * A no-op if the undo history is empty. Clears nothing in the redo history.
+     *
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued (may be a no-op if history empty).
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity; command was NOT enqueued.
+     */
+    omega_status_t undo();
+
+    /*
+     * Enqueues a redo command that re-applies the most recently undone edit.
+     * A no-op if the redo history is empty. Cleared by any new undoable edit.
+     *
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued (may be a no-op if history empty).
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity; command was NOT enqueued.
+     */
+    omega_status_t redo();
 
     /* ── Process loop ─────────────────────────────────────────────────────── */
 
@@ -843,6 +943,29 @@ public:
     };
 
 private:
+    // ── Undo / redo history ───────────────────────────────────────────────────
+
+    // Paired undo/redo commands stored on the timing thread.
+    // undo_cmd: what to apply to revert the edit.
+    // redo_cmd: what to apply to re-apply the edit after an undo.
+    struct HistoryEntry
+    {
+        Command undo_cmd;
+        Command redo_cmd;
+    };
+
+    // Depth cap for both stacks.  64 levels uses ≈ 16 KiB (128 bytes × 64 × 2).
+    static constexpr uint32_t UNDO_DEPTH = 64;
+
+    // push_history: records a new undoable edit and clears the redo stack.
+    // Must be called from the timing thread (inside an apply() override).
+    // Does NOT allocate after the initial reserve() in the constructor.
+    void push_history(HistoryEntry entry) noexcept;
+    void apply_history_cmd(const Command& cmd) noexcept;
+
+    void apply(const UndoCmd& cmd);
+    void apply(const RedoCmd& cmd);
+
     void apply(const AddEventCmd& cmd);
     void apply(const DeleteEventCmd& cmd);
     void apply(const ReplaceEventCmd& cmd);
@@ -860,6 +983,8 @@ private:
     void apply(const PerfSetTransposeCmd& cmd);
     void apply(const PerfSetVelocityScaleCmd& cmd);
     void apply(const PerfSetRandomBiasCmd& cmd);
+    void apply(const PerfSetRepeatCountCmd& cmd);
+    void apply(const PerfSetMuteCmd& cmd);
     void apply(const AddInputCmd& cmd);
     void apply(const RemoveInputCmd& cmd);
     void apply(const SetCtxScaleCmd& cmd);
@@ -933,6 +1058,15 @@ private:
     MarkerList marker_list_;
     RegionList region_list_;
     EventAnchorTable event_anchors_;
+
+    // Undo/redo history stacks — timing-thread-owned.
+    // Both pre-reserved to UNDO_DEPTH in the constructor to avoid runtime
+    // allocation on the timing thread.
+    // applying_undo_redo_: true while UndoCmd or RedoCmd is being applied,
+    // suppressing recursive history recording inside the invoked apply() methods.
+    std::vector<HistoryEntry> undo_history_;
+    std::vector<HistoryEntry> redo_history_;
+    bool applying_undo_redo_{false};
 
     detail::SpscQueue<Command, 4096> queue_;
     TempoMap tempo_map_;

@@ -15,6 +15,7 @@ Checks: >
   -performance-enum-size,
   -readability-function-cognitive-complexity,
   -readability-identifier-length,
-  -readability-uppercase-literal-suffix
+  -readability-uppercase-literal-suffix,
+  -readability-named-parameter
 WarningsAsErrors: "*"
 HeaderFilterRegex: "include/omega/.*"

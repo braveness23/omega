@@ -1,6 +1,7 @@
 #include <omega/pattern_library.h>
 #include <omega/types.h>
 
+#include <algorithm>
 #include <array>
 #include <catch2/catch_test_macros.hpp>
 #include <string>
@@ -183,4 +184,86 @@ TEST_CASE("set_length returns ERR_NOT_FOUND for unknown pattern")
 {
     PatternLibrary lib;
     REQUIRE(lib.set_length(999u, 480u) == OMEGA_ERR_NOT_FOUND);
+}
+
+// ── count / for_each ─────────────────────────────────────────────────────────
+
+TEST_CASE("count returns 0 for empty library")
+{
+    PatternLibrary lib;
+    REQUIRE(lib.count() == 0u);
+}
+
+TEST_CASE("count reflects live patterns after create and destroy")
+{
+    PatternLibrary lib;
+    REQUIRE(lib.count() == 0u);
+
+    PatternId a = lib.create("a", 480u);
+    REQUIRE(lib.count() == 1u);
+
+    PatternId b = lib.create("b", 480u);
+    REQUIRE(lib.count() == 2u);
+
+    lib.destroy(a);
+    REQUIRE(lib.count() == 1u);
+
+    lib.destroy(b);
+    REQUIRE(lib.count() == 0u);
+}
+
+TEST_CASE("for_each visits all live patterns")
+{
+    PatternLibrary lib;
+    PatternId id1 = lib.create("x", 480u);
+    PatternId id2 = lib.create("y", 960u);
+    PatternId id3 = lib.create("z", 1920u);
+
+    std::vector<PatternId> visited;
+    lib.for_each([&](PatternId id, const Pattern& /*pat*/) { visited.push_back(id); });
+
+    REQUIRE(visited.size() == 3u);
+    // Order is unspecified; check presence.
+    REQUIRE(std::find(visited.begin(), visited.end(), id1) != visited.end());
+    REQUIRE(std::find(visited.begin(), visited.end(), id2) != visited.end());
+    REQUIRE(std::find(visited.begin(), visited.end(), id3) != visited.end());
+}
+
+TEST_CASE("for_each skips destroyed patterns")
+{
+    PatternLibrary lib;
+    PatternId id1 = lib.create("a", 480u);
+    PatternId id2 = lib.create("b", 480u);
+    lib.destroy(id1);
+
+    std::vector<PatternId> visited;
+    lib.for_each([&](PatternId id, const Pattern& /*pat*/) { visited.push_back(id); });
+
+    REQUIRE(visited.size() == 1u);
+    REQUIRE(visited[0] == id2);
+}
+
+TEST_CASE("for_each on empty library invokes callback zero times")
+{
+    PatternLibrary lib;
+    int calls = 0;
+    lib.for_each([&](PatternId /*id*/, const Pattern& /*pat*/) { ++calls; });
+    REQUIRE(calls == 0);
+}
+
+TEST_CASE("for_each exposes correct Pattern fields")
+{
+    PatternLibrary lib;
+    PatternId id = lib.create("test", 1234u);
+
+    bool found = false;
+    lib.for_each([&](PatternId pid, const Pattern& pat) {
+        if (pid == id)
+        {
+            found = true;
+            REQUIRE(pat.name == "test");
+            REQUIRE(pat.length_ticks == 1234u);
+        }
+    });
+    REQUIRE(found);
 }

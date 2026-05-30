@@ -257,6 +257,24 @@ void omega_engine_process(omega_engine_t* eng)
     }
 }
 
+omega_status_t omega_engine_undo(omega_engine_t* eng)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.undo();
+}
+
+omega_status_t omega_engine_redo(omega_engine_t* eng)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.redo();
+}
+
 omega_transport_state_t omega_engine_transport_state(const omega_engine_t* eng)
 {
     if (eng == nullptr)
@@ -462,6 +480,41 @@ omega_status_t omega_pattern_for_each_event(const omega_engine_t* eng,
     return OMEGA_OK;
 }
 
+uint32_t omega_pattern_library_count(const omega_engine_t* eng)
+{
+    if (eng == nullptr)
+    {
+        return 0u;
+    }
+    return eng->engine.pattern_library().count();
+}
+
+omega_status_t omega_pattern_for_each(const omega_engine_t* eng,
+                                      void (*cb)(omega_pattern_id_t, void*),
+                                      void* userdata)
+{
+    if (eng == nullptr || cb == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    eng->engine.pattern_library().for_each(
+        [cb, userdata](omega::PatternId id, const omega::Pattern& /*pat*/) { cb(id, userdata); });
+    return OMEGA_OK;
+}
+
+omega_status_t omega_convert_tracks_to_patterns(omega_engine_t* eng,
+                                                uint32_t sink_id,
+                                                omega_tick_t loop_end_ticks,
+                                                uint32_t* count_out)
+{
+    if (eng == nullptr || count_out == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    *count_out = eng->engine.convert_tracks_to_patterns(sink_id, loop_end_ticks);
+    return OMEGA_OK;
+}
+
 omega_status_t omega_song_append(omega_engine_t* eng,
                                  omega_pattern_id_t pattern_id,
                                  uint32_t repeats)
@@ -550,6 +603,26 @@ omega_status_t omega_perf_set_random_bias(omega_engine_t* eng, omega_slot_id_t s
         return OMEGA_ERR_INVALID;
     }
     return eng->engine.perf_set_random_bias(slot, bias);
+}
+
+omega_status_t omega_perf_set_repeat_count(omega_engine_t* eng,
+                                           omega_slot_id_t slot,
+                                           uint32_t count)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.perf_set_repeat_count(slot, count);
+}
+
+omega_status_t omega_perf_set_mute(omega_engine_t* eng, omega_slot_id_t slot, int muted)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.perf_set_mute(slot, muted != 0);
 }
 
 // ── Query boundary ──────────────────────────────────────────────────────────
@@ -1411,6 +1484,15 @@ omega_status_t omega_loop_set(omega_engine_t* eng, omega_tick_t start, omega_tic
     return eng->engine.loop_set(start, end);
 }
 
+omega_status_t omega_loop_set_immediate(omega_engine_t* eng, omega_tick_t start, omega_tick_t end)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.loop_set_immediate(start, end);
+}
+
 omega_status_t omega_loop_clear(omega_engine_t* eng)
 {
     if (eng == nullptr)
@@ -1427,6 +1509,15 @@ omega_status_t omega_loop_enable(omega_engine_t* eng, int enabled)
         return OMEGA_ERR_INVALID;
     }
     return eng->engine.loop_enable(enabled != 0);
+}
+
+omega_status_t omega_loop_activate_region(omega_engine_t* eng, uint32_t region_index)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.loop_activate_region(region_index);
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
@@ -1504,6 +1595,70 @@ void omega_midi_note_name(uint8_t pitch, char* out, size_t out_size)
     }
 
     out[pos] = '\0';
+}
+
+omega_status_t omega_midi_note_from_name(const char* name, uint8_t* out)
+{
+    if (name == nullptr || out == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+
+    const char* p = name;
+
+    // Natural semitone for A B C D E F G.
+    static constexpr int k_semitones[7] = {9, 11, 0, 2, 4, 5, 7};
+
+    char letter = *p++;
+    if (letter >= 'a' && letter <= 'z')
+    {
+        letter = static_cast<char>(letter - 32);
+    }
+    if (letter < 'A' || letter > 'G')
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    int semitone = k_semitones[letter - 'A'];
+
+    // Optional accidental.
+    if (*p == '#')
+    {
+        semitone += 1;
+        ++p;
+    }
+    else if (*p == 'b')
+    {
+        semitone -= 1;
+        ++p;
+    }
+
+    // Octave: optional leading '-', then a single digit.
+    int sign = 1;
+    if (*p == '-')
+    {
+        sign = -1;
+        ++p;
+    }
+
+    if (*p < '0' || *p > '9')
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    const int octave = sign * (*p++ - '0');
+
+    if (*p != '\0')
+    {
+        return OMEGA_ERR_INVALID;
+    }
+
+    const int pitch = (octave + 1) * 12 + semitone;
+    if (pitch < 0 || pitch > 127)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+
+    *out = static_cast<uint8_t>(pitch);
+    return OMEGA_OK;
 }
 
 omega_status_t omega_format_position(const omega_engine_t* e,

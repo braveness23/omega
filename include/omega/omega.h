@@ -490,6 +490,37 @@ OMEGA_API omega_status_t omega_engine_stop(omega_engine_t* e);
 OMEGA_API void omega_engine_process(omega_engine_t* e);
 
 /*
+ * Enqueues an undo command that reverts the most recent undoable edit
+ * (timeline add/delete/replace, or pattern replace).  A no-op if the undo
+ * history is empty.  Undoable edits supported: omega_engine_add_event()
+ * and omega_pattern_replace_event() in the C API; also
+ * Engine::enqueue(DeleteEventCmd), Engine::enqueue(ReplaceTrackEventCmd)
+ * in the C++ API.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — command queue is full.
+ */
+OMEGA_API omega_status_t omega_engine_undo(omega_engine_t* e);
+
+/*
+ * Enqueues a redo command that re-applies the most recently undone edit.
+ * A no-op if the redo history is empty.  Cleared whenever a new undoable edit
+ * is applied.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — command queue is full.
+ */
+OMEGA_API omega_status_t omega_engine_redo(omega_engine_t* e);
+
+/*
  * Returns the current transport state.
  * May return a stale value if called concurrently with process().
  *
@@ -745,6 +776,50 @@ OMEGA_API omega_status_t omega_pattern_for_each_event(const omega_engine_t* e,
                                                                  void* userdata),
                                                       void* userdata);
 
+/*
+ * Returns the number of live (non-destroyed) patterns in the library.
+ *
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ */
+OMEGA_API uint32_t omega_pattern_library_count(const omega_engine_t* e);
+
+/*
+ * Iterates all live patterns in the library, invoking cb once per pattern.
+ * The callback receives the pattern ID and the caller-supplied userdata pointer.
+ * Iteration order is unspecified.
+ *
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ *
+ * Returns:
+ *   OMEGA_OK          — iteration completed (zero or more patterns visited).
+ *   OMEGA_ERR_INVALID — e or cb is NULL.
+ */
+OMEGA_API omega_status_t omega_pattern_for_each(const omega_engine_t* e,
+                                                void (*cb)(omega_pattern_id_t id, void* userdata),
+                                                void* userdata);
+
+/* ── Pattern conversion helpers ───────────────────────────────────────────── */
+
+/*
+ * Creates one Pattern per timeline track (in track-vector order), assigns each
+ * to the corresponding PerformanceSource slot (slot N = track index N), and
+ * routes all events to sink_id. loop_end_ticks sets the pattern length for
+ * every created pattern.
+ *
+ * Writes the number of patterns created (min of track count and
+ * OMEGA_SLOT_MAX) to *count_out.
+ *
+ * Thread: Mutation thread only, engine must be stopped.
+ *
+ * Returns:
+ *   OMEGA_OK          — conversion complete; *count_out written.
+ *   OMEGA_ERR_INVALID — e or count_out is NULL.
+ */
+OMEGA_API omega_status_t omega_convert_tracks_to_patterns(omega_engine_t* e,
+                                                          uint32_t sink_id,
+                                                          omega_tick_t loop_end_ticks,
+                                                          uint32_t* count_out);
+
 /* ── Song arrangement ─────────────────────────────────────────────────────── */
 
 /*
@@ -882,6 +957,40 @@ OMEGA_API omega_status_t omega_perf_set_velocity_scale(omega_engine_t* e,
 OMEGA_API omega_status_t omega_perf_set_random_bias(omega_engine_t* e,
                                                     omega_slot_id_t slot,
                                                     uint8_t bias);
+
+/*
+ * Sets the repeat count for a slot.
+ * count == 0: loop indefinitely (default).
+ * count > 0:  play exactly count full pattern iterations then auto-stop.
+ *
+ * The setting persists across cue/stop cycles: if the slot is cued again after
+ * an auto-stop, it plays count iterations again.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_perf_set_repeat_count(omega_engine_t* e,
+                                                     omega_slot_id_t slot,
+                                                     uint32_t count);
+
+/*
+ * Mutes or unmutes a slot. While muted, the pattern cursor advances normally
+ * (maintaining timing) but no events are dispatched. Active notes receive
+ * immediate note-offs when mute is engaged. Unmuting resumes playback from
+ * the current position. Safe during playback.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_perf_set_mute(omega_engine_t* e, omega_slot_id_t slot, int muted);
 
 /* ── Query boundary ──────────────────────────────────────────────────────── */
 
@@ -1639,6 +1748,22 @@ OMEGA_API omega_status_t omega_smpte_to_tick(const omega_engine_t* e,
 OMEGA_API omega_status_t omega_loop_set(omega_engine_t* e, omega_tick_t start, omega_tick_t end);
 
 /*
+ * Sets the transport loop region immediately, without going through the
+ * command queue. Use this when the engine is stopped and code needs to
+ * read back the loop region before the next omega_engine_process() call.
+ *
+ * Thread: Mutation thread only, engine must be stopped.
+ *
+ * Returns:
+ *   OMEGA_OK              — applied immediately.
+ *   OMEGA_ERR_INVALID     — e is NULL, or end <= start.
+ *   OMEGA_ERR_UNSUPPORTED — engine is currently playing.
+ */
+OMEGA_API omega_status_t omega_loop_set_immediate(omega_engine_t* e,
+                                                  omega_tick_t start,
+                                                  omega_tick_t end);
+
+/*
  * Disables looping and clears the loop region.
  *
  * Thread: Mutation thread only.
@@ -1663,6 +1788,22 @@ OMEGA_API omega_status_t omega_loop_clear(omega_engine_t* e);
  *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
  */
 OMEGA_API omega_status_t omega_loop_enable(omega_engine_t* e, int enabled);
+
+/*
+ * Activates the region at region_index in the engine's region list as the
+ * transport loop. Equivalent to calling omega_loop_set() with the region's
+ * start_tick and end_tick. The region must have type OMEGA_REGION_LOOP and
+ * its end_tick must be greater than start_tick.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_NOT_FOUND  — index out of range, or region is not OMEGA_REGION_LOOP.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_loop_activate_region(omega_engine_t* e, uint32_t region_index);
 
 /* ── SMF import / export ──────────────────────────────────────────────────── */
 
@@ -1955,6 +2096,23 @@ OMEGA_API omega_status_t omega_event_remove_anchor(omega_engine_t* e,
  * Thread: Any thread.
  */
 OMEGA_API void omega_midi_note_name(uint8_t pitch, char* out, size_t out_size);
+
+/*
+ * Parses a note name string into a MIDI pitch byte.
+ *
+ * Accepts strings of the form <letter>[<accidental>]<octave>, where:
+ *   letter     — A–G (case-insensitive)
+ *   accidental — '#' (sharp) or 'b' (flat), optional
+ *   octave     — integer; may be negative (-1 for MIDI 0–11)
+ *
+ * Examples: "C4" → 60, "F#3" → 54, "Bb4" → 70, "C-1" → 0, "G9" → 127.
+ * Returns OMEGA_OK and writes the pitch to *out on success.
+ * Returns OMEGA_ERR_INVALID if the string is not a recognised note name or
+ * the resulting pitch falls outside 0–127.
+ *
+ * Thread: Any thread.
+ */
+OMEGA_API omega_status_t omega_midi_note_from_name(const char* name, uint8_t* out);
 
 /* ── Timer ────────────────────────────────────────────────────────────────── */
 

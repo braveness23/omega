@@ -292,6 +292,28 @@ void PerformanceSource::set_random_bias(SlotId slot_id, uint8_t bias)
     }
 }
 
+void PerformanceSource::set_repeat_count(SlotId slot_id, uint32_t count)
+{
+    if (slot_id < PERF_MAX_SLOTS)
+    {
+        slots_[slot_id].repeat_count = count;
+    }
+}
+
+void PerformanceSource::set_mute(SlotId slot_id, bool muted)
+{
+    if (slot_id >= PERF_MAX_SLOTS)
+    {
+        return;
+    }
+    PerfSlot& slot = slots_[slot_id];
+    if (muted && !slot.muted)
+    {
+        slot.needs_silence = true;
+    }
+    slot.muted = muted;
+}
+
 // ── Event dispatch helpers ────────────────────────────────────────────────────
 
 void PerformanceSource::dispatch_slot_events(PerfSlot& slot,
@@ -489,20 +511,58 @@ void PerformanceSource::advance(uint64_t to_tick,
                     slot.pending = 0u;
                     slot.state.store(static_cast<uint8_t>(SlotState::PLAYING),
                                      std::memory_order_relaxed);
-                    dispatch_slot_events(slot, slot.start_tick, to_tick, dispatcher);
-                    fire_note_offs(slot, to_tick, dispatcher);
+                    if (!slot.muted)
+                    {
+                        dispatch_slot_events(slot, slot.start_tick, to_tick, dispatcher);
+                        fire_note_offs(slot, to_tick, dispatcher);
+                    }
                 }
                 break;
 
             case SlotState::PLAYING:
-                dispatch_slot_events(slot, from_tick, to_tick, dispatcher);
-                fire_note_offs(slot, to_tick, dispatcher);
+            {
+                if (slot.needs_silence)
+                {
+                    silence_slot(slot, from_tick, dispatcher);
+                    slot.needs_silence = false;
+                }
+                if (!slot.muted)
+                {
+                    if (slot.repeat_count > 0u)
+                    {
+                        const Pattern* pat = library_.get(slot.playing);
+                        if (pat != nullptr && pat->length_ticks > 0u)
+                        {
+                            uint64_t end_tick =
+                                slot.start_tick +
+                                static_cast<uint64_t>(slot.repeat_count) * pat->length_ticks;
+                            if (to_tick >= end_tick)
+                            {
+                                if (end_tick > from_tick)
+                                {
+                                    dispatch_slot_events(
+                                        slot, from_tick, end_tick - 1u, dispatcher);
+                                    fire_note_offs(slot, end_tick - 1u, dispatcher);
+                                }
+                                silence_slot(slot, end_tick, dispatcher);
+                                slot.playing = 0u;
+                                slot.state.store(static_cast<uint8_t>(SlotState::IDLE),
+                                                 std::memory_order_relaxed);
+                                break;
+                            }
+                        }
+                    }
+                    dispatch_slot_events(slot, from_tick, to_tick, dispatcher);
+                    fire_note_offs(slot, to_tick, dispatcher);
+                }
                 break;
+            }
 
             case SlotState::STOPPING:
                 if (slot.transition_tick <= to_tick)
                 {
-                    if (slot.transition_tick > from_tick)
+                    slot.needs_silence = false;
+                    if (slot.transition_tick > from_tick && !slot.muted)
                     {
                         dispatch_slot_events(
                             slot, from_tick, slot.transition_tick - 1u, dispatcher);
@@ -517,8 +577,11 @@ void PerformanceSource::advance(uint64_t to_tick,
                         slot.pending = 0u;
                         slot.state.store(static_cast<uint8_t>(SlotState::PLAYING),
                                          std::memory_order_relaxed);
-                        dispatch_slot_events(slot, slot.start_tick, to_tick, dispatcher);
-                        fire_note_offs(slot, to_tick, dispatcher);
+                        if (!slot.muted)
+                        {
+                            dispatch_slot_events(slot, slot.start_tick, to_tick, dispatcher);
+                            fire_note_offs(slot, to_tick, dispatcher);
+                        }
                     }
                     else
                     {
@@ -529,8 +592,16 @@ void PerformanceSource::advance(uint64_t to_tick,
                 }
                 else
                 {
-                    dispatch_slot_events(slot, from_tick, to_tick, dispatcher);
-                    fire_note_offs(slot, to_tick, dispatcher);
+                    if (slot.needs_silence)
+                    {
+                        silence_slot(slot, from_tick, dispatcher);
+                        slot.needs_silence = false;
+                    }
+                    if (!slot.muted)
+                    {
+                        dispatch_slot_events(slot, from_tick, to_tick, dispatcher);
+                        fire_note_offs(slot, to_tick, dispatcher);
+                    }
                 }
                 break;
 
