@@ -451,6 +451,20 @@ omega_status_t Engine::loop_set(uint64_t start_tick, uint64_t end_tick)
     return enqueue(SetLoopCmd{start_tick, end_tick, true});
 }
 
+omega_status_t Engine::loop_set_immediate(uint64_t start_tick, uint64_t end_tick)
+{
+    if (end_tick <= start_tick)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    if (transport_state() == TransportState::PLAYING)
+    {
+        return OMEGA_ERR_UNSUPPORTED;
+    }
+    apply(SetLoopCmd{start_tick, end_tick, true});
+    return OMEGA_OK;
+}
+
 omega_status_t Engine::loop_clear()
 {
     return enqueue(SetLoopCmd{0, 0, false});

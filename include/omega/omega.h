@@ -1748,6 +1748,22 @@ OMEGA_API omega_status_t omega_smpte_to_tick(const omega_engine_t* e,
 OMEGA_API omega_status_t omega_loop_set(omega_engine_t* e, omega_tick_t start, omega_tick_t end);
 
 /*
+ * Sets the transport loop region immediately, without going through the
+ * command queue. Use this when the engine is stopped and code needs to
+ * read back the loop region before the next omega_engine_process() call.
+ *
+ * Thread: Mutation thread only, engine must be stopped.
+ *
+ * Returns:
+ *   OMEGA_OK              — applied immediately.
+ *   OMEGA_ERR_INVALID     — e is NULL, or end <= start.
+ *   OMEGA_ERR_UNSUPPORTED — engine is currently playing.
+ */
+OMEGA_API omega_status_t omega_loop_set_immediate(omega_engine_t* e,
+                                                  omega_tick_t start,
+                                                  omega_tick_t end);
+
+/*
  * Disables looping and clears the loop region.
  *
  * Thread: Mutation thread only.

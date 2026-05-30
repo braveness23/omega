@@ -671,6 +671,20 @@ public:
     omega_status_t loop_set(uint64_t start_tick, uint64_t end_tick);
 
     /*
+     * Sets the transport loop region immediately, without going through the
+     * command queue. Use this when the engine is stopped and code needs to
+     * read back loop_region() before the next process() call.
+     *
+     * Thread: Mutation thread only, engine must be stopped.
+     *
+     * Returns:
+     *   OMEGA_OK              — applied immediately.
+     *   OMEGA_ERR_INVALID     — end_tick <= start_tick.
+     *   OMEGA_ERR_UNSUPPORTED — engine is playing.
+     */
+    omega_status_t loop_set_immediate(uint64_t start_tick, uint64_t end_tick);
+
+    /*
      * Enqueues a command to disable looping and clear the loop region.
      *
      * Thread: Mutation thread only.

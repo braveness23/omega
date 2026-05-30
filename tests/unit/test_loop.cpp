@@ -16,6 +16,37 @@ TEST_CASE("loop_set rejects end_tick <= start_tick")
     REQUIRE(e.loop_set(200, 100) == OMEGA_ERR_INVALID);
 }
 
+// ── loop_set_immediate ────────────────────────────────────────────────────────
+
+TEST_CASE("loop_set_immediate rejects end_tick <= start_tick")
+{
+    Engine e;
+    REQUIRE(e.loop_set_immediate(100, 100) == OMEGA_ERR_INVALID);
+    REQUIRE(e.loop_set_immediate(200, 100) == OMEGA_ERR_INVALID);
+}
+
+TEST_CASE("loop_set_immediate updates loop_region without process() round-trip")
+{
+    Engine e;
+    REQUIRE(e.loop_set_immediate(0, 960) == OMEGA_OK);
+
+    auto region = e.loop_region();
+    REQUIRE(region.start_tick == 0);
+    REQUIRE(region.end_tick == 960);
+    REQUIRE(region.enabled);
+}
+
+TEST_CASE("loop_set_immediate rejects call while engine is playing")
+{
+    MockClock clock;
+    Engine e{&clock};
+    REQUIRE(e.enqueue(TransportCmd{TransportAction::PLAY, 0u}) == OMEGA_OK);
+    clock.advance_ticks(1);
+    e.process();
+
+    REQUIRE(e.loop_set_immediate(0, 960) == OMEGA_ERR_UNSUPPORTED);
+}
+
 TEST_CASE("loop_set accepts valid region and loop_region reflects it after process")
 {
     MockClock clock;

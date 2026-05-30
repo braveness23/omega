@@ -1484,6 +1484,15 @@ omega_status_t omega_loop_set(omega_engine_t* eng, omega_tick_t start, omega_tic
     return eng->engine.loop_set(start, end);
 }
 
+omega_status_t omega_loop_set_immediate(omega_engine_t* eng, omega_tick_t start, omega_tick_t end)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.loop_set_immediate(start, end);
+}
+
 omega_status_t omega_loop_clear(omega_engine_t* eng)
 {
     if (eng == nullptr)

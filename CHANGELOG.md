@@ -9,6 +9,9 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- **`loop_set_immediate()`**: `loop_set()` enqueues a `SetLoopCmd` that is applied only on the next `process()` call, so `loop_region()` returned stale values when queried before the engine had ticked. Added `Engine::loop_set_immediate(start_tick, end_tick)` (C API: `omega_loop_set_immediate()`) as a synchronous variant that applies the loop region directly — valid only when the engine is stopped (`OMEGA_ERR_UNSUPPORTED` if playing). 3 new unit tests. Closes #58.
+
 ### Added
 - **`PatternLibrary::count()` and `PatternLibrary::for_each()`**: `count()` returns the number of live (non-destroyed) patterns; `for_each(fn)` invokes a callback once per live pattern in unspecified order. Exposed in the C API as `omega_pattern_library_count()` and `omega_pattern_for_each()`. Eliminates the need for callers to maintain a shadow registry of pattern IDs. 6 new unit tests in `tests/unit/test_pattern_library.cpp`; 5 new integration tests in `tests/integration/test_c_api_pattern_library.cpp`. Closes #57 (finding #18).
 - **`Engine::convert_tracks_to_patterns(sink_id, loop_end_ticks)`**: engine-level conversion helper — creates one `Pattern` per timeline track (in track-vector order), assigns each to the corresponding `PerformanceSource` slot (slot N = track index N), re-routes all events to `sink_id`, and sets `loop_end_ticks` as the pattern length for every created pattern. Returns the number of patterns created. Thread: mutation thread, engine must be stopped. Exposed in C API as `omega_convert_tracks_to_patterns()`. 7 new unit tests in `tests/unit/test_convert_tracks.cpp`; 4 new integration tests in `tests/integration/test_c_api_pattern_library.cpp`. Closes #57 (finding #19).
