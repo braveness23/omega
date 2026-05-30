@@ -538,7 +538,7 @@ void Engine::apply_history_cmd(const Command& cmd) noexcept
     applying_undo_redo_ = false;
 }
 
-void Engine::apply(const UndoCmd& /*cmd*/)
+void Engine::apply(const UndoCmd&)
 {
     if (undo_history_.empty())
     {
@@ -557,7 +557,7 @@ void Engine::apply(const UndoCmd& /*cmd*/)
     apply_history_cmd(entry.undo_cmd);
 }
 
-void Engine::apply(const RedoCmd& /*cmd*/)
+void Engine::apply(const RedoCmd&)
 {
     if (redo_history_.empty())
     {
