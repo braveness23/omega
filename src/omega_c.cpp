@@ -1511,6 +1511,15 @@ omega_status_t omega_loop_enable(omega_engine_t* eng, int enabled)
     return eng->engine.loop_enable(enabled != 0);
 }
 
+omega_status_t omega_loop_activate_region(omega_engine_t* eng, uint32_t region_index)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.loop_activate_region(region_index);
+}
+
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
 namespace

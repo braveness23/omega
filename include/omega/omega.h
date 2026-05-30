@@ -1789,6 +1789,22 @@ OMEGA_API omega_status_t omega_loop_clear(omega_engine_t* e);
  */
 OMEGA_API omega_status_t omega_loop_enable(omega_engine_t* e, int enabled);
 
+/*
+ * Activates the region at region_index in the engine's region list as the
+ * transport loop. Equivalent to calling omega_loop_set() with the region's
+ * start_tick and end_tick. The region must have type OMEGA_REGION_LOOP and
+ * its end_tick must be greater than start_tick.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_NOT_FOUND  — index out of range, or region is not OMEGA_REGION_LOOP.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_loop_activate_region(omega_engine_t* e, uint32_t region_index);
+
 /* ── SMF import / export ──────────────────────────────────────────────────── */
 
 /*

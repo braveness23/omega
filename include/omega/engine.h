@@ -718,6 +718,21 @@ public:
     omega_status_t loop_enable(bool enabled);
 
     /*
+     * Activates the region at region_index in region_list() as the transport
+     * loop. Equivalent to loop_set(region.start_tick, region.end_tick).
+     *
+     * The region must have type RegionType::LOOP and end_tick > start_tick.
+     *
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_NOT_FOUND  — index out of range, or region is not RegionType::LOOP.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t loop_activate_region(uint32_t region_index);
+
+    /*
      * Returns a snapshot of the current loop region (start, end, enabled).
      * Thread: Mutation thread only. Must not be called concurrently with process().
      */

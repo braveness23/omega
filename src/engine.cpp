@@ -475,6 +475,16 @@ omega_status_t Engine::loop_enable(bool enabled)
     return enqueue(SetLoopCmd{loop_start_tick_, loop_end_tick_, enabled});
 }
 
+omega_status_t Engine::loop_activate_region(uint32_t region_index)
+{
+    const Region* r = region_list_.at(region_index);
+    if (r == nullptr || r->type != RegionType::LOOP)
+    {
+        return OMEGA_ERR_NOT_FOUND;
+    }
+    return loop_set(r->start_tick, r->end_tick);
+}
+
 omega_status_t Engine::smpte_config_set(const SmpteConfig& config)
 {
     if (!is_valid_smpte_config(config))
