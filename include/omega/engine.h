@@ -345,6 +345,30 @@ public:
      */
     omega_status_t perf_set_random_bias(SlotId slot, uint8_t bias);
 
+    /*
+     * Sets the number of times a slot loops before auto-stopping.
+     * 0 = infinite (default). N > 0 = stop after N full pattern iterations.
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t perf_set_repeat_count(SlotId slot, uint32_t count);
+
+    /*
+     * Mutes or unmutes a slot. While muted, the pattern cursor advances normally
+     * but no events are dispatched. Active notes receive immediate note-offs when
+     * mute is engaged. Unmuting resumes from the current position. Safe during
+     * playback.
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t perf_set_mute(SlotId slot, bool muted);
+
     /* ── Inputs ──────────────────────────────────────────────────────────────── */
 
     /*
@@ -908,6 +932,8 @@ private:
     void apply(const PerfSetTransposeCmd& cmd);
     void apply(const PerfSetVelocityScaleCmd& cmd);
     void apply(const PerfSetRandomBiasCmd& cmd);
+    void apply(const PerfSetRepeatCountCmd& cmd);
+    void apply(const PerfSetMuteCmd& cmd);
     void apply(const AddInputCmd& cmd);
     void apply(const RemoveInputCmd& cmd);
     void apply(const SetCtxScaleCmd& cmd);

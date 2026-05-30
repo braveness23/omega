@@ -914,6 +914,40 @@ OMEGA_API omega_status_t omega_perf_set_random_bias(omega_engine_t* e,
                                                     omega_slot_id_t slot,
                                                     uint8_t bias);
 
+/*
+ * Sets the repeat count for a slot.
+ * count == 0: loop indefinitely (default).
+ * count > 0:  play exactly count full pattern iterations then auto-stop.
+ *
+ * The setting persists across cue/stop cycles: if the slot is cued again after
+ * an auto-stop, it plays count iterations again.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_perf_set_repeat_count(omega_engine_t* e,
+                                                     omega_slot_id_t slot,
+                                                     uint32_t count);
+
+/*
+ * Mutes or unmutes a slot. While muted, the pattern cursor advances normally
+ * (maintaining timing) but no events are dispatched. Active notes receive
+ * immediate note-offs when mute is engaged. Unmuting resumes playback from
+ * the current position. Safe during playback.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_perf_set_mute(omega_engine_t* e, omega_slot_id_t slot, int muted);
+
 /* ── Query boundary ──────────────────────────────────────────────────────── */
 
 /*

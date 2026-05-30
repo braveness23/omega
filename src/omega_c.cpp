@@ -570,6 +570,26 @@ omega_status_t omega_perf_set_random_bias(omega_engine_t* eng, omega_slot_id_t s
     return eng->engine.perf_set_random_bias(slot, bias);
 }
 
+omega_status_t omega_perf_set_repeat_count(omega_engine_t* eng,
+                                           omega_slot_id_t slot,
+                                           uint32_t count)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.perf_set_repeat_count(slot, count);
+}
+
+omega_status_t omega_perf_set_mute(omega_engine_t* eng, omega_slot_id_t slot, int muted)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.perf_set_mute(slot, muted != 0);
+}
+
 // ── Query boundary ──────────────────────────────────────────────────────────
 
 omega_slot_state_t omega_perf_slot_state(const omega_engine_t* eng, omega_slot_id_t slot)

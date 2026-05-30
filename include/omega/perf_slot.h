@@ -77,6 +77,22 @@ public:
     void set_random_bias(SlotId slot, uint8_t bias);
 
     /*
+     * Sets the number of times the slot loops before auto-stopping.
+     * 0 = loop indefinitely (default). N > 0 = stop after N full pattern iterations.
+     * Thread: Timing thread only (applied from command queue).
+     */
+    void set_repeat_count(SlotId slot, uint32_t count);
+
+    /*
+     * Mutes or unmutes a slot. While muted, the pattern cursor advances normally
+     * (timing is maintained) but no events are dispatched. Active notes receive
+     * note-offs immediately when mute is engaged. Unmuting resumes from the
+     * current position.
+     * Thread: Timing thread only (applied from command queue).
+     */
+    void set_mute(SlotId slot, bool muted);
+
+    /*
      * Returns the current state of the given performance slot.
      * Returns SlotState::EMPTY for out-of-range slot indices.
      *
@@ -108,6 +124,9 @@ private:
         uint8_t velocity_scale{100};
         uint8_t random_bias{0};
         uint32_t rng_state{0};
+        uint32_t repeat_count{0};  // 0 = loop indefinitely; N = stop after N full iterations
+        bool muted{false};
+        bool needs_silence{false};  // set when mute transitions true; cleared by advance()
         std::vector<ActiveNote> active_notes;
 
         void reset() noexcept
@@ -122,6 +141,9 @@ private:
             velocity_scale = 100;
             random_bias = 0;
             rng_state = 0;
+            repeat_count = 0;
+            muted = false;
+            needs_silence = false;
             active_notes.clear();
         }
     };

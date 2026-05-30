@@ -326,6 +326,16 @@ omega_status_t Engine::perf_set_random_bias(SlotId slot, uint8_t bias)
     return enqueue(PerfSetRandomBiasCmd{slot, bias});
 }
 
+omega_status_t Engine::perf_set_repeat_count(SlotId slot, uint32_t count)
+{
+    return enqueue(PerfSetRepeatCountCmd{slot, count});
+}
+
+omega_status_t Engine::perf_set_mute(SlotId slot, bool muted)
+{
+    return enqueue(PerfSetMuteCmd{slot, muted});
+}
+
 omega_status_t Engine::add_input(EventInput* input)
 {
     if (input == nullptr)
@@ -780,6 +790,16 @@ void Engine::apply(const PerfSetRandomBiasCmd& cmd)
     perf_.set_random_bias(cmd.slot, cmd.bias);
 }
 
+void Engine::apply(const PerfSetRepeatCountCmd& cmd)
+{
+    perf_.set_repeat_count(cmd.slot, cmd.count);
+}
+
+void Engine::apply(const PerfSetMuteCmd& cmd)
+{
+    perf_.set_mute(cmd.slot, cmd.muted);
+}
+
 void Engine::apply(const AddInputCmd& cmd)
 {
     if (cmd.input != nullptr)
@@ -1162,6 +1182,14 @@ void Engine::process()
                     apply(c);
                 }
                 else if constexpr (std::is_same_v<T, PerfSetRandomBiasCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, PerfSetRepeatCountCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, PerfSetMuteCmd>)
                 {
                     apply(c);
                 }

@@ -845,3 +845,179 @@ TEST_CASE("Perf slot 127: assign and cue works after PERF_MAX_SLOTS expansion to
     REQUIRE(r.engine.perf_slot_state(127u) == SlotState::PLAYING);
     REQUIRE(r.sink.has_note_on(72, 0));
 }
+
+// ── repeat_count ───────────────────────────────────────────────────────────────
+
+TEST_CASE("Perf repeat_count: slot auto-stops after N iterations")
+{
+    // Pattern is 960 ticks. repeat_count=2 → stops after tick 1920.
+    Rig r;
+    PatternId pid = r.engine.create_pattern("A", 960u);
+    r.engine.pattern_add_event(pid, omega_make_note_on(0u, r.sink.sink_id(), 0, 60, 100, 0));
+
+    REQUIRE(r.engine.perf_assign(0u, pid) == OMEGA_OK);
+    REQUIRE(r.engine.perf_set_repeat_count(0u, 2u) == OMEGA_OK);
+    REQUIRE(r.engine.perf_cue(0u, CueMode::IMMEDIATE) == OMEGA_OK);
+    r.play();
+    r.drain();
+    r.step(1u);
+
+    // After first loop, slot is still PLAYING
+    r.step(960u);
+    REQUIRE(r.engine.perf_slot_state(0u) == SlotState::PLAYING);
+
+    // After second loop (tick 1921+), slot should be IDLE
+    r.step(960u);
+    REQUIRE(r.engine.perf_slot_state(0u) == SlotState::IDLE);
+}
+
+TEST_CASE("Perf repeat_count: slot fires events in both iterations then stops")
+{
+    Rig r;
+    PatternId pid = r.engine.create_pattern("A", 960u);
+    r.engine.pattern_add_event(pid, omega_make_note_on(0u, r.sink.sink_id(), 0, 60, 100, 0));
+
+    REQUIRE(r.engine.perf_assign(0u, pid) == OMEGA_OK);
+    REQUIRE(r.engine.perf_set_repeat_count(0u, 2u) == OMEGA_OK);
+    REQUIRE(r.engine.perf_cue(0u, CueMode::IMMEDIATE) == OMEGA_OK);
+    r.play();
+    r.drain();
+
+    // Both iterations: advance past tick 1920
+    r.step(2000u);
+
+    REQUIRE(r.engine.perf_slot_state(0u) == SlotState::IDLE);
+    // note-on should have fired twice (once at tick 0, once at tick 960)
+    uint32_t note_on_count = 0;
+    for (size_t i = 0; i < r.sink.count(); ++i)
+    {
+        if (r.sink.at(i).payload_tag == OMEGA_NOTE_ON && r.sink.at(i).data[0] == 60)
+        {
+            ++note_on_count;
+        }
+    }
+    REQUIRE(note_on_count == 2u);
+}
+
+TEST_CASE("Perf repeat_count: zero means infinite looping")
+{
+    Rig r;
+    PatternId pid = r.engine.create_pattern("A", 960u);
+    r.engine.pattern_add_event(pid, omega_make_note_on(0u, r.sink.sink_id(), 0, 60, 100, 0));
+
+    REQUIRE(r.engine.perf_assign(0u, pid) == OMEGA_OK);
+    REQUIRE(r.engine.perf_set_repeat_count(0u, 0u) == OMEGA_OK);  // explicit infinite
+    REQUIRE(r.engine.perf_cue(0u, CueMode::IMMEDIATE) == OMEGA_OK);
+    r.play();
+    r.drain();
+    r.step(5000u);  // well past any finite repeat boundary
+
+    REQUIRE(r.engine.perf_slot_state(0u) == SlotState::PLAYING);
+}
+
+TEST_CASE("Perf repeat_count: repeat_count=1 stops after a single play-through")
+{
+    Rig r;
+    PatternId pid = r.engine.create_pattern("A", 960u);
+    r.engine.pattern_add_event(pid, omega_make_note_on(0u, r.sink.sink_id(), 0, 60, 100, 0));
+
+    REQUIRE(r.engine.perf_assign(0u, pid) == OMEGA_OK);
+    REQUIRE(r.engine.perf_set_repeat_count(0u, 1u) == OMEGA_OK);
+    REQUIRE(r.engine.perf_cue(0u, CueMode::IMMEDIATE) == OMEGA_OK);
+    r.play();
+    r.drain();
+    r.step(1000u);
+
+    REQUIRE(r.engine.perf_slot_state(0u) == SlotState::IDLE);
+    REQUIRE(r.sink.has_note_on(60, 0));
+}
+
+// ── mute ──────────────────────────────────────────────────────────────────────
+
+TEST_CASE("Perf mute: muted slot dispatches no events")
+{
+    Rig r;
+    PatternId pid = r.engine.create_pattern("A", 960u);
+    r.engine.pattern_add_event(pid, omega_make_note_on(0u, r.sink.sink_id(), 0, 60, 100, 0));
+
+    REQUIRE(r.engine.perf_assign(0u, pid) == OMEGA_OK);
+    REQUIRE(r.engine.perf_set_mute(0u, true) == OMEGA_OK);
+    REQUIRE(r.engine.perf_cue(0u, CueMode::IMMEDIATE) == OMEGA_OK);
+    r.play();
+    r.drain();
+    r.step(1u);
+
+    REQUIRE(r.engine.perf_slot_state(0u) == SlotState::PLAYING);
+    REQUIRE_FALSE(r.sink.has_note_on(60, 0));
+}
+
+TEST_CASE("Perf mute: unmuting resumes playback from current position")
+{
+    Rig r;
+    PatternId pid = r.engine.create_pattern("A", 960u);
+    // Note at tick 0 and tick 480
+    r.engine.pattern_add_event(pid, omega_make_note_on(0u, r.sink.sink_id(), 0, 60, 100, 0));
+    r.engine.pattern_add_event(pid, omega_make_note_on(480u, r.sink.sink_id(), 0, 72, 100, 0));
+
+    REQUIRE(r.engine.perf_assign(0u, pid) == OMEGA_OK);
+    REQUIRE(r.engine.perf_cue(0u, CueMode::IMMEDIATE) == OMEGA_OK);
+    r.play();
+    r.drain();
+    r.step(1u);
+    REQUIRE(r.sink.has_note_on(60, 0));  // first note dispatched
+    r.sink.clear();
+
+    // Mute before tick 480
+    REQUIRE(r.engine.perf_set_mute(0u, true) == OMEGA_OK);
+    r.drain();
+    r.step(479u);  // advance to tick 480 while muted — should not dispatch note 72
+    REQUIRE_FALSE(r.sink.has_note_on(72, 0));
+
+    // Unmute and advance; note 72 is in the past, should not replay
+    REQUIRE(r.engine.perf_set_mute(0u, false) == OMEGA_OK);
+    r.drain();
+    r.step(960u);                        // advance a full loop — tick 480 in next loop
+    REQUIRE(r.sink.has_note_on(72, 0));  // next iteration's note fires
+}
+
+TEST_CASE("Perf mute: active notes receive note-offs when mute is engaged")
+{
+    Rig r;
+    PatternId pid = r.engine.create_pattern("A", 960u);
+    // Note-on at tick 0 with duration 500 ticks
+    r.engine.pattern_add_event(pid, omega_make_note_on(0u, r.sink.sink_id(), 0, 60, 100, 500u));
+
+    REQUIRE(r.engine.perf_assign(0u, pid) == OMEGA_OK);
+    REQUIRE(r.engine.perf_cue(0u, CueMode::IMMEDIATE) == OMEGA_OK);
+    r.play();
+    r.drain();
+    r.step(1u);
+    REQUIRE(r.sink.has_note_on(60, 0));
+    r.sink.clear();
+
+    // Mute while note is still active
+    REQUIRE(r.engine.perf_set_mute(0u, true) == OMEGA_OK);
+    r.drain();
+    r.step(1u);  // advance: should flush active note with note-off
+
+    REQUIRE(r.sink.has_note_off(60, 0));
+}
+
+TEST_CASE("Perf mute: slot stays PLAYING while muted")
+{
+    Rig r;
+    PatternId pid = r.engine.create_pattern("A", 960u);
+    r.engine.pattern_add_event(pid, omega_make_note_on(0u, r.sink.sink_id(), 0, 60, 100, 0));
+
+    REQUIRE(r.engine.perf_assign(0u, pid) == OMEGA_OK);
+    REQUIRE(r.engine.perf_cue(0u, CueMode::IMMEDIATE) == OMEGA_OK);
+    r.play();
+    r.drain();
+    r.step(1u);
+
+    REQUIRE(r.engine.perf_set_mute(0u, true) == OMEGA_OK);
+    r.drain();
+    r.step(5000u);  // many loops while muted
+
+    REQUIRE(r.engine.perf_slot_state(0u) == SlotState::PLAYING);
+}
