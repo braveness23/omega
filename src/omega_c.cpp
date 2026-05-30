@@ -257,6 +257,24 @@ void omega_engine_process(omega_engine_t* eng)
     }
 }
 
+omega_status_t omega_engine_undo(omega_engine_t* eng)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.undo();
+}
+
+omega_status_t omega_engine_redo(omega_engine_t* eng)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.redo();
+}
+
 omega_transport_state_t omega_engine_transport_state(const omega_engine_t* eng)
 {
     if (eng == nullptr)

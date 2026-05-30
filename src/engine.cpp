@@ -3,6 +3,7 @@
 #include <omega/time_signature_map.h>
 
 #include <algorithm>
+#include <cstring>
 #include <type_traits>
 
 namespace omega
@@ -83,9 +84,51 @@ private:
     bool any_soloed_;
 };
 
+// ── Undo helpers (file-local) ─────────────────────────────────────────────────
+
+// Returns the within-tick index of the first event at `tick` in `events` whose
+// raw bytes match `target`.  Returns 0 as a safe fallback if not found.
+static uint32_t find_within_tick_index(const std::pmr::vector<Event>& events,
+                                       uint64_t tick,
+                                       const Event& target) noexcept
+{
+    auto pos = std::lower_bound(
+        events.begin(), events.end(), tick, [](const Event& e, uint64_t t) { return e.tick < t; });
+    uint32_t idx = 0;
+    while (pos != events.end() && pos->tick == tick)
+    {
+        if (std::memcmp(&(*pos), &target, sizeof(Event)) == 0)
+        {
+            return idx;
+        }
+        ++pos;
+        ++idx;
+    }
+    return 0;
+}
+
+// Returns the absolute index in `events` of the first element whose raw bytes
+// match `target`.  Returns 0 as a safe fallback if not found.
+static uint32_t find_abs_index(const std::pmr::vector<Event>& events, const Event& target) noexcept
+{
+    for (uint32_t i = 0; i < static_cast<uint32_t>(events.size()); ++i)
+    {
+        if (std::memcmp(&events[i], &target, sizeof(Event)) == 0)
+        {
+            return i;
+        }
+    }
+    return 0;
+}
+
+// ── Engine construction / destruction ────────────────────────────────────────
+
 Engine::Engine(ClockSource* clock, std::pmr::memory_resource* /*mr*/, uint32_t /*queue_capacity*/)
     : clock_{clock != nullptr ? clock : &internal_clock_}
-{}
+{
+    undo_history_.reserve(UNDO_DEPTH);
+    redo_history_.reserve(UNDO_DEPTH);
+}
 
 Engine::~Engine() = default;
 
@@ -429,13 +472,157 @@ omega_status_t Engine::enqueue(Command cmd)
     return OMEGA_ERR_QUEUE_FULL;
 }
 
+omega_status_t Engine::undo()
+{
+    return enqueue(UndoCmd{});
+}
+
+omega_status_t Engine::redo()
+{
+    return enqueue(RedoCmd{});
+}
+
+// ── Undo / redo history management ───────────────────────────────────────────
+
+void Engine::push_history(HistoryEntry entry) noexcept
+{
+    // Cap at UNDO_DEPTH — evict the oldest entry rather than over-growing.
+    // After the initial reserve() in the constructor, neither erase() nor
+    // push_back() here allocates new storage.
+    if (undo_history_.size() >= UNDO_DEPTH)
+    {
+        undo_history_.erase(undo_history_.begin());
+    }
+    undo_history_.push_back(entry);
+    redo_history_.clear();
+}
+
+// Applies a history command (undo or redo step) without triggering recursive
+// history recording.  Only the four undoable types are expected here; any
+// other Command type is silently ignored.
+void Engine::apply_history_cmd(const Command& cmd) noexcept
+{
+    applying_undo_redo_ = true;
+    std::visit(
+        [this](auto& c) {
+            using T = std::decay_t<decltype(c)>;
+            if constexpr (std::is_same_v<T, AddEventCmd>)
+            {
+                apply(c);
+            }
+            else if constexpr (std::is_same_v<T, DeleteEventCmd>)
+            {
+                apply(c);
+            }
+            else if constexpr (std::is_same_v<T, ReplaceEventCmd>)
+            {
+                apply(c);
+            }
+            else if constexpr (std::is_same_v<T, ReplaceTrackEventCmd>)
+            {
+                apply(c);
+            }
+            // All other Command alternatives: not undoable; silently ignore.
+        },
+        cmd);
+    applying_undo_redo_ = false;
+}
+
+void Engine::apply(const UndoCmd&)
+{
+    if (undo_history_.empty())
+    {
+        return;
+    }
+    HistoryEntry entry = undo_history_.back();
+    undo_history_.pop_back();
+
+    // Move entry to the redo stack (capped).
+    if (redo_history_.size() >= UNDO_DEPTH)
+    {
+        redo_history_.erase(redo_history_.begin());
+    }
+    redo_history_.push_back(entry);
+
+    apply_history_cmd(entry.undo_cmd);
+}
+
+void Engine::apply(const RedoCmd&)
+{
+    if (redo_history_.empty())
+    {
+        return;
+    }
+    HistoryEntry entry = redo_history_.back();
+    redo_history_.pop_back();
+
+    // Move entry back to the undo stack (capped).
+    if (undo_history_.size() >= UNDO_DEPTH)
+    {
+        undo_history_.erase(undo_history_.begin());
+    }
+    undo_history_.push_back(entry);
+
+    apply_history_cmd(entry.redo_cmd);
+}
+
+// ── Undoable event-edit apply() overrides ────────────────────────────────────
+
 void Engine::apply(const AddEventCmd& cmd)
 {
+    if (!applying_undo_redo_)
+    {
+        // Inverse: delete the event at tick=cmd.event.tick, within-tick index 0.
+        // add_event() uses lower_bound which inserts before all events sharing the
+        // same tick, so the new event always lands at within-tick index 0.
+        push_history(
+            {DeleteEventCmd{cmd.track, cmd.event.tick, 0}, AddEventCmd{cmd.track, cmd.event}});
+    }
     timeline_.add_event(cmd.track, cmd.event);
 }
 
 void Engine::apply(const DeleteEventCmd& cmd)
 {
+    if (!applying_undo_redo_)
+    {
+        // Capture the event before it is removed.  The inverse add always
+        // inserts at within-tick index 0; the matching redo delete therefore
+        // also targets index 0 (the re-inserted event).
+        const Track* trk = nullptr;
+        for (const Track& t : timeline_.tracks())
+        {
+            if (t.id == cmd.track)
+            {
+                trk = &t;
+                break;
+            }
+        }
+        if (trk != nullptr)
+        {
+            auto pos = std::lower_bound(
+                trk->events.begin(), trk->events.end(), cmd.tick, [](const Event& e, uint64_t t) {
+                    return e.tick < t;
+                });
+            uint32_t idx = 0;
+            bool found = false;
+            while (pos != trk->events.end() && pos->tick == cmd.tick)
+            {
+                if (idx == cmd.index)
+                {
+                    push_history(
+                        {AddEventCmd{cmd.track, *pos}, DeleteEventCmd{cmd.track, cmd.tick, 0}});
+                    found = true;
+                    break;
+                }
+                ++pos;
+                ++idx;
+            }
+            if (!found)
+            {
+                // Event not found — no history entry; delete will be a no-op.
+            }
+        }
+    }
     timeline_.remove_event(cmd.track, cmd.tick, cmd.index);
 }
 
@@ -446,8 +633,24 @@ void Engine::apply(const ReplaceEventCmd& cmd)
     {
         return;
     }
+
+    if (!applying_undo_redo_)
+    {
+        Event old_event = p->events[cmd.event_index];
+        p->events[cmd.event_index] = cmd.replacement;
+        std::stable_sort(p->events.begin(), p->events.end(), [](const Event& a, const Event& b) {
+            return a.tick < b.tick;
+        });
+        // Find the absolute index where the replacement landed after re-sort.
+        uint32_t new_idx = find_abs_index(p->events, cmd.replacement);
+        push_history({ReplaceEventCmd{cmd.pattern_id, new_idx, old_event},
+                      ReplaceEventCmd{cmd.pattern_id, cmd.event_index, cmd.replacement}});
+        return;
+    }
+
+    // applying_undo_redo_ path — just apply without recording.
     p->events[cmd.event_index] = cmd.replacement;
-    // Re-sort only if the tick changed (otherwise the order is already valid).
+    // Re-sort only if the tick changed; otherwise the order is still valid.
     std::stable_sort(p->events.begin(), p->events.end(), [](const Event& a, const Event& b) {
         return a.tick < b.tick;
     });
@@ -831,6 +1034,44 @@ void Engine::apply(const SetTrackSoloCmd& cmd)
 
 void Engine::apply(const ReplaceTrackEventCmd& cmd)
 {
+    if (!applying_undo_redo_)
+    {
+        // Capture old event before replacing.
+        const Track* trk = nullptr;
+        for (const Track& t : timeline_.tracks())
+        {
+            if (t.id == cmd.track)
+            {
+                trk = &t;
+                break;
+            }
+        }
+        if (trk != nullptr)
+        {
+            auto pos = std::lower_bound(
+                trk->events.begin(), trk->events.end(), cmd.tick, [](const Event& e, uint64_t t) {
+                    return e.tick < t;
+                });
+            uint32_t idx = 0;
+            while (pos != trk->events.end() && pos->tick == cmd.tick)
+            {
+                if (idx == cmd.index)
+                {
+                    Event old_event = *pos;
+                    timeline_.replace_event(cmd.track, cmd.tick, cmd.index, cmd.replacement);
+                    // Find where the replacement landed (may have moved if tick changed).
+                    uint32_t new_idx =
+                        find_within_tick_index(trk->events, cmd.replacement.tick, cmd.replacement);
+                    push_history(
+                        {ReplaceTrackEventCmd{cmd.track, cmd.replacement.tick, new_idx, old_event},
+                         ReplaceTrackEventCmd{cmd.track, cmd.tick, cmd.index, cmd.replacement}});
+                    return;
+                }
+                ++pos;
+                ++idx;
+            }
+        }
+    }
     timeline_.replace_event(cmd.track, cmd.tick, cmd.index, cmd.replacement);
 }
 
@@ -1001,6 +1242,14 @@ void Engine::process()
                     apply(c);
                 }
                 else if constexpr (std::is_same_v<T, ReplaceTrackEventCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, UndoCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, RedoCmd>)
                 {
                     apply(c);
                 }

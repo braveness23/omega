@@ -34,6 +34,7 @@ add_executable(omega_tests
     unit/test_control_sink.cpp
     unit/test_query_boundary.cpp
     unit/test_event_callback.cpp
+    unit/test_undo_redo.cpp
 )
 
 target_link_libraries(omega_tests

@@ -711,6 +711,31 @@ public:
      */
     omega_status_t enqueue(Command cmd);
 
+    /*
+     * Enqueues an undo command that reverts the most recent undoable edit
+     * (AddEventCmd, DeleteEventCmd, ReplaceTrackEventCmd, or ReplaceEventCmd).
+     * A no-op if the undo history is empty. Clears nothing in the redo history.
+     *
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued (may be a no-op if history empty).
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity; command was NOT enqueued.
+     */
+    omega_status_t undo();
+
+    /*
+     * Enqueues a redo command that re-applies the most recently undone edit.
+     * A no-op if the redo history is empty. Cleared by any new undoable edit.
+     *
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued (may be a no-op if history empty).
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity; command was NOT enqueued.
+     */
+    omega_status_t redo();
+
     /* ── Process loop ─────────────────────────────────────────────────────── */
 
     /*
@@ -843,6 +868,29 @@ public:
     };
 
 private:
+    // ── Undo / redo history ───────────────────────────────────────────────────
+
+    // Paired undo/redo commands stored on the timing thread.
+    // undo_cmd: what to apply to revert the edit.
+    // redo_cmd: what to apply to re-apply the edit after an undo.
+    struct HistoryEntry
+    {
+        Command undo_cmd;
+        Command redo_cmd;
+    };
+
+    // Depth cap for both stacks.  64 levels uses ≈ 16 KiB (128 bytes × 64 × 2).
+    static constexpr uint32_t UNDO_DEPTH = 64;
+
+    // push_history: records a new undoable edit and clears the redo stack.
+    // Must be called from the timing thread (inside an apply() override).
+    // Does NOT allocate after the initial reserve() in the constructor.
+    void push_history(HistoryEntry entry) noexcept;
+    void apply_history_cmd(const Command& cmd) noexcept;
+
+    void apply(const UndoCmd& cmd);
+    void apply(const RedoCmd& cmd);
+
     void apply(const AddEventCmd& cmd);
     void apply(const DeleteEventCmd& cmd);
     void apply(const ReplaceEventCmd& cmd);
@@ -933,6 +981,15 @@ private:
     MarkerList marker_list_;
     RegionList region_list_;
     EventAnchorTable event_anchors_;
+
+    // Undo/redo history stacks — timing-thread-owned.
+    // Both pre-reserved to UNDO_DEPTH in the constructor to avoid runtime
+    // allocation on the timing thread.
+    // applying_undo_redo_: true while UndoCmd or RedoCmd is being applied,
+    // suppressing recursive history recording inside the invoked apply() methods.
+    std::vector<HistoryEntry> undo_history_;
+    std::vector<HistoryEntry> redo_history_;
+    bool applying_undo_redo_{false};
 
     detail::SpscQueue<Command, 4096> queue_;
     TempoMap tempo_map_;

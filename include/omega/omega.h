@@ -490,6 +490,37 @@ OMEGA_API omega_status_t omega_engine_stop(omega_engine_t* e);
 OMEGA_API void omega_engine_process(omega_engine_t* e);
 
 /*
+ * Enqueues an undo command that reverts the most recent undoable edit
+ * (timeline add/delete/replace, or pattern replace).  A no-op if the undo
+ * history is empty.  Undoable edits supported: omega_engine_add_event()
+ * and omega_pattern_replace_event() in the C API; also
+ * Engine::enqueue(DeleteEventCmd), Engine::enqueue(ReplaceTrackEventCmd)
+ * in the C++ API.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — command queue is full.
+ */
+OMEGA_API omega_status_t omega_engine_undo(omega_engine_t* e);
+
+/*
+ * Enqueues a redo command that re-applies the most recently undone edit.
+ * A no-op if the redo history is empty.  Cleared whenever a new undoable edit
+ * is applied.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — command queue is full.
+ */
+OMEGA_API omega_status_t omega_engine_redo(omega_engine_t* e);
+
+/*
  * Returns the current transport state.
  * May return a stale value if called concurrently with process().
  *

@@ -359,6 +359,16 @@ struct RemoveSourceCmd
     EventSource* source;  // non-owning
 };
 
+// ── Undo / redo commands ──────────────────────────────────────────────────────
+
+/* Pops the most recent undoable edit from the engine's undo history and reverts it. */
+struct UndoCmd
+{};
+
+/* Re-applies the most recently undone edit from the redo history. */
+struct RedoCmd
+{};
+
 using Command = std::variant<AddEventCmd,
                              DeleteEventCmd,
                              ReplaceEventCmd,
@@ -396,7 +406,9 @@ using Command = std::variant<AddEventCmd,
                              SetSinkSoloCmd,
                              SetTrackMuteCmd,
                              SetTrackSoloCmd,
-                             ReplaceTrackEventCmd>;
+                             ReplaceTrackEventCmd,
+                             UndoCmd,
+                             RedoCmd>;
 
 static_assert(sizeof(Command) <= 64, "Command must fit within 64 bytes");
 
