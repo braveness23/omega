@@ -444,6 +444,114 @@ OMEGA_API omega_status_t omega_engine_set_track_sink(omega_engine_t* e,
                                                      uint32_t sink_id);
 
 /*
+ * Enqueues a mute/solo change for a timeline track. While muted, a track
+ * stops dispatching new events; active notes with inline durations still
+ * release at their scheduled note-off. While any track is soloed, only
+ * soloed tracks produce output. Safe during playback.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_engine_set_track_mute(omega_engine_t* e,
+                                                     omega_track_id_t track,
+                                                     int muted);
+OMEGA_API omega_status_t omega_engine_set_track_solo(omega_engine_t* e,
+                                                     omega_track_id_t track,
+                                                     int soloed);
+
+/*
+ * Returns 1 if the track is currently muted, 0 otherwise.
+ * Returns 0 for an unregistered track_id or NULL engine.
+ * May return a stale value if called concurrently with a mute change.
+ *
+ * Thread: Any thread.
+ */
+OMEGA_API int omega_engine_track_is_muted(const omega_engine_t* e, omega_track_id_t track);
+OMEGA_API int omega_engine_track_is_soloed(const omega_engine_t* e, omega_track_id_t track);
+
+/*
+ * Renames a track. Applied directly, not via the command queue; safe during
+ * playback (the timing thread never reads track names).
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK            — renamed.
+ *   OMEGA_ERR_INVALID   — e or name is NULL.
+ *   OMEGA_ERR_NOT_FOUND — track is not registered.
+ */
+OMEGA_API omega_status_t omega_engine_set_track_name(omega_engine_t* e,
+                                                     omega_track_id_t track,
+                                                     const char* name);
+
+/*
+ * Sets the representative MIDI channel for a track (display/metadata only).
+ *
+ * Thread: Mutation thread only, before playback starts.
+ *
+ * Returns:
+ *   OMEGA_OK            — channel set.
+ *   OMEGA_ERR_INVALID   — e is NULL.
+ *   OMEGA_ERR_NOT_FOUND — track is not registered.
+ */
+OMEGA_API omega_status_t omega_engine_set_track_channel(omega_engine_t* e,
+                                                        omega_track_id_t track,
+                                                        uint8_t channel);
+
+/*
+ * Enqueues a command to replace the track event at (tick, index) with
+ * replacement. If replacement.tick differs from tick, the event vector is
+ * re-sorted. Safe during playback.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_engine_replace_track_event(omega_engine_t* e,
+                                                          omega_track_id_t track,
+                                                          omega_tick_t tick,
+                                                          uint32_t index,
+                                                          omega_event_t replacement);
+
+/*
+ * Shifts all events in a track by offset_ticks. Positive values delay the
+ * track; negative values advance it. Events clamped to tick 0.
+ * Engine must be stopped.
+ *
+ * Thread: Mutation thread only, engine must be stopped.
+ *
+ * Returns:
+ *   OMEGA_OK            — shift applied.
+ *   OMEGA_ERR_INVALID   — e is NULL.
+ *   OMEGA_ERR_NOT_FOUND — track is not registered.
+ */
+OMEGA_API omega_status_t omega_engine_shift_track_events(omega_engine_t* e,
+                                                         omega_track_id_t track,
+                                                         int64_t offset_ticks);
+
+/*
+ * Swaps the playback/display order of two tracks in the TimelineSource.
+ * Engine must be stopped.
+ *
+ * Thread: Mutation thread only, engine must be stopped.
+ *
+ * Returns:
+ *   OMEGA_OK            — swap applied.
+ *   OMEGA_ERR_INVALID   — e is NULL.
+ *   OMEGA_ERR_NOT_FOUND — either track is not registered.
+ */
+OMEGA_API omega_status_t omega_engine_swap_tracks(omega_engine_t* e,
+                                                  omega_track_id_t a,
+                                                  omega_track_id_t b);
+
+/*
  * Enqueues an event to be added to the given track on the next process() call.
  *
  * Thread: Mutation thread only.
@@ -1405,6 +1513,29 @@ OMEGA_API omega_sink_t* omega_sink_create_midi_out(const char* port_name);
 OMEGA_API void omega_sink_destroy_midi_out(omega_sink_t* sink);
 
 /*
+ * Creates a ControlSink that intercepts OMEGA_CTRL_* payload events and
+ * executes them as engine mutations on the timing thread. The engine must
+ * outlive this sink.
+ *
+ * Call omega_engine_add_sink(e, sink) to register it, then use
+ * omega_sink_id(sink) as the sink_id in control-sequence events.
+ * Destroy with omega_sink_destroy_control() — do NOT pass to omega_sink_destroy().
+ *
+ * Returns NULL on allocation failure.
+ *
+ * Thread: Any thread, before playback starts.
+ */
+OMEGA_API omega_sink_t* omega_sink_create_control(omega_engine_t* e);
+
+/*
+ * Destroys a ControlSink created with omega_sink_create_control().
+ * Must not be called while the sink is still registered with an engine.
+ *
+ * Thread: Any thread, after playback is stopped and sink is deregistered.
+ */
+OMEGA_API void omega_sink_destroy_control(omega_sink_t* sink);
+
+/*
  * Creates an EventInput backed by a real MIDI input port via libremidi.
  *
  * port_name:
@@ -1823,6 +1954,42 @@ OMEGA_API omega_status_t omega_loop_activate_region(omega_engine_t* e, uint32_t 
  *   OMEGA_ERR_IO      -- file not found, not a valid MIDI file, or read error.
  */
 OMEGA_API omega_status_t omega_smf_import(omega_engine_t* e, const char* path);
+
+/*
+ * Import options for omega_smf_import_ex().
+ *
+ * sink_id           — route imported track events to this sink (default 0).
+ * split_by_channel  — non-zero: split Type 0 files into one track per MIDI
+ *                     channel. Zero: one track per SMF track (default).
+ * clear_existing    — non-zero: clear timeline, tempo map (reset to 120 BPM),
+ *                     time-signature map, and markers before importing.
+ *                     Zero: append to existing content (default).
+ */
+typedef struct
+{
+    uint32_t sink_id;
+    int split_by_channel;
+    int clear_existing;
+} omega_smf_import_options_t;
+
+/*
+ * Imports a Standard MIDI File with extended options. Behaves identically to
+ * omega_smf_import() except that opts controls sink routing, channel splitting,
+ * and whether existing engine state is cleared first. Pass NULL for opts to
+ * use default values (equivalent to omega_smf_import()).
+ *
+ * The engine must be stopped before calling this function.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK          -- import succeeded.
+ *   OMEGA_ERR_INVALID -- e or path is NULL.
+ *   OMEGA_ERR_IO      -- file not found, not a valid MIDI file, or read error.
+ */
+OMEGA_API omega_status_t omega_smf_import_ex(omega_engine_t* e,
+                                             const char* path,
+                                             const omega_smf_import_options_t* opts);
 
 /*
  * Exports the engine session to a Standard MIDI File.

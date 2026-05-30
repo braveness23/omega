@@ -67,6 +67,7 @@ add_executable(omega_integration_tests
     integration/test_c_api_for_each.cpp
     integration/test_c_api_callbacks.cpp
     integration/test_c_api_pattern_library.cpp
+    integration/test_c_api_tracks.cpp
 )
 
 target_link_libraries(omega_integration_tests
