@@ -10,6 +10,7 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **`omega_midi_note_from_name()`** (`omega.h`): inverse of `omega_midi_note_name()` — parses a note name string (e.g. "C4", "F#3", "Bb4", "C-1") into a MIDI pitch byte. Accepts A–G (case-insensitive), optional `#`/`b` accidental, and octave number; returns `OMEGA_OK` on success or `OMEGA_ERR_INVALID` for unrecognised names or out-of-range results. 7 new integration tests. Closes #54.
 - **`Engine::shift_track_events(TrackId, int64_t offset_ticks)`**: shifts all events in a timeline track by an offset (positive = delay, negative = advance); events clamped to tick 0; single `stable_sort` at the end rather than O(N) sorts from N `ReplaceTrackEventCmd` calls. Adds `TimelineSource::shift_events()` and `TimelineSource::clear_tracks()`. Engine must be stopped. 6 new unit tests.
 - **`Engine::swap_tracks(TrackId, TrackId)`**: swaps the vector positions of two tracks in `TimelineSource`, changing playback and display order. Engine must be stopped. 2 new unit tests.
 - **`SmfImportOptions::clear_existing`**: when `true`, clears the engine's timeline, tempo map (reset to 120 BPM), time-signature map, and markers before importing — enabling a clean "replace session" load rather than appending to existing content.

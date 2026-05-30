@@ -71,6 +71,111 @@ TEST_CASE("omega_midi_note_name: output is NUL-terminated when truncated")
     REQUIRE(buf[2] == '\0');
 }
 
+// ── omega_midi_note_from_name ─────────────────────────────────────────────────
+
+TEST_CASE("omega_midi_note_from_name: middle C (C4) is 60")
+{
+    uint8_t pitch = 0;
+    REQUIRE(omega_midi_note_from_name("C4", &pitch) == OMEGA_OK);
+    REQUIRE(pitch == 60);
+}
+
+TEST_CASE("omega_midi_note_from_name: A4 is 69")
+{
+    uint8_t pitch = 0;
+    REQUIRE(omega_midi_note_from_name("A4", &pitch) == OMEGA_OK);
+    REQUIRE(pitch == 69);
+}
+
+TEST_CASE("omega_midi_note_from_name: sharps")
+{
+    uint8_t pitch = 0;
+
+    REQUIRE(omega_midi_note_from_name("C#4", &pitch) == OMEGA_OK);
+    REQUIRE(pitch == 61);
+
+    REQUIRE(omega_midi_note_from_name("F#3", &pitch) == OMEGA_OK);
+    REQUIRE(pitch == 54);
+
+    REQUIRE(omega_midi_note_from_name("A#4", &pitch) == OMEGA_OK);
+    REQUIRE(pitch == 70);
+}
+
+TEST_CASE("omega_midi_note_from_name: flats")
+{
+    uint8_t pitch = 0;
+
+    REQUIRE(omega_midi_note_from_name("Bb4", &pitch) == OMEGA_OK);
+    REQUIRE(pitch == 70);  // enharmonic A#4
+
+    REQUIRE(omega_midi_note_from_name("Eb5", &pitch) == OMEGA_OK);
+    REQUIRE(pitch == 75);  // enharmonic D#5
+
+    REQUIRE(omega_midi_note_from_name("Ab3", &pitch) == OMEGA_OK);
+    REQUIRE(pitch == 56);  // enharmonic G#3
+}
+
+TEST_CASE("omega_midi_note_from_name: case-insensitive")
+{
+    uint8_t a = 0, b = 0;
+
+    REQUIRE(omega_midi_note_from_name("c4", &a) == OMEGA_OK);
+    REQUIRE(omega_midi_note_from_name("C4", &b) == OMEGA_OK);
+    REQUIRE(a == b);
+
+    REQUIRE(omega_midi_note_from_name("f#3", &a) == OMEGA_OK);
+    REQUIRE(omega_midi_note_from_name("F#3", &b) == OMEGA_OK);
+    REQUIRE(a == b);
+}
+
+TEST_CASE("omega_midi_note_from_name: lowest and highest MIDI notes")
+{
+    uint8_t pitch = 0;
+
+    REQUIRE(omega_midi_note_from_name("C-1", &pitch) == OMEGA_OK);
+    REQUIRE(pitch == 0);
+
+    REQUIRE(omega_midi_note_from_name("G9", &pitch) == OMEGA_OK);
+    REQUIRE(pitch == 127);
+}
+
+TEST_CASE("omega_midi_note_from_name: round-trip with omega_midi_note_name")
+{
+    for (uint8_t p = 0; p <= 127; ++p)
+    {
+        std::array<char, 16> buf{};
+        omega_midi_note_name(p, buf.data(), buf.size());
+
+        uint8_t result = 0;
+        REQUIRE(omega_midi_note_from_name(buf.data(), &result) == OMEGA_OK);
+        REQUIRE(result == p);
+    }
+}
+
+TEST_CASE("omega_midi_note_from_name: invalid inputs return OMEGA_ERR_INVALID")
+{
+    uint8_t pitch = 0;
+
+    // Null args.
+    REQUIRE(omega_midi_note_from_name(nullptr, &pitch) == OMEGA_ERR_INVALID);
+    REQUIRE(omega_midi_note_from_name("C4", nullptr) == OMEGA_ERR_INVALID);
+
+    // Unknown letter.
+    REQUIRE(omega_midi_note_from_name("H4", &pitch) == OMEGA_ERR_INVALID);
+
+    // Missing octave.
+    REQUIRE(omega_midi_note_from_name("C", &pitch) == OMEGA_ERR_INVALID);
+
+    // Trailing garbage.
+    REQUIRE(omega_midi_note_from_name("C4X", &pitch) == OMEGA_ERR_INVALID);
+
+    // Out of MIDI range (A9 = pitch 129).
+    REQUIRE(omega_midi_note_from_name("A9", &pitch) == OMEGA_ERR_INVALID);
+
+    // Empty string.
+    REQUIRE(omega_midi_note_from_name("", &pitch) == OMEGA_ERR_INVALID);
+}
+
 // ── omega_format_position ─────────────────────────────────────────────────────
 
 TEST_CASE("omega_format_position: freeform engine returns OMEGA_ERR_NO_METER")

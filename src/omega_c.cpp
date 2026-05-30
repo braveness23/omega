@@ -1506,6 +1506,70 @@ void omega_midi_note_name(uint8_t pitch, char* out, size_t out_size)
     out[pos] = '\0';
 }
 
+omega_status_t omega_midi_note_from_name(const char* name, uint8_t* out)
+{
+    if (name == nullptr || out == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+
+    const char* p = name;
+
+    // Natural semitone for A B C D E F G.
+    static constexpr int k_semitones[7] = {9, 11, 0, 2, 4, 5, 7};
+
+    char letter = *p++;
+    if (letter >= 'a' && letter <= 'z')
+    {
+        letter = static_cast<char>(letter - 32);
+    }
+    if (letter < 'A' || letter > 'G')
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    int semitone = k_semitones[letter - 'A'];
+
+    // Optional accidental.
+    if (*p == '#')
+    {
+        semitone += 1;
+        ++p;
+    }
+    else if (*p == 'b')
+    {
+        semitone -= 1;
+        ++p;
+    }
+
+    // Octave: optional leading '-', then a single digit.
+    int sign = 1;
+    if (*p == '-')
+    {
+        sign = -1;
+        ++p;
+    }
+
+    if (*p < '0' || *p > '9')
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    const int octave = sign * (*p++ - '0');
+
+    if (*p != '\0')
+    {
+        return OMEGA_ERR_INVALID;
+    }
+
+    const int pitch = (octave + 1) * 12 + semitone;
+    if (pitch < 0 || pitch > 127)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+
+    *out = static_cast<uint8_t>(pitch);
+    return OMEGA_OK;
+}
+
 omega_status_t omega_format_position(const omega_engine_t* e,
                                      omega_tick_t tick,
                                      char* out,

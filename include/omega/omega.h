@@ -1956,6 +1956,23 @@ OMEGA_API omega_status_t omega_event_remove_anchor(omega_engine_t* e,
  */
 OMEGA_API void omega_midi_note_name(uint8_t pitch, char* out, size_t out_size);
 
+/*
+ * Parses a note name string into a MIDI pitch byte.
+ *
+ * Accepts strings of the form <letter>[<accidental>]<octave>, where:
+ *   letter     — A–G (case-insensitive)
+ *   accidental — '#' (sharp) or 'b' (flat), optional
+ *   octave     — integer; may be negative (-1 for MIDI 0–11)
+ *
+ * Examples: "C4" → 60, "F#3" → 54, "Bb4" → 70, "C-1" → 0, "G9" → 127.
+ * Returns OMEGA_OK and writes the pitch to *out on success.
+ * Returns OMEGA_ERR_INVALID if the string is not a recognised note name or
+ * the resulting pitch falls outside 0–127.
+ *
+ * Thread: Any thread.
+ */
+OMEGA_API omega_status_t omega_midi_note_from_name(const char* name, uint8_t* out);
+
 /* ── Timer ────────────────────────────────────────────────────────────────── */
 
 typedef struct omega_timer_s omega_timer_t;
