@@ -834,6 +834,38 @@ void Engine::apply(const PerfSetMuteCmd& cmd)
     perf_.set_mute(cmd.slot, cmd.muted);
 }
 
+void Engine::execute_ctrl_event(const Event& event) noexcept
+{
+    uint32_t slot = 0;
+    switch (event.payload_tag)
+    {
+        case OMEGA_CTRL_START_SLOT:
+            std::memcpy(&slot, &event.data[0], sizeof(slot));
+            perf_.cue(slot, static_cast<CueMode>(event.data[4]), event.tick);
+            break;
+        case OMEGA_CTRL_STOP_SLOT:
+            std::memcpy(&slot, &event.data[0], sizeof(slot));
+            perf_.stop(slot, static_cast<CueMode>(event.data[4]), event.tick);
+            break;
+        case OMEGA_CTRL_SET_TEMPO:
+        {
+            uint32_t bpm = 0;
+            std::memcpy(&bpm, &event.data[0], sizeof(bpm));
+            if (bpm > 0)
+            {
+                tempo_map_.insert(event.tick, bpm);
+            }
+            break;
+        }
+        case OMEGA_CTRL_TRANSPOSE:
+            std::memcpy(&slot, &event.data[0], sizeof(slot));
+            perf_.set_transpose(slot, static_cast<int8_t>(event.data[4]));
+            break;
+        default:
+            break;
+    }
+}
+
 void Engine::apply(const AddInputCmd& cmd)
 {
     if (cmd.input != nullptr)

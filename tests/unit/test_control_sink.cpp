@@ -33,7 +33,7 @@ struct Fixture  // NOLINT(clang-analyzer-optin.performance.Padding)
     MockClock clock;
     Engine engine{&clock};
     CapturingSink midi_sink;
-    ControlSink ctrl_sink{engine.perf_source(), engine.tempo_map()};
+    ControlSink ctrl_sink{engine};
     uint32_t msid{midi_sink.sink_id()};
     uint32_t csid{ctrl_sink.sink_id()};
 

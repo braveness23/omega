@@ -7,37 +7,34 @@
 namespace omega
 {
 
-class PerformanceSource;
-class TempoMap;
+class Engine;
 
 /*
- * An OutputSink that executes control-sequence events (OMEGA_CTRL_*) as direct
- * engine mutations rather than sending MIDI bytes.
+ * An OutputSink that executes control-sequence events (OMEGA_CTRL_*) as engine
+ * mutations rather than sending MIDI bytes.
  *
  * Register one ControlSink with the engine alongside the MIDI output sink.
  * Control patterns use ctrl_sink.sink_id() in their events' sink_id field;
  * the PerformanceSource routes those events here during advance().
  *
- * On receive:
- *   OMEGA_CTRL_START_SLOT  — calls perf_.cue(slot, mode, event.tick)
- *   OMEGA_CTRL_STOP_SLOT   — calls perf_.stop(slot, mode, event.tick)
- *   OMEGA_CTRL_SET_TEMPO   — calls tempo_.insert(event.tick, bpm_milli)
- *   OMEGA_CTRL_TRANSPOSE   — calls perf_.set_transpose(slot, semitones)
+ * On receive, delegates to Engine::execute_ctrl_event():
+ *   OMEGA_CTRL_START_SLOT  — cues the target slot
+ *   OMEGA_CTRL_STOP_SLOT   — stops the target slot
+ *   OMEGA_CTRL_SET_TEMPO   — inserts a tempo point
+ *   OMEGA_CTRL_TRANSPOSE   — sets per-slot transpose
  *   All other tags          — silently dropped
  *
  * Thread safety: send() and flush() are called from the timing thread and must
- * never allocate, block, or lock. The methods called on perf_ and tempo_ are
- * safe on the timing thread (they are called directly by Engine::apply()
- * overloads during the same process() cycle).
+ * never allocate, block, or lock. Engine::execute_ctrl_event() has the same
+ * timing-thread-only contract.
  */
 class OMEGA_API ControlSink final : public OutputSink
 {
 public:
     /*
-     * perf and tempo must outlive this ControlSink. Obtain them via
-     * engine.perf_source() and engine.tempo_map().
+     * engine must outlive this ControlSink.
      */
-    ControlSink(PerformanceSource& perf, TempoMap& tempo) noexcept;
+    explicit ControlSink(Engine& engine) noexcept;
 
     ~ControlSink() override = default;
 
@@ -50,8 +47,7 @@ public:
     void flush() override {}
 
 private:
-    PerformanceSource& perf_;
-    TempoMap& tempo_;
+    Engine& engine_;
 };
 
 }  // namespace omega

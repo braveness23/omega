@@ -569,11 +569,20 @@ public:
     [[nodiscard]] const TimelineSource& timeline_source() const noexcept { return timeline_; }
     [[nodiscard]] TimelineSource& timeline_source() noexcept { return timeline_; }
 
-    /* Raw access to the built-in performance source. The non-const overload is
-     * provided so ControlSink can hold a direct reference and call cue/stop/
-     * set_transpose directly on the timing thread. Same contract as timeline_source(). */
+    /* Raw access to the built-in performance source.
+     * Same contract as timeline_source(). */
     [[nodiscard]] const PerformanceSource& perf_source() const noexcept { return perf_; }
     [[nodiscard]] PerformanceSource& perf_source() noexcept { return perf_; }
+
+    /*
+     * Apply a control-sequence event on the timing thread.
+     * Called from ControlSink::send(). Dispatches OMEGA_CTRL_* payloads to the
+     * appropriate engine internals (perf_, tempo_map_, etc.).
+     * All other payload tags are silently ignored.
+     *
+     * Thread: timing thread only.
+     */
+    void execute_ctrl_event(const Event& event) noexcept;
 
     /* ── Markers and regions ─────────────────────────────────────────────────── */
 
