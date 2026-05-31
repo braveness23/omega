@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     clang-18 \
     clang-format-18 \
     clang-tidy-18 \
+    libclang-rt-18-dev \
     cmake \
     ninja-build \
     libasound2-dev \
