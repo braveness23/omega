@@ -1,0 +1,35 @@
+name: Build runner image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/runner-image/Dockerfile'
+  workflow_dispatch:
+
+permissions:
+  packages: write
+
+jobs:
+  build:
+    name: Build and push omega-ci-runner
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .github/runner-image
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/omega-ci-runner:latest
+            ghcr.io/${{ github.repository_owner }}/omega-ci-runner:${{ github.sha }}
