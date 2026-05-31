@@ -2,6 +2,7 @@
 #include <omega/session.h>
 #include <omega/test/mock_clock.h>
 
+#include <array>
 #include <catch2/catch_test_macros.hpp>
 #include <cstdio>
 #include <filesystem>
@@ -379,8 +380,8 @@ TEST_CASE("session_load: corrupt magic returns ERR_IO")
     const std::string path = tmp_path("omega_session_corrupt.oms");
     {
         std::ofstream f(path, std::ios::binary);
-        const char bad[] = "JUNK\x01\x00\x00\x00";
-        f.write(bad, 8);
+        const std::array<char, 8> bad{'J', 'U', 'N', 'K', '\x01', '\x00', '\x00', '\x00'};
+        f.write(bad.data(), static_cast<std::streamsize>(bad.size()));
     }
     MockClock clk;
     Engine e(&clk);
