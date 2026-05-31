@@ -574,6 +574,11 @@ public:
     [[nodiscard]] const PerformanceSource& perf_source() const noexcept { return perf_; }
     [[nodiscard]] PerformanceSource& perf_source() noexcept { return perf_; }
 
+    /* Raw access to the built-in song-arrangement source.
+     * Same contract as timeline_source(). */
+    [[nodiscard]] const SongArrangementSource& song_source() const noexcept { return song_; }
+    [[nodiscard]] SongArrangementSource& song_source() noexcept { return song_; }
+
     /*
      * Apply a control-sequence event on the timing thread.
      * Called from ControlSink::send(). Dispatches OMEGA_CTRL_* payloads to the

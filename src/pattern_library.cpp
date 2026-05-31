@@ -37,6 +37,12 @@ void PatternLibrary::destroy(PatternId id)
     patterns_.erase(id);
 }
 
+void PatternLibrary::clear() noexcept
+{
+    patterns_.clear();
+    next_id_ = 1;
+}
+
 omega_status_t PatternLibrary::add_event(PatternId id, Event event)
 {
     Pattern* pat = get(id);

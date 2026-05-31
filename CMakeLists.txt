@@ -123,6 +123,7 @@ add_library(omega_core STATIC
     src/snap.cpp
     src/smf_import.cpp
     src/smf_export.cpp
+    src/session.cpp
     src/libremidi_sink.cpp
     src/libremidi_input.cpp
     src/timer.cpp

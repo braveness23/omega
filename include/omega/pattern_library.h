@@ -75,6 +75,12 @@ public:
     omega_status_t set_length(PatternId id, uint64_t length_ticks);
 
     /*
+     * Removes all patterns and resets the ID counter to 1.
+     * Thread: Mutation thread only, engine stopped.
+     */
+    void clear() noexcept;
+
+    /*
      * Returns the number of live (non-destroyed) patterns in the library.
      * Thread: Mutation thread only. Must not be called concurrently with process().
      */

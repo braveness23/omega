@@ -1,5 +1,6 @@
 #include <omega/anchor_point.h>
 #include <omega/commands.h>
+#include <omega/control_sink.h>
 #include <omega/engine.h>
 #include <omega/event_anchor_table.h>
 #include <omega/event_input.h>
@@ -8,6 +9,7 @@
 #include <omega/omega.h>
 #include <omega/perf_slot.h>
 #include <omega/region_list.h>
+#include <omega/session.h>
 #include <omega/sink.h>
 #include <omega/smf.h>
 #include <omega/smpte_converter.h>
@@ -220,6 +222,97 @@ omega_status_t omega_engine_set_track_sink(omega_engine_t* eng,
         return OMEGA_ERR_INVALID;
     }
     return eng->engine.set_track_sink(track, sink_id);
+}
+
+omega_status_t omega_engine_set_track_mute(omega_engine_t* eng, omega_track_id_t track, int muted)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.set_track_mute(track, muted != 0);
+}
+
+omega_status_t omega_engine_set_track_solo(omega_engine_t* eng, omega_track_id_t track, int soloed)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.set_track_solo(track, soloed != 0);
+}
+
+int omega_engine_track_is_muted(const omega_engine_t* eng, omega_track_id_t track)
+{
+    if (eng == nullptr)
+    {
+        return 0;
+    }
+    return eng->engine.track_is_muted(track) ? 1 : 0;
+}
+
+int omega_engine_track_is_soloed(const omega_engine_t* eng, omega_track_id_t track)
+{
+    if (eng == nullptr)
+    {
+        return 0;
+    }
+    return eng->engine.track_is_soloed(track) ? 1 : 0;
+}
+
+omega_status_t omega_engine_set_track_name(omega_engine_t* eng,
+                                           omega_track_id_t track,
+                                           const char* name)
+{
+    if (eng == nullptr || name == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.set_track_name(track, name);
+}
+
+omega_status_t omega_engine_set_track_channel(omega_engine_t* eng,
+                                              omega_track_id_t track,
+                                              uint8_t channel)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.set_track_channel(track, channel);
+}
+
+omega_status_t omega_engine_replace_track_event(omega_engine_t* eng,
+                                                omega_track_id_t track,
+                                                omega_tick_t tick,
+                                                uint32_t index,
+                                                omega_event_t replacement)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.replace_track_event(track, tick, index, replacement);
+}
+
+omega_status_t omega_engine_shift_track_events(omega_engine_t* eng,
+                                               omega_track_id_t track,
+                                               int64_t offset_ticks)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.shift_track_events(track, offset_ticks);
+}
+
+omega_status_t omega_engine_swap_tracks(omega_engine_t* eng, omega_track_id_t a, omega_track_id_t b)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.swap_tracks(a, b);
 }
 
 omega_status_t omega_engine_add_event(omega_engine_t* eng, omega_track_id_t track, omega_event_t ev)
@@ -1181,6 +1274,24 @@ void omega_sink_destroy_midi_out(omega_sink_t* sink)
     delete reinterpret_cast<omega::LibremidiSink*>(sink);
 }
 
+omega_sink_t* omega_sink_create_control(omega_engine_t* eng)
+{
+    if (eng == nullptr)
+    {
+        return nullptr;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    auto* p = new (std::nothrow) omega::ControlSink{eng->engine};
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    return reinterpret_cast<omega_sink_t*>(p);
+}
+
+void omega_sink_destroy_control(omega_sink_t* sink)
+{
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory,cppcoreguidelines-pro-type-reinterpret-cast)
+    delete reinterpret_cast<omega::ControlSink*>(sink);
+}
+
 omega_input_t* omega_input_create_midi_in(const char* port_name)
 {
     // MidiInputHolder owns a LibremidiInput and implements EventInput::poll().
@@ -1197,6 +1308,26 @@ void omega_input_destroy_midi_in(omega_input_t* input)
     delete reinterpret_cast<omega::EventInput*>(input);
 }
 
+// ── Session save / load ───────────────────────────────────────────────────────
+
+omega_status_t omega_session_save(omega_engine_t* eng, const char* path)
+{
+    if (eng == nullptr || path == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return omega::session_save(eng->engine, path);
+}
+
+omega_status_t omega_session_load(omega_engine_t* eng, const char* path)
+{
+    if (eng == nullptr || path == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return omega::session_load(eng->engine, path);
+}
+
 // ── SMF import / export ───────────────────────────────────────────────────────
 
 omega_status_t omega_smf_import(omega_engine_t* eng, const char* path)
@@ -1206,6 +1337,25 @@ omega_status_t omega_smf_import(omega_engine_t* eng, const char* path)
         return OMEGA_ERR_INVALID;
     }
     return omega::smf_import(eng->engine, path);
+}
+
+omega_status_t omega_smf_import_ex(omega_engine_t* eng,
+                                   const char* path,
+                                   const omega_smf_import_options_t* opts)
+{
+    if (eng == nullptr || path == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    if (opts == nullptr)
+    {
+        return omega::smf_import(eng->engine, path);
+    }
+    omega::SmfImportOptions cpp_opts;
+    cpp_opts.sink_id = opts->sink_id;
+    cpp_opts.split_by_channel = opts->split_by_channel != 0;
+    cpp_opts.clear_existing = opts->clear_existing != 0;
+    return omega::smf_import(eng->engine, path, cpp_opts);
 }
 
 omega_status_t omega_smf_export(omega_engine_t* eng, const char* path, int smf_type)

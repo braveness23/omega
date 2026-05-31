@@ -202,4 +202,18 @@ omega_event_t omega_make_ctrl_transpose(uint64_t tick,
     return e;
 }
 
+omega_event_t omega_make_ctrl_start_slot_wait(
+    uint64_t tick, uint32_t sink_id, uint32_t target_slot, omega_cue_mode_t mode, uint8_t ctrl_slot)
+{
+    omega_event_t e;
+    memset(&e, 0, sizeof(e));
+    e.tick = tick;
+    e.sink_id = sink_id;
+    e.payload_tag = OMEGA_CTRL_START_SLOT_WAIT;
+    memcpy(&e.data[0], &target_slot, sizeof(target_slot));
+    e.data[4] = static_cast<uint8_t>(mode);
+    e.data[5] = ctrl_slot;
+    return e;
+}
+
 }  // extern "C"
