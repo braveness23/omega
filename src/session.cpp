@@ -477,7 +477,9 @@ static BufWriter serialize_session(Engine& engine)
 omega_status_t session_save(Engine& engine, const char* path)
 {
     if (path == nullptr)
+    {
         return OMEGA_ERR_INVALID;
+    }
 
     BufWriter out = serialize_session(engine);
 
@@ -486,7 +488,9 @@ omega_status_t session_save(Engine& engine, const char* path)
     {
         std::ofstream f(tmp_path, std::ios::binary);
         if (!f)
+        {
             return OMEGA_ERR_IO;
+        }
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         f.write(reinterpret_cast<const char*>(out.data().data()),
                 static_cast<std::streamsize>(out.size()));
@@ -1008,22 +1012,30 @@ static omega_status_t session_load_bytes(Engine& engine, const uint8_t* data, si
 omega_status_t session_load(Engine& engine, const char* path)
 {
     if (path == nullptr)
+    {
         return OMEGA_ERR_INVALID;
+    }
 
     // Read entire file into memory; validate header before touching engine state.
     std::ifstream f(path, std::ios::binary | std::ios::ate);
     if (!f)
+    {
         return OMEGA_ERR_IO;
+    }
     const auto file_size = f.tellg();
     if (file_size <= 0)
+    {
         return OMEGA_ERR_IO;
+    }
 
     std::vector<uint8_t> file_data(static_cast<size_t>(file_size));
     f.seekg(0);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     f.read(reinterpret_cast<char*>(file_data.data()), file_size);
     if (!f)
+    {
         return OMEGA_ERR_IO;
+    }
 
     return session_load_bytes(engine, file_data.data(), file_data.size());
 }
@@ -1032,7 +1044,9 @@ omega_status_t session_load(Engine& engine, const char* path)
 omega_status_t session_load(Engine& engine, const uint8_t* data, size_t size)
 {
     if (data == nullptr || size == 0)
+    {
         return OMEGA_ERR_INVALID;
+    }
     return session_load_bytes(engine, data, size);
 }
 

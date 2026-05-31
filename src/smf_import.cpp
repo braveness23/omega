@@ -72,7 +72,9 @@ private:
 void clear_if_requested(Engine& engine, const SmfImportOptions& opts)
 {
     if (!opts.clear_existing)
+    {
         return;
+    }
     engine.timeline_source().clear_tracks();
     engine.tempo_map().remove(0u);
     engine.tempo_map().insert(0u, 120'000u);
@@ -222,11 +224,15 @@ omega_status_t process_midifile(Engine& engine, smf::MidiFile& mf, const SmfImpo
 omega_status_t smf_import(Engine& engine, const char* path, const SmfImportOptions& opts)
 {
     if (path == nullptr)
+    {
         return OMEGA_ERR_INVALID;
+    }
     clear_if_requested(engine, opts);
     smf::MidiFile mf;
     if (!mf.read(path))
+    {
         return OMEGA_ERR_IO;
+    }
     return process_midifile(engine, mf, opts);
 }
 
@@ -243,13 +249,17 @@ omega_status_t smf_import(Engine& engine,
                           const SmfImportOptions& opts)
 {
     if (data == nullptr || size == 0)
+    {
         return OMEGA_ERR_INVALID;
+    }
     clear_if_requested(engine, opts);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     std::istringstream iss{std::string(reinterpret_cast<const char*>(data), size)};
     smf::MidiFile mf;
     if (!mf.read(iss))
+    {
         return OMEGA_ERR_IO;
+    }
     return process_midifile(engine, mf, opts);
 }
 

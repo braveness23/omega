@@ -40,27 +40,37 @@ smf::MidiFile build_midifile(Engine& engine, int smf_type)
     for (int t = 0; t < num_omega_tracks; ++t)
     {
         if (!omega_tracks[static_cast<size_t>(t)].events.empty())
+        {
             ++non_empty_count;
+        }
     }
 
     if (smf_type == 1 && non_empty_count > 0)
+    {
         mf.addTracks(non_empty_count);
+    }
 
     // --- Export tempo map ---
     for (const auto& pt : engine.tempo_map().points())
     {
         if (pt.bpm_milli == 0u)
+        {
             continue;
+        }
         mf.addTempo(0, static_cast<int>(pt.tick), static_cast<double>(pt.bpm_milli) / 1000.0);
     }
 
     // --- Export time signatures ---
     for (const auto& pt : engine.timesig_map().points())
+    {
         mf.addTimeSignature(0, static_cast<int>(pt.tick), pt.numerator, pt.denominator);
+    }
 
     // --- Export markers ---
     for (const auto& m : engine.marker_list().points())
+    {
         mf.addMarker(0, static_cast<int>(m.tick), m.name);
+    }
 
     // --- Export track events (skip empty tracks) ---
     int midi_track_seq = 1;
@@ -68,7 +78,9 @@ smf::MidiFile build_midifile(Engine& engine, int smf_type)
     {
         const Track& tr = omega_tracks[static_cast<size_t>(t)];
         if (tr.events.empty())
+        {
             continue;
+        }
 
         int midi_track = (smf_type == 0) ? 0 : midi_track_seq++;
 
@@ -104,10 +116,14 @@ smf::MidiFile build_midifile(Engine& engine, int smf_type)
 omega_status_t smf_export(Engine& engine, const char* path, int smf_type)
 {
     if (path == nullptr)
+    {
         return OMEGA_ERR_INVALID;
+    }
     smf::MidiFile mf = build_midifile(engine, smf_type);
     if (!mf.write(path))
+    {
         return OMEGA_ERR_IO;
+    }
     return OMEGA_OK;
 }
 
@@ -118,7 +134,9 @@ omega_status_t smf_export(Engine& engine, std::vector<uint8_t>& out, int smf_typ
     smf::MidiFile mf = build_midifile(engine, smf_type);
     std::ostringstream oss;
     if (!mf.write(oss))
+    {
         return OMEGA_ERR_IO;
+    }
     const std::string& s = oss.str();
     out.assign(s.begin(), s.end());
     return OMEGA_OK;

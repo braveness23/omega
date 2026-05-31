@@ -49,7 +49,7 @@ public:
     explicit CClock(omega_clock_t* c) noexcept : c_(c) {}
     [[nodiscard]] uint64_t now_ns() const noexcept override
     {
-        return (c_ && c_->now_ns) ? c_->now_ns(c_->userdata) : 0u;
+        return ((c_ != nullptr) && (c_->now_ns != nullptr)) ? c_->now_ns(c_->userdata) : 0u;
     }
 
 private:
@@ -68,7 +68,7 @@ struct omega_engine_s  // NOLINT(readability-identifier-naming)
 struct omega_engine_s_with_clock : omega_engine_s  // NOLINT(readability-identifier-naming)
 {
     CClock clock_adapter;
-    explicit omega_engine_s_with_clock(omega_clock_t* c) : omega_engine_s(), clock_adapter(c)
+    explicit omega_engine_s_with_clock(omega_clock_t* c) : clock_adapter(c)
     {
         // Re-construct engine with the custom clock.
         // The base omega_engine_s default-constructed an engine with InternalClock;

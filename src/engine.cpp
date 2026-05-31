@@ -217,7 +217,9 @@ omega_status_t Engine::replace_track_event_by_index(TrackId track_id,
     for (const auto& t : tracks)
     {
         if (t.id != track_id)
+        {
             continue;
+        }
         if (flat_index >= static_cast<uint32_t>(t.events.size()))
         {
             return OMEGA_ERR_NOT_FOUND;
@@ -227,7 +229,9 @@ omega_status_t Engine::replace_track_event_by_index(TrackId track_id,
         for (uint32_t k = 0; k < flat_index; ++k)
         {
             if (t.events[k].tick == orig_tick)
+            {
                 ++within;
+            }
         }
         return replace_track_event(track_id, orig_tick, within, replacement);
     }
@@ -240,7 +244,9 @@ omega_status_t Engine::delete_track_event_by_index(TrackId track_id, uint32_t fl
     for (const auto& t : tracks)
     {
         if (t.id != track_id)
+        {
             continue;
+        }
         if (flat_index >= static_cast<uint32_t>(t.events.size()))
         {
             return OMEGA_ERR_NOT_FOUND;
@@ -250,7 +256,9 @@ omega_status_t Engine::delete_track_event_by_index(TrackId track_id, uint32_t fl
         for (uint32_t k = 0; k < flat_index; ++k)
         {
             if (t.events[k].tick == tick)
+            {
                 ++within;
+            }
         }
         return enqueue(DeleteEventCmd{track_id, tick, within});
     }
@@ -273,7 +281,9 @@ uint64_t Engine::compute_timeline_loop_end() const noexcept
                 end += dur;
             }
             if (end > result)
+            {
                 result = end;
+            }
         }
     }
     return result;
