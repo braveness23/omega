@@ -6,6 +6,7 @@
 #include <array>
 #include <cstring>
 #include <optional>
+#include <sstream>
 #include <string>
 
 #include "MidiFile.h"
@@ -67,32 +68,22 @@ private:
     std::array<std::optional<TrackId>, 16> channel_tracks_{};
 };
 
-}  // namespace
-
-omega_status_t smf_import(Engine& engine, const char* path, const SmfImportOptions& opts)
+// Shared helper: clear session state when opts.clear_existing is set.
+void clear_if_requested(Engine& engine, const SmfImportOptions& opts)
 {
-    if (path == nullptr)
-    {
-        return OMEGA_ERR_INVALID;
-    }
+    if (!opts.clear_existing)
+        return;
+    engine.timeline_source().clear_tracks();
+    engine.tempo_map().remove(0u);
+    engine.tempo_map().insert(0u, 120'000u);
+    engine.timesig_map().clear();
+    engine.marker_list().clear();
+}
 
-    if (opts.clear_existing)
-    {
-        // Clear existing session content so the imported file replaces rather
-        // than appends. Reset tempo to default (120 BPM at tick 0) after clear.
-        engine.timeline_source().clear_tracks();
-        engine.tempo_map().remove(0u);  // remove any existing; then insert default
-        engine.tempo_map().insert(0u, 120'000u);
-        engine.timesig_map().clear();
-        engine.marker_list().clear();
-    }
-
-    smf::MidiFile mf;
-    if (!mf.read(path))
-    {
-        return OMEGA_ERR_IO;
-    }
-
+// Shared helper: process an already-loaded MidiFile object into engine state.
+// Called by both the path-based and buffer-based overloads after loading.
+omega_status_t process_midifile(Engine& engine, smf::MidiFile& mf, const SmfImportOptions& opts)
+{
     mf.makeAbsoluteTicks();
     mf.linkNotePairs();
 
@@ -226,9 +217,45 @@ omega_status_t smf_import(Engine& engine, const char* path, const SmfImportOptio
     return OMEGA_OK;
 }
 
+}  // namespace
+
+omega_status_t smf_import(Engine& engine, const char* path, const SmfImportOptions& opts)
+{
+    if (path == nullptr)
+        return OMEGA_ERR_INVALID;
+    clear_if_requested(engine, opts);
+    smf::MidiFile mf;
+    if (!mf.read(path))
+        return OMEGA_ERR_IO;
+    return process_midifile(engine, mf, opts);
+}
+
 omega_status_t smf_import(Engine& engine, const char* path)
 {
     return smf_import(engine, path, SmfImportOptions{});
+}
+
+// W4: buffer overload — reads from raw bytes via std::istringstream instead of a path.
+// Avoids the need for a filesystem when used in WASM or plugin contexts.
+omega_status_t smf_import(Engine& engine,
+                          const uint8_t* data,
+                          size_t size,
+                          const SmfImportOptions& opts)
+{
+    if (data == nullptr || size == 0)
+        return OMEGA_ERR_INVALID;
+    clear_if_requested(engine, opts);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    std::istringstream iss{std::string(reinterpret_cast<const char*>(data), size)};
+    smf::MidiFile mf;
+    if (!mf.read(iss))
+        return OMEGA_ERR_IO;
+    return process_midifile(engine, mf, opts);
+}
+
+omega_status_t smf_import(Engine& engine, const uint8_t* data, size_t size)
+{
+    return smf_import(engine, data, size, SmfImportOptions{});
 }
 
 }  // namespace omega

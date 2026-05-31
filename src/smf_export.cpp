@@ -10,19 +10,20 @@
 
 #include <cstddef>
 #include <cstring>
+#include <sstream>
 
 #include "MidiFile.h"
 
 namespace omega
 {
 
-omega_status_t smf_export(Engine& engine, const char* path, int smf_type)
+namespace
 {
-    if (path == nullptr)
-    {
-        return OMEGA_ERR_INVALID;
-    }
 
+// Shared helper: build a smf::MidiFile from the engine's timeline, tempo map,
+// time-signature map, and markers.  Both the path and buffer overloads call this.
+smf::MidiFile build_midifile(Engine& engine, int smf_type)
+{
     smf::MidiFile mf;
     mf.setTPQ(static_cast<int>(OMEGA_PPQN));
 
@@ -39,38 +40,27 @@ omega_status_t smf_export(Engine& engine, const char* path, int smf_type)
     for (int t = 0; t < num_omega_tracks; ++t)
     {
         if (!omega_tracks[static_cast<size_t>(t)].events.empty())
-        {
             ++non_empty_count;
-        }
     }
 
     if (smf_type == 1 && non_empty_count > 0)
-    {
         mf.addTracks(non_empty_count);
-    }
 
     // --- Export tempo map ---
     for (const auto& pt : engine.tempo_map().points())
     {
         if (pt.bpm_milli == 0u)
-        {
             continue;
-        }
-        double bpm = static_cast<double>(pt.bpm_milli) / 1000.0;
-        mf.addTempo(0, static_cast<int>(pt.tick), bpm);
+        mf.addTempo(0, static_cast<int>(pt.tick), static_cast<double>(pt.bpm_milli) / 1000.0);
     }
 
     // --- Export time signatures ---
     for (const auto& pt : engine.timesig_map().points())
-    {
         mf.addTimeSignature(0, static_cast<int>(pt.tick), pt.numerator, pt.denominator);
-    }
 
     // --- Export markers ---
     for (const auto& m : engine.marker_list().points())
-    {
         mf.addMarker(0, static_cast<int>(m.tick), m.name);
-    }
 
     // --- Export track events (skip empty tracks) ---
     int midi_track_seq = 1;
@@ -78,9 +68,7 @@ omega_status_t smf_export(Engine& engine, const char* path, int smf_type)
     {
         const Track& tr = omega_tracks[static_cast<size_t>(t)];
         if (tr.events.empty())
-        {
             continue;
-        }
 
         int midi_track = (smf_type == 0) ? 0 : midi_track_seq++;
 
@@ -108,12 +96,31 @@ omega_status_t smf_export(Engine& engine, const char* path, int smf_type)
     }
 
     mf.sortTracks();
+    return mf;
+}
 
+}  // namespace
+
+omega_status_t smf_export(Engine& engine, const char* path, int smf_type)
+{
+    if (path == nullptr)
+        return OMEGA_ERR_INVALID;
+    smf::MidiFile mf = build_midifile(engine, smf_type);
     if (!mf.write(path))
-    {
         return OMEGA_ERR_IO;
-    }
+    return OMEGA_OK;
+}
 
+// W4: buffer overload — writes to a byte vector instead of a file path.
+// Avoids the need for a filesystem path (useful in WASM / plugin contexts).
+omega_status_t smf_export(Engine& engine, std::vector<uint8_t>& out, int smf_type)
+{
+    smf::MidiFile mf = build_midifile(engine, smf_type);
+    std::ostringstream oss;
+    if (!mf.write(oss))
+        return OMEGA_ERR_IO;
+    const std::string& s = oss.str();
+    out.assign(s.begin(), s.end());
     return OMEGA_OK;
 }
 

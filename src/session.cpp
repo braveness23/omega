@@ -450,19 +450,13 @@ static BufWriter ser_transport(const Engine& e)
 
 // ── session_save ──────────────────────────────────────────────────────────────
 
-omega_status_t session_save(Engine& engine, const char* path)
+// Shared helper: serialise all engine state into a BufWriter.
+// Called by both session_save overloads.
+static BufWriter serialize_session(Engine& engine)
 {
-    if (path == nullptr)
-    {
-        return OMEGA_ERR_INVALID;
-    }
-
     BufWriter out;
-
-    // Header
     out.raw(MAGIC.data(), MAGIC.size());
     out.u32(SESSION_VERSION);
-
     emit_section(out, TAG_TEMPO, ser_tempo(engine));
     emit_section(out, TAG_TIMESIG, ser_timesig(engine));
     emit_section(out, TAG_SMPTE, ser_smpte(engine));
@@ -475,19 +469,24 @@ omega_status_t session_save(Engine& engine, const char* path)
     emit_section(out, TAG_CTX, ser_ctx(engine));
     emit_section(out, TAG_TRACKS, ser_tracks(engine));
     emit_section(out, TAG_TRANSPORT, ser_transport(engine));
-
-    // End marker
     out.u32(TAG_END);
     out.u32(0u);
+    return out;
+}
+
+omega_status_t session_save(Engine& engine, const char* path)
+{
+    if (path == nullptr)
+        return OMEGA_ERR_INVALID;
+
+    BufWriter out = serialize_session(engine);
 
     // Atomic write: temp file → rename
     std::string tmp_path = std::string(path) + ".tmp";
     {
         std::ofstream f(tmp_path, std::ios::binary);
         if (!f)
-        {
             return OMEGA_ERR_IO;
-        }
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         f.write(reinterpret_cast<const char*>(out.data().data()),
                 static_cast<std::streamsize>(out.size()));
@@ -508,6 +507,14 @@ omega_status_t session_save(Engine& engine, const char* path)
         return OMEGA_ERR_IO;
     }
 
+    return OMEGA_OK;
+}
+
+// W5: buffer overload — returns session bytes directly without touching the filesystem.
+omega_status_t session_save(Engine& engine, std::vector<uint8_t>& out_bytes)
+{
+    BufWriter out = serialize_session(engine);
+    out_bytes = out.data();
     return OMEGA_OK;
 }
 
@@ -889,34 +896,11 @@ static bool load_tracks(BufReader& r, Engine& e)
 
 // ── session_load ──────────────────────────────────────────────────────────────
 
-omega_status_t session_load(Engine& engine, const char* path)
+// Shared helper: parse session bytes into engine state.
+// Both session_load overloads call this after reading/receiving the raw bytes.
+static omega_status_t session_load_bytes(Engine& engine, const uint8_t* data, size_t size)
 {
-    if (path == nullptr)
-    {
-        return OMEGA_ERR_INVALID;
-    }
-
-    // Read entire file into memory; validate header before touching engine state.
-    std::ifstream f(path, std::ios::binary | std::ios::ate);
-    if (!f)
-    {
-        return OMEGA_ERR_IO;
-    }
-    const auto file_size = f.tellg();
-    if (file_size <= 0)
-    {
-        return OMEGA_ERR_IO;
-    }
-    std::vector<uint8_t> file_data(static_cast<size_t>(file_size));
-    f.seekg(0);
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    f.read(reinterpret_cast<char*>(file_data.data()), file_size);
-    if (!f)
-    {
-        return OMEGA_ERR_IO;
-    }
-
-    BufReader r(file_data.data(), file_data.size());
+    BufReader r(data, size);
 
     // Validate magic
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init)
@@ -1019,6 +1003,37 @@ omega_status_t session_load(Engine& engine, const char* path)
     engine.process();
 
     return OMEGA_OK;
+}
+
+omega_status_t session_load(Engine& engine, const char* path)
+{
+    if (path == nullptr)
+        return OMEGA_ERR_INVALID;
+
+    // Read entire file into memory; validate header before touching engine state.
+    std::ifstream f(path, std::ios::binary | std::ios::ate);
+    if (!f)
+        return OMEGA_ERR_IO;
+    const auto file_size = f.tellg();
+    if (file_size <= 0)
+        return OMEGA_ERR_IO;
+
+    std::vector<uint8_t> file_data(static_cast<size_t>(file_size));
+    f.seekg(0);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    f.read(reinterpret_cast<char*>(file_data.data()), file_size);
+    if (!f)
+        return OMEGA_ERR_IO;
+
+    return session_load_bytes(engine, file_data.data(), file_data.size());
+}
+
+// W5: buffer overload — restores session from raw bytes already in memory.
+omega_status_t session_load(Engine& engine, const uint8_t* data, size_t size)
+{
+    if (data == nullptr || size == 0)
+        return OMEGA_ERR_INVALID;
+    return session_load_bytes(engine, data, size);
 }
 
 }  // namespace omega
