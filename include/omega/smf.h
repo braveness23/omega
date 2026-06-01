@@ -2,7 +2,9 @@
 
 #include <omega/omega.h>
 
+#include <cstddef>
 #include <cstdint>
+#include <vector>
 
 namespace omega
 {
@@ -53,6 +55,23 @@ omega_status_t smf_import(Engine& engine, const char* path, const SmfImportOptio
 omega_status_t smf_import(Engine& engine, const char* path);
 
 /*
+ * Buffer overload (W4 fix): import from raw bytes already in memory.
+ * Avoids the need for a filesystem path (useful in WASM / plugin contexts).
+ *
+ * Returns OMEGA_OK, OMEGA_ERR_INVALID (null data), or OMEGA_ERR_IO (parse
+ * failure).
+ *
+ * Thread: Mutation thread only, engine stopped.
+ */
+omega_status_t smf_import(Engine& engine,
+                          const uint8_t* data,
+                          size_t size,
+                          const SmfImportOptions& opts);
+
+/* Convenience overload: import from buffer with default options. */
+omega_status_t smf_import(Engine& engine, const uint8_t* data, size_t size);
+
+/*
  * Exports the engine session to a Standard MIDI File. smf_type is 0 (single
  * merged track) or 1 (multi-track; track 0 carries tempo/meter/markers). The
  * engine must be stopped.
@@ -63,5 +82,16 @@ omega_status_t smf_import(Engine& engine, const char* path);
  * Thread: Mutation thread only, engine stopped.
  */
 omega_status_t smf_export(Engine& engine, const char* path, int smf_type);
+
+/*
+ * Buffer overload (W4 fix): export to a byte vector instead of a file path.
+ * `out` is cleared and replaced with the SMF bytes on success.
+ * Useful in WASM / plugin contexts where no persistent filesystem exists.
+ *
+ * Returns OMEGA_OK or OMEGA_ERR_IO.
+ *
+ * Thread: Mutation thread only, engine stopped.
+ */
+omega_status_t smf_export(Engine& engine, std::vector<uint8_t>& out, int smf_type);
 
 }  // namespace omega

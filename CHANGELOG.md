@@ -9,6 +9,13 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **`omega_engine_create_with_clock(omega_clock_t*)`** (C API, W2): creates an engine using a caller-supplied C-vtable clock (`now_ns` function pointer + userdata). Enables WASM and plugin consumers to inject a custom clock without the C++ `Engine(ClockSource*)` constructor.
+- **SMF buffer overloads** (W4): `smf_import(Engine&, const uint8_t*, size_t, SmfImportOptions)` and `smf_export(Engine&, std::vector<uint8_t>&, int)`. Eliminates the need for a filesystem path in WASM/plugin contexts. `smf_export.cpp` refactored to share a `build_midifile()` helper; `smf_import.cpp` refactored to share a `process_midifile()` helper.
+- **Session buffer overloads** (W5): `session_save(Engine&, std::vector<uint8_t>&)` and `session_load(Engine&, const uint8_t*, size_t)`. Share `serialize_session()` and `session_load_bytes()` internal helpers with the path-based overloads.
+- **`Engine::replace_track_event_by_index()` and `delete_track_event_by_index()`** (W11): flat-index convenience overloads that compute `(tick, within_tick_index)` internally, eliminating O(n) shims in binding layers.
+- **`Engine::compute_timeline_loop_end()`** (G18): returns the maximum `(event.tick + note_duration)` across all timeline tracks — avoids callers re-implementing the find-max-tick scan before `convert_tracks_to_patterns()`.
+
 ## [1.1.0] — 2026-05-30
 
 ### Added
