@@ -8,6 +8,7 @@
 #include <omega/midi_io.h>
 #include <omega/omega.h>
 #include <omega/perf_slot.h>
+#include <omega/recorder.h>
 #include <omega/region_list.h>
 #include <omega/session.h>
 #include <omega/sink.h>
@@ -1839,6 +1840,94 @@ omega_status_t omega_format_position(const omega_engine_t* e,
     out[p] = '\0';
 
     return OMEGA_OK;
+}
+
+// ── Recorder ──────────────────────────────────────────────────────────────────
+
+// RecorderHolder owns the Recorder and remembers the engine so destroy() can
+// deregister before deleting. The recorder is registered at construction time
+// (MODULATOR priority) so it runs before TimelineSource on every process cycle.
+struct omega_recorder_s  // NOLINT(readability-identifier-naming)
+{
+    explicit omega_recorder_s(omega::Engine& eng, uint32_t sink_id) noexcept
+        : recorder{eng.timeline_source(), sink_id}, engine{eng}
+    {}
+
+    omega::Recorder recorder;
+    omega::Engine& engine;
+};
+
+omega_recorder_t* omega_recorder_create(omega_engine_t* eng, uint32_t sink_id)
+{
+    if (eng == nullptr)
+    {
+        return nullptr;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    auto* holder = new (std::nothrow) omega_recorder_s{eng->engine, sink_id};
+    if (holder == nullptr)
+    {
+        return nullptr;
+    }
+    // Register the Recorder as an EventSource at MODULATOR priority so it runs
+    // before TimelineSource on each process() cycle (recorded notes become
+    // immediately playable without a one-cycle delay).
+    omega_status_t st = eng->engine.add_source(&holder->recorder,
+                                               OMEGA_SOURCE_PRIORITY_MODULATOR);
+    if (st != OMEGA_OK)
+    {
+        // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+        delete holder;
+        return nullptr;
+    }
+    return holder;
+}
+
+void omega_recorder_destroy(omega_engine_t* eng, omega_recorder_t* rec)
+{
+    if (rec == nullptr)
+    {
+        return;
+    }
+    if (eng != nullptr)
+    {
+        // Deregister enqueues a RemoveSourceCmd; the engine processes it on the
+        // next process() call. The caller is responsible for stopping the engine
+        // before calling destroy so no use-after-free occurs on the timing thread.
+        eng->engine.remove_source(&rec->recorder);
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    delete rec;
+}
+
+omega_status_t omega_recorder_start(omega_recorder_t* rec,
+                                    omega_track_id_t track_id,
+                                    uint8_t channel_filter)
+{
+    if (rec == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    rec->recorder.start_recording(static_cast<omega::TrackId>(track_id), channel_filter);
+    return OMEGA_OK;
+}
+
+size_t omega_recorder_stop(omega_recorder_t* rec)
+{
+    if (rec == nullptr)
+    {
+        return 0u;
+    }
+    return rec->recorder.stop_recording();
+}
+
+int omega_recorder_is_recording(const omega_recorder_t* rec)
+{
+    if (rec == nullptr)
+    {
+        return 0;
+    }
+    return rec->recorder.is_recording() ? 1 : 0;
 }
 
 }  // extern "C"

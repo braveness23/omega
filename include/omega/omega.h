@@ -1578,6 +1578,72 @@ OMEGA_API omega_input_t* omega_input_create_midi_in(const char* port_name);
  */
 OMEGA_API void omega_input_destroy_midi_in(omega_input_t* input);
 
+/* ── Recorder ───────────────────────────────────────────────────────────────
+ * Records live MIDI input (delivered via an omega_input_t / the InputBus) into
+ * a timeline track. Wraps omega::Recorder. The recorder is a custom EventSource
+ * registered with the engine at OMEGA_SOURCE_PRIORITY_MODULATOR by
+ * omega_recorder_create(), so recorded notes are immediately playable.
+ *
+ * Note duration: a recorded NOTE_ON is inserted into the track only once its
+ * matching NOTE_OFF arrives (the duration is then known). Notes still held when
+ * omega_recorder_stop() is called are flushed with duration = stop - on.
+ */
+
+typedef struct omega_recorder_s omega_recorder_t;
+
+/*
+ * Creates a Recorder bound to the engine's built-in timeline and registers it
+ * with the engine as a MODULATOR-priority source. Recorded events route to
+ * sink_id (typically the same MIDI-out sink the track plays through).
+ *
+ * The engine must outlive the recorder. Destroy with omega_recorder_destroy().
+ *
+ * Thread: Mutation thread only, before playback starts.
+ *
+ * Returns: a caller-owned recorder handle, or NULL on allocation failure or if
+ * e is NULL.
+ */
+OMEGA_API omega_recorder_t* omega_recorder_create(omega_engine_t* e, uint32_t sink_id);
+
+/*
+ * Deregisters the recorder from the engine and destroys it. The engine must be
+ * stopped (the deregistration is applied synchronously on the next process()
+ * cycle; destroying while playing risks a use-after-free on the timing thread).
+ *
+ * Thread: Mutation thread only, after playback is stopped. No-op if rec is NULL.
+ */
+OMEGA_API void omega_recorder_destroy(omega_engine_t* e, omega_recorder_t* rec);
+
+/*
+ * Arms recording to the given timeline track. Events whose channel matches
+ * channel_filter (0-15) are captured; pass 0xFF to capture all channels.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns: OMEGA_OK on success, OMEGA_ERR_INVALID if rec is NULL.
+ */
+OMEGA_API omega_status_t omega_recorder_start(omega_recorder_t* rec,
+                                              omega_track_id_t track_id,
+                                              uint8_t channel_filter);
+
+/*
+ * Disarms recording. Flushes any still-held notes using the most recent
+ * advance() tick as their note-off tick.
+ *
+ * Thread: Mutation thread only. Must not run concurrently with process().
+ *
+ * Returns: the number of NOTE_ON events inserted into the timeline (0 if rec
+ * is NULL).
+ */
+OMEGA_API size_t omega_recorder_stop(omega_recorder_t* rec);
+
+/*
+ * Returns non-zero while recording is armed, 0 otherwise (or if rec is NULL).
+ *
+ * Thread: Any thread.
+ */
+OMEGA_API int omega_recorder_is_recording(const omega_recorder_t* rec);
+
 /*
  * Gets a modulation channel value from within an advance_fn callback.
  *

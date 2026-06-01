@@ -9,6 +9,9 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **`omega_recorder_*` C API**: exposes `omega::Recorder` to C / FFI consumers. `omega_recorder_create(e, sink_id)` allocates a Recorder and registers it at `OMEGA_SOURCE_PRIORITY_MODULATOR` (recorded notes immediately playable); `omega_recorder_start(rec, track_id, channel_filter)` arms recording; `omega_recorder_stop(rec)` disarms and flushes held notes, returning the event count; `omega_recorder_is_recording(rec)` is thread-safe; `omega_recorder_destroy(e, rec)` deregisters and frees. Motivation: `examples/kcs-win` (.NET P/Invoke) cannot use C++ constructors, so recording was unreachable without a C wrapper. 10 new integration tests in `tests/integration/test_c_api_recorder.cpp`.
+
 ## [1.1.0] — 2026-05-30
 
 ### Added
