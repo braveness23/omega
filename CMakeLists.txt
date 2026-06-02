@@ -82,6 +82,11 @@ if(MINGW)
     set(LIBREMIDI_NO_WINMIDI ON CACHE BOOL "" FORCE)
 endif()
 
+# midifile declares cmake_minimum_required(VERSION 2.8), which CMake 4.x refuses.
+# CMAKE_POLICY_VERSION_MINIMUM (CMake 3.27+) floors the accepted version so the
+# sub-project declaration doesn't abort configure.  Has no effect on CMake < 3.27.
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
+
 FetchContent_MakeAvailable(libremidi midifile)
 
 find_package(Threads REQUIRED)
