@@ -36,7 +36,7 @@ extern "C" {
 
 /* Compile-time version. Use omega_version() for runtime version checking. */
 #define OMEGA_VERSION_MAJOR 1
-#define OMEGA_VERSION_MINOR 0
+#define OMEGA_VERSION_MINOR 1
 #define OMEGA_VERSION_PATCH 0
 
 /* ── Constants ────────────────────────────────────────────────────────────── */
