@@ -158,6 +158,18 @@ omega_status_t omega_engine_set_event_callback(omega_engine_t* eng,
     return OMEGA_OK;
 }
 
+omega_status_t omega_engine_set_dispatch_tap(omega_engine_t* eng,
+                                             omega_dispatch_tap_fn fn,
+                                             void* userdata)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    eng->engine.set_dispatch_tap(fn, userdata);
+    return OMEGA_OK;
+}
+
 omega_status_t omega_engine_add_sink(omega_engine_t* eng, omega_sink_t* sink)
 {
     if (eng == nullptr || sink == nullptr)

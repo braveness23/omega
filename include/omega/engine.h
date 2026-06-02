@@ -891,6 +891,19 @@ public:
                             void* userdata) noexcept;
 
     /*
+     * Registers a per-event dispatch tap that fires from the timing thread
+     * immediately after each event is successfully sent to its sink (i.e., after
+     * mute/solo filtering — only events that actually reach a sink trigger the tap).
+     * Pass nullptr to clear. Userdata is passed through unchanged.
+     *
+     * Use this to drive activity indicators, meters, or any observer that needs
+     * to see every dispatched MIDI event without intercepting the sink chain.
+     *
+     * Thread: Mutation thread only.
+     */
+    void set_dispatch_tap(void (*fn)(const omega_event_t*, void*), void* userdata) noexcept;
+
+    /*
      * Returns true if the given MIDI channel on the specified sink is soloed.
      * Returns false for unregistered sink_id or channel > 15.
      *
@@ -1108,6 +1121,10 @@ private:
     using EventCallbackFn = void (*)(omega_engine_event_t, uint32_t, void*);
     std::atomic<EventCallbackFn> event_cb_fn_{nullptr};
     void* event_cb_userdata_{nullptr};
+
+    using DispatchTapFn = void (*)(const omega_event_t*, void*);
+    std::atomic<DispatchTapFn> dispatch_tap_fn_{nullptr};
+    void* dispatch_tap_userdata_{nullptr};
 };
 
 }  // namespace omega

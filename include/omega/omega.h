@@ -333,6 +333,17 @@ typedef enum
 typedef void (*omega_event_callback_t)(omega_engine_event_t event, uint32_t detail, void* userdata);
 
 /*
+ * Callback for per-event dispatch tap (see omega_engine_set_dispatch_tap).
+ *
+ * ev:       pointer to the dispatched event. Valid only for the duration of the call.
+ * userdata: pointer passed to omega_engine_set_dispatch_tap().
+ *
+ * Constraint: fires from the timing thread. Must not block, allocate, or call
+ * back into the engine.
+ */
+typedef void (*omega_dispatch_tap_fn)(const omega_event_t* ev, void* userdata);
+
+/*
  * Registers an event callback. Pass NULL for cb to clear the callback.
  * Only one callback is supported; setting a new one replaces the previous.
  *
@@ -345,6 +356,24 @@ typedef void (*omega_event_callback_t)(omega_engine_event_t event, uint32_t deta
 OMEGA_API omega_status_t omega_engine_set_event_callback(omega_engine_t* e,
                                                          omega_event_callback_t cb,
                                                          void* userdata);
+
+/*
+ * Registers a per-event dispatch tap. The tap fires from the timing thread
+ * immediately after each event is successfully sent to its sink — that is,
+ * after mute/solo filtering. Only events that actually reach a sink fire the tap;
+ * suppressed events do not.
+ *
+ * Pass NULL for fn to clear a previously registered tap.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK          — tap registered (or cleared).
+ *   OMEGA_ERR_INVALID — e is NULL.
+ */
+OMEGA_API omega_status_t omega_engine_set_dispatch_tap(omega_engine_t* e,
+                                                       omega_dispatch_tap_fn fn,
+                                                       void* userdata);
 
 /*
  * Creates a new engine using the built-in real-time clock.

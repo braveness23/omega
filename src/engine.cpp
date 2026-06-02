@@ -24,8 +24,11 @@ class FilteringDispatcher : public EventDispatcher
 public:
     FilteringDispatcher(const SinkList& sinks,
                         std::vector<Engine::SinkFilterState>& filters,
-                        bool any_soloed) noexcept
-        : EventDispatcher{sinks}, filters_{&filters}, any_soloed_{any_soloed}
+                        bool any_soloed,
+                        void (*tap)(const omega_event_t*, void*),
+                        void* tap_ud) noexcept
+        : EventDispatcher{sinks}, filters_{&filters}, any_soloed_{any_soloed},
+          tap_{tap}, tap_ud_{tap_ud}
     {}
 
     void dispatch(const Event& event) noexcept override
@@ -64,6 +67,10 @@ public:
                     f->active_notes[ch][note >> 3u] &= static_cast<uint8_t>(~(1u << (note & 7u)));
                 }
             }
+            if (tap_ != nullptr)
+            {
+                tap_(&event, tap_ud_);
+            }
         }
     }
 
@@ -82,6 +89,8 @@ private:
 
     std::vector<Engine::SinkFilterState>* filters_;
     bool any_soloed_;
+    void (*tap_)(const omega_event_t*, void*){nullptr};
+    void* tap_ud_;
 };
 
 // ── Undo helpers (file-local) ─────────────────────────────────────────────────
@@ -770,7 +779,8 @@ void Engine::apply(const TransportCmd& cmd)
             ctx.modulation_bus = &mod_bus_;
             ctx.perf_ctx = perf_ctx_;
             FilteringDispatcher dispatcher{
-                sinks_, sink_filters_, any_soloed_.load(std::memory_order_relaxed)};
+                sinks_, sink_filters_, any_soloed_.load(std::memory_order_relaxed),
+                dispatch_tap_fn_.load(std::memory_order_acquire), dispatch_tap_userdata_};
             for (auto& [pri, src] : custom_sources_)
             {
                 src->on_locate(cmd.locate_tick, dispatcher, ctx);
@@ -1393,7 +1403,8 @@ void Engine::process()
     ctx.perf_ctx = perf_ctx_;
 
     FilteringDispatcher dispatcher{
-        sinks_, sink_filters_, any_soloed_.load(std::memory_order_relaxed)};
+        sinks_, sink_filters_, any_soloed_.load(std::memory_order_relaxed),
+        dispatch_tap_fn_.load(std::memory_order_acquire), dispatch_tap_userdata_};
 
     // Loop detection: when the transport has reached or passed loop_end_tick_,
     // locate all sources back to loop_start_tick_ and resume from there.
@@ -1561,6 +1572,12 @@ void Engine::set_event_callback(void (*cb)(omega_engine_event_t, uint32_t, void*
 {
     event_cb_userdata_ = userdata;
     event_cb_fn_.store(cb, std::memory_order_release);
+}
+
+void Engine::set_dispatch_tap(void (*fn)(const omega_event_t*, void*), void* userdata) noexcept
+{
+    dispatch_tap_userdata_ = userdata;
+    dispatch_tap_fn_.store(fn, std::memory_order_release);
 }
 
 void Engine::fire_event(omega_engine_event_t event, uint32_t detail) noexcept
