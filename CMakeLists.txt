@@ -73,6 +73,15 @@ if(OMEGA_BUILD_TESTS)
     FetchContent_MakeAvailable(Catch2)
 endif()
 
+# libremidi: WinRT/UWP (WinUWP) and WinMIDI backends require cppwinrt headers
+# that are absent under mingw.  Disable them automatically so omega consumers
+# don't need to add workarounds themselves; the WinMM backend remains available
+# and is sufficient for classic MIDI I/O.
+if(MINGW)
+    set(LIBREMIDI_NO_WINUWP  ON CACHE BOOL "" FORCE)
+    set(LIBREMIDI_NO_WINMIDI ON CACHE BOOL "" FORCE)
+endif()
+
 FetchContent_MakeAvailable(libremidi midifile)
 
 find_package(Threads REQUIRED)
