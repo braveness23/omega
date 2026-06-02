@@ -337,6 +337,55 @@ struct ReplaceTrackEventCmd
     Event replacement;
 };
 
+// ── Id-addressed timeline event edits ─────────────────────────────────────────
+
+/*
+ * Replaces the timeline track event identified by the stable id `id`.
+ *
+ * Unlike ReplaceTrackEventCmd (positional tick+index), the id keeps naming the
+ * same event across intervening tick-changing edits, so a multi-event gesture
+ * can be expressed as a batch of these without re-snapshotting between commits.
+ * Undoable. If id does not resolve when applied, it is a silent no-op.
+ */
+struct ReplaceEventByIdCmd
+{
+    TrackId track;
+    omega_event_id_t id;
+    Event replacement;
+};
+
+/* Deletes the timeline track event identified by stable id `id`. Undoable. */
+struct DeleteEventByIdCmd
+{
+    TrackId track;
+    omega_event_id_t id;
+};
+
+/*
+ * Re-inserts an event reusing a specific id (rather than allocating a fresh
+ * one). Generated internally as the inverse of a delete-by-id so that undo
+ * restores the event under its original identity. Undoable.
+ */
+struct InsertEventWithIdCmd
+{
+    TrackId track;
+    omega_event_id_t id;
+    Event event;
+};
+
+// ── Edit-group (undo transaction) commands ────────────────────────────────────
+
+/*
+ * Opens an edit group: undoable edits applied until the matching EndEditGroupCmd
+ * collapse into a single undo step. Groups do not nest.
+ */
+struct BeginEditGroupCmd
+{};
+
+/* Closes the current edit group (no-op if none is open). */
+struct EndEditGroupCmd
+{};
+
 // ── Track mute / solo commands ────────────────────────────────────────────────
 
 /*
@@ -430,6 +479,11 @@ using Command = std::variant<AddEventCmd,
                              SetTrackMuteCmd,
                              SetTrackSoloCmd,
                              ReplaceTrackEventCmd,
+                             ReplaceEventByIdCmd,
+                             DeleteEventByIdCmd,
+                             InsertEventWithIdCmd,
+                             BeginEditGroupCmd,
+                             EndEditGroupCmd,
                              UndoCmd,
                              RedoCmd>;
 

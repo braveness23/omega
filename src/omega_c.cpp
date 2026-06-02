@@ -349,6 +349,65 @@ omega_status_t omega_engine_delete_track_event(omega_engine_t* eng,
     return eng->engine.enqueue(omega::DeleteEventCmd{track, tick, index});
 }
 
+omega_status_t omega_engine_track_copy_events(const omega_engine_t* eng,
+                                              omega_track_id_t track,
+                                              omega_tick_t lo,
+                                              omega_tick_t hi,
+                                              uint8_t tag_filter,
+                                              omega_event_t* out_events,
+                                              omega_event_id_t* out_ids,
+                                              size_t cap,
+                                              size_t* total_out)
+{
+    if (eng == nullptr || (out_events == nullptr && cap > 0u))
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.copy_track_events(
+        track, lo, hi, tag_filter, out_events, out_ids, cap, total_out);
+}
+
+omega_status_t omega_engine_replace_event_by_id(omega_engine_t* eng,
+                                                omega_track_id_t track,
+                                                omega_event_id_t id,
+                                                omega_event_t replacement)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.replace_event_by_id(track, id, replacement);
+}
+
+omega_status_t omega_engine_delete_event_by_id(omega_engine_t* eng,
+                                               omega_track_id_t track,
+                                               omega_event_id_t id)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.delete_event_by_id(track, id);
+}
+
+omega_status_t omega_engine_begin_edit_group(omega_engine_t* eng, const char* /*label*/)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.begin_edit_group();
+}
+
+omega_status_t omega_engine_end_edit_group(omega_engine_t* eng)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.end_edit_group();
+}
+
 // ── Track read API ────────────────────────────────────────────────────────────
 
 uint32_t omega_engine_track_count(const omega_engine_t* eng)

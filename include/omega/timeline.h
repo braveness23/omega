@@ -81,12 +81,25 @@ public:
     [[nodiscard]] bool track_is_soloed(TrackId track_id) const noexcept;
 
     /*
-     * Inserts an event in tick-sorted order.
+     * Inserts an event in tick-sorted order and assigns it a fresh stable id.
+     * If out_id is non-NULL, the assigned id is written there.
      * Thread: Timing thread only (called from engine command queue drain).
      *
      * Returns OMEGA_ERR_NOT_FOUND if track_id is not registered.
      */
-    omega_status_t add_event(TrackId track_id, const Event& event);
+    omega_status_t add_event(TrackId track_id,
+                             const Event& event,
+                             omega_event_id_t* out_id = nullptr);
+
+    /*
+     * Re-inserts an event in tick-sorted order reusing an existing id (rather
+     * than allocating a fresh one). Used to restore a deleted event during undo
+     * so that any id-addressed references to it remain valid.
+     * Thread: Timing thread only.
+     *
+     * Returns OMEGA_ERR_NOT_FOUND if track_id is not registered.
+     */
+    omega_status_t insert_event_with_id(TrackId track_id, omega_event_id_t id, const Event& event);
 
     /*
      * Removes the event at (tick, index) within that tick's run.
@@ -95,6 +108,50 @@ public:
      * Returns OMEGA_ERR_NOT_FOUND if the event does not exist.
      */
     omega_status_t remove_event(TrackId track_id, uint64_t tick, uint32_t index);
+
+    /*
+     * Removes the event with the given stable id.
+     * Thread: Timing thread only.
+     *
+     * Returns OMEGA_ERR_NOT_FOUND if track_id or id is not found.
+     */
+    omega_status_t remove_event_by_id(TrackId track_id, omega_event_id_t id);
+
+    /*
+     * Replaces the event with the given stable id. If replacement.tick differs
+     * from the event's current tick, the event is moved to its new sorted
+     * position while keeping the same id.
+     * Thread: Timing thread only.
+     *
+     * Returns OMEGA_ERR_NOT_FOUND if track_id or id is not found.
+     */
+    omega_status_t replace_event_by_id(TrackId track_id,
+                                       omega_event_id_t id,
+                                       const Event& replacement);
+
+    /*
+     * Copies the event for the given id into *out (if found). Returns true on
+     * success, false if track_id or id is not found. Thread: any thread with the
+     * usual no-concurrent-mutation rule.
+     */
+    [[nodiscard]] bool event_for_id(TrackId track_id, omega_event_id_t id, Event* out) const noexcept;
+
+    /*
+     * Bulk-copies events in [lo, hi) (optionally filtered by payload tag) into
+     * caller buffers, in tick order. Writes min(total, cap) events to out_events
+     * and (if non-NULL) their ids to out_ids; sets *out_total to the full match
+     * count. Thread: Mutation thread only.
+     *
+     * Returns OMEGA_ERR_NOT_FOUND if track_id is not registered, else OMEGA_OK.
+     */
+    omega_status_t copy_events(TrackId track_id,
+                               uint64_t lo,
+                               uint64_t hi,
+                               uint8_t tag_filter,
+                               Event* out_events,
+                               omega_event_id_t* out_ids,
+                               size_t cap,
+                               size_t* out_total) const;
 
     /*
      * Replaces the event at (tick, index) with replacement.
@@ -162,8 +219,18 @@ private:
     [[nodiscard]] Track* find_track(TrackId id) noexcept;
     [[nodiscard]] const Track* find_track(TrackId id) const noexcept;
 
+    /* Inserts event+id at the tick-sorted position, keeping events/ids parallel. */
+    static void insert_sorted(Track& trk, const Event& event, omega_event_id_t id);
+
+    /* Returns the offset of id within trk, or -1 if absent. */
+    [[nodiscard]] static int64_t find_id_offset(const Track& trk, omega_event_id_t id) noexcept;
+
     std::vector<Track> tracks_;
     TrackId next_id_{1};
+
+    // Monotonic source of stable event ids; never reuses a value. Reset by
+    // clear_tracks(). Timing-thread-owned (only touched inside mutators).
+    omega_event_id_t next_event_id_{1};
 
     uint64_t next_tick_{0};  // first tick to dispatch on next advance()
     bool started_{false};    // false until first advance() call

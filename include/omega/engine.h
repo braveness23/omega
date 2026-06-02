@@ -639,6 +639,67 @@ public:
                                        const Event& replacement);
 
     /*
+     * Enqueues a command to replace the timeline track event identified by the
+     * stable id `id`. Robust across intervening tick-changing edits (the id
+     * keeps naming the same event after a re-sort), so a multi-note edit can be
+     * expressed as a batch without re-snapshotting between commits. Undoable;
+     * participates in edit groups. If id does not resolve when applied, no-op.
+     *
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t replace_event_by_id(TrackId track_id,
+                                       omega_event_id_t id,
+                                       const Event& replacement);
+
+    /*
+     * Enqueues a command to delete the timeline track event identified by stable
+     * id `id`. Undoable; participates in edit groups.
+     *
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t delete_event_by_id(TrackId track_id, omega_event_id_t id);
+
+    /*
+     * Bulk-copies events of a track in [lo, hi) (optionally tag-filtered) into
+     * caller buffers, in tick order. Writes min(total, cap) events to out_events
+     * and (if non-NULL) their stable ids to out_ids; sets *out_total to the full
+     * match count. The single-call read path for graphical editors.
+     *
+     * Thread: Mutation thread only. Must not be called concurrently with process().
+     *
+     * Returns OMEGA_ERR_NOT_FOUND if track_id is not registered, else OMEGA_OK.
+     */
+    omega_status_t copy_track_events(TrackId track_id,
+                                     uint64_t lo,
+                                     uint64_t hi,
+                                     uint8_t tag_filter,
+                                     Event* out_events,
+                                     omega_event_id_t* out_ids,
+                                     size_t cap,
+                                     size_t* out_total) const;
+
+    /*
+     * Opens / closes an edit group. Undoable edits enqueued between begin and end
+     * collapse into a single undo step. Groups do not nest. Safe during playback.
+     *
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t begin_edit_group();
+    omega_status_t end_edit_group();
+
+    /*
      * Shifts all events in a track by offset_ticks. Positive values delay the
      * track; negative values advance it. Events that would shift before tick 0
      * are clamped to tick 0. Re-sorts the event vector once at the end.
@@ -970,6 +1031,10 @@ private:
     {
         Command undo_cmd;
         Command redo_cmd;
+        // Edit-group id this entry belongs to; 0 = standalone. Undo/redo of a
+        // nonzero group revert/re-apply all consecutive entries sharing the id
+        // as one step. Stamped by push_history() from current_group_.
+        uint32_t group{0};
     };
 
     // Depth cap for both stacks.  64 levels uses ≈ 16 KiB (128 bytes × 64 × 2).
@@ -1023,6 +1088,11 @@ private:
     void apply(const SetTrackMuteCmd& cmd);
     void apply(const SetTrackSoloCmd& cmd);
     void apply(const ReplaceTrackEventCmd& cmd);
+    void apply(const ReplaceEventByIdCmd& cmd);
+    void apply(const DeleteEventByIdCmd& cmd);
+    void apply(const InsertEventWithIdCmd& cmd);
+    void apply(const BeginEditGroupCmd& cmd);
+    void apply(const EndEditGroupCmd& cmd);
 
     /*
      * Flushes active notes for a given channel mask.
@@ -1085,6 +1155,11 @@ private:
     std::vector<HistoryEntry> undo_history_;
     std::vector<HistoryEntry> redo_history_;
     bool applying_undo_redo_{false};
+
+    // Edit-group state — timing-thread-owned. current_group_ is the id stamped
+    // onto history entries (0 = no open group); next_group_ hands out fresh ids.
+    uint32_t current_group_{0};
+    uint32_t next_group_{1};
 
     detail::SpscQueue<Command, 4096> queue_;
     TempoMap tempo_map_;

@@ -49,6 +49,22 @@ extern "C" {
 /* Musical time in ticks from session start. */
 typedef uint64_t omega_tick_t;
 
+/* ── Event identity ───────────────────────────────────────────────────────── */
+
+/*
+ * Opaque, stable identity for a timeline track event. Assigned when an event is
+ * added and never reused within an engine's lifetime. Unlike the positional
+ * (tick, index) addressing used by omega_engine_replace_track_event /
+ * _delete_track_event, an id continues to name the same event after a
+ * tick-changing edit re-sorts the track — which is what a graphical editor needs
+ * when moving several selected notes at once. Obtain ids from
+ * omega_engine_track_copy_events(); use them with the *_event_by_id() mutators.
+ */
+typedef uint64_t omega_event_id_t;
+
+/* Sentinel for "no event" — never assigned to a real event. */
+#define OMEGA_INVALID_EVENT_ID 0ull
+
 /* ── Version ──────────────────────────────────────────────────────────────── */
 
 typedef struct
@@ -740,6 +756,110 @@ OMEGA_API omega_status_t omega_engine_track_for_each_event(const omega_engine_t*
                                                                       const omega_event_t* event,
                                                                       void* userdata),
                                                            void* userdata);
+
+/*
+ * Bulk-copies the events of a timeline track whose tick falls in the half-open
+ * window [lo, hi) into caller-provided buffers, in tick-sorted order. This is
+ * the read path a graphical editor (e.g. a piano roll) wants: a single call that
+ * returns just the visible slice with no per-event callback marshaling.
+ *
+ * tag_filter: 0xFF = all payload tags; a specific value matches only that tag.
+ * out_events: receives up to `cap` events. May be NULL only if cap == 0 (in
+ *             which case the call just reports the match count via *total_out).
+ * out_ids:    optional, parallel to out_events; receives each event's stable
+ *             omega_event_id_t. Pass NULL if ids are not needed.
+ * cap:        capacity of out_events / out_ids in elements.
+ * total_out:  optional; receives the TOTAL number of events matching the window
+ *             and filter, even if it exceeds cap. The number actually written is
+ *             min(*total_out, cap); a caller that finds *total_out > cap can grow
+ *             its buffer and call again.
+ *
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ *
+ * Returns:
+ *   OMEGA_OK            — copy completed (zero or more events written).
+ *   OMEGA_ERR_INVALID   — e is NULL, or out_events is NULL with cap > 0.
+ *   OMEGA_ERR_NOT_FOUND — track is not registered.
+ */
+OMEGA_API omega_status_t omega_engine_track_copy_events(const omega_engine_t* e,
+                                                        omega_track_id_t track,
+                                                        omega_tick_t lo,
+                                                        omega_tick_t hi,
+                                                        uint8_t tag_filter,
+                                                        omega_event_t* out_events,
+                                                        omega_event_id_t* out_ids,
+                                                        size_t cap,
+                                                        size_t* total_out);
+
+/*
+ * Replaces the timeline track event identified by the stable id with
+ * replacement. Unlike omega_engine_replace_track_event (which addresses by
+ * positional tick+index and is invalidated when an earlier edit re-sorts the
+ * track), this remains correct across intervening tick-changing edits — so a
+ * multi-note drag can replace every selected event without re-snapshotting
+ * between commits. The id survives the edit even if replacement.tick differs.
+ * Undoable; participates in edit groups (see omega_engine_begin_edit_group).
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ *
+ * If the id does not resolve when the command is applied on the timing thread,
+ * it is a silent no-op (mirrors the positional mutators' async error contract).
+ */
+OMEGA_API omega_status_t omega_engine_replace_event_by_id(omega_engine_t* e,
+                                                          omega_track_id_t track,
+                                                          omega_event_id_t id,
+                                                          omega_event_t replacement);
+
+/*
+ * Deletes the timeline track event identified by the stable id. Robust under
+ * multi-event edits for the same reason as omega_engine_replace_event_by_id.
+ * Undoable; participates in edit groups.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_engine_delete_event_by_id(omega_engine_t* e,
+                                                         omega_track_id_t track,
+                                                         omega_event_id_t id);
+
+/*
+ * Opens an edit group: every undoable edit enqueued between this call and the
+ * matching omega_engine_end_edit_group() collapses into a single undo step, so
+ * one user gesture (e.g. transposing a 10-note chord) is reverted by one
+ * omega_engine_undo() instead of ten. Groups do not nest; a second begin before
+ * an end simply starts a new group id. `label` is reserved for future tooling
+ * and currently ignored (may be NULL).
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_engine_begin_edit_group(omega_engine_t* e, const char* label);
+
+/*
+ * Closes the current edit group. Edits enqueued after this are undone
+ * individually again. A no-op if no group is open.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_engine_end_edit_group(omega_engine_t* e);
 
 /*
  * Enqueues a PLAY command. Playback begins on the next process() call.
