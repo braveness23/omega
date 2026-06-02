@@ -325,6 +325,161 @@ omega_status_t omega_engine_add_event(omega_engine_t* eng, omega_track_id_t trac
     return eng->engine.enqueue(omega::AddEventCmd{track, ev});
 }
 
+omega_status_t omega_engine_delete_track_event(omega_engine_t* eng,
+                                               omega_track_id_t track,
+                                               omega_tick_t tick,
+                                               uint32_t index)
+{
+    if (eng == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.enqueue(omega::DeleteEventCmd{track, tick, index});
+}
+
+// ── Track read API ────────────────────────────────────────────────────────────
+
+uint32_t omega_engine_track_count(const omega_engine_t* eng)
+{
+    if (eng == nullptr)
+    {
+        return 0u;
+    }
+    return static_cast<uint32_t>(eng->engine.timeline_source().tracks().size());
+}
+
+omega_status_t omega_engine_track_for_each(const omega_engine_t* eng,
+                                           void (*cb)(omega_track_id_t id, void* userdata),
+                                           void* userdata)
+{
+    if (eng == nullptr || cb == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    for (const auto& t : eng->engine.timeline_source().tracks())
+    {
+        cb(t.id, userdata);
+    }
+    return OMEGA_OK;
+}
+
+omega_status_t omega_engine_track_name(const omega_engine_t* eng,
+                                       omega_track_id_t track,
+                                       char* buf,
+                                       size_t buf_size)
+{
+    if (eng == nullptr || buf == nullptr || buf_size == 0u)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    for (const auto& t : eng->engine.timeline_source().tracks())
+    {
+        if (t.id != track)
+        {
+            continue;
+        }
+        const size_t n = std::min(t.name.size(), buf_size - 1u);
+        std::memcpy(buf, t.name.data(), n);
+        buf[n] = '\0';
+        return OMEGA_OK;
+    }
+    buf[0] = '\0';
+    return OMEGA_ERR_NOT_FOUND;
+}
+
+uint8_t omega_engine_track_channel(const omega_engine_t* eng, omega_track_id_t track)
+{
+    if (eng == nullptr)
+    {
+        return 0xFFu;
+    }
+    for (const auto& t : eng->engine.timeline_source().tracks())
+    {
+        if (t.id == track)
+        {
+            return t.channel;
+        }
+    }
+    return 0xFFu;
+}
+
+omega_status_t omega_engine_track_event_count(const omega_engine_t* eng,
+                                              omega_track_id_t track,
+                                              uint32_t* count_out)
+{
+    if (eng == nullptr || count_out == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    for (const auto& t : eng->engine.timeline_source().tracks())
+    {
+        if (t.id != track)
+        {
+            continue;
+        }
+        *count_out = static_cast<uint32_t>(t.events.size());
+        return OMEGA_OK;
+    }
+    return OMEGA_ERR_NOT_FOUND;
+}
+
+omega_status_t omega_engine_track_event_at(const omega_engine_t* eng,
+                                           omega_track_id_t track,
+                                           uint32_t idx,
+                                           omega_event_t* event_out)
+{
+    if (eng == nullptr || event_out == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    for (const auto& t : eng->engine.timeline_source().tracks())
+    {
+        if (t.id != track)
+        {
+            continue;
+        }
+        if (idx >= static_cast<uint32_t>(t.events.size()))
+        {
+            return OMEGA_ERR_NOT_FOUND;
+        }
+        *event_out = t.events[idx];
+        return OMEGA_OK;
+    }
+    return OMEGA_ERR_NOT_FOUND;
+}
+
+omega_status_t omega_engine_track_for_each_event(const omega_engine_t* eng,
+                                                 omega_track_id_t track,
+                                                 uint8_t channel_filter,
+                                                 uint8_t tag_filter,
+                                                 void (*cb)(uint32_t, const omega_event_t*, void*),
+                                                 void* userdata)
+{
+    if (eng == nullptr || cb == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    for (const auto& t : eng->engine.timeline_source().tracks())
+    {
+        if (t.id != track)
+        {
+            continue;
+        }
+        for (uint32_t i = 0; i < static_cast<uint32_t>(t.events.size()); ++i)
+        {
+            const auto& ev = t.events[i];
+            const bool ch_match  = (channel_filter == 0xFFu) || (ev.channel == channel_filter);
+            const bool tag_match = (tag_filter == 0xFFu) || (ev.payload_tag == tag_filter);
+            if (ch_match && tag_match)
+            {
+                cb(i, &ev, userdata);
+            }
+        }
+        return OMEGA_OK;
+    }
+    return OMEGA_ERR_NOT_FOUND;
+}
+
 omega_status_t omega_engine_play(omega_engine_t* eng)
 {
     if (eng == nullptr)

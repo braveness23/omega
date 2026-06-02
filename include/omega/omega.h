@@ -585,6 +585,134 @@ OMEGA_API omega_status_t omega_engine_add_event(omega_engine_t* e,
                                                 omega_event_t ev);
 
 /*
+ * Removes the track event at (tick, index) by enqueueing a DeleteEventCmd.
+ * index is the 0-based position among events sharing tick. Undo/redo aware;
+ * safe during playback (applied at the start of the next process() cycle).
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ *
+ * Note: OMEGA_ERR_NOT_FOUND (no event at tick/index) is detected on the timing
+ * thread; the function itself returns OMEGA_OK as long as enqueueing succeeded.
+ */
+OMEGA_API omega_status_t omega_engine_delete_track_event(omega_engine_t* e,
+                                                         omega_track_id_t track,
+                                                         omega_tick_t tick,
+                                                         uint32_t index);
+
+/* ── Track read API ───────────────────────────────────────────────────────── */
+
+/*
+ * Returns the number of timeline tracks.
+ *
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ *
+ * Returns: track count; 0 if e is NULL.
+ */
+OMEGA_API uint32_t omega_engine_track_count(const omega_engine_t* e);
+
+/*
+ * Iterates all timeline tracks in vector order, invoking cb(id, userdata) for
+ * each. The id is stable (never reused) and equals the value returned by
+ * omega_engine_add_track() when the track was created.
+ *
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ *
+ * Returns:
+ *   OMEGA_OK          — iteration completed (zero or more tracks visited).
+ *   OMEGA_ERR_INVALID — e or cb is NULL.
+ */
+OMEGA_API omega_status_t omega_engine_track_for_each(const omega_engine_t* e,
+                                                     void (*cb)(omega_track_id_t id,
+                                                                void* userdata),
+                                                     void* userdata);
+
+/*
+ * Copies the track name into buf (null-terminated; truncated to buf_size - 1
+ * characters if the name is longer). Sets buf[0] to '\0' on NOT_FOUND.
+ *
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ *
+ * Returns:
+ *   OMEGA_OK            — name written into buf.
+ *   OMEGA_ERR_INVALID   — e or buf is NULL, or buf_size is 0.
+ *   OMEGA_ERR_NOT_FOUND — track is not registered.
+ */
+OMEGA_API omega_status_t omega_engine_track_name(const omega_engine_t* e,
+                                                 omega_track_id_t track,
+                                                 char* buf,
+                                                 size_t buf_size);
+
+/*
+ * Returns the representative MIDI channel (0-15) for a track.
+ * Returns 0xFF if e is NULL or track is not registered.
+ *
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ */
+OMEGA_API uint8_t omega_engine_track_channel(const omega_engine_t* e,
+                                             omega_track_id_t track);
+
+/*
+ * Returns the number of events in a timeline track via *count_out.
+ *
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ *
+ * Returns:
+ *   OMEGA_OK            — *count_out written.
+ *   OMEGA_ERR_INVALID   — e or count_out is NULL.
+ *   OMEGA_ERR_NOT_FOUND — track is not registered.
+ */
+OMEGA_API omega_status_t omega_engine_track_event_count(const omega_engine_t* e,
+                                                        omega_track_id_t track,
+                                                        uint32_t* count_out);
+
+/*
+ * Copies the event at zero-based index idx in the track's sorted event vector
+ * into *event_out.
+ *
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ *
+ * Returns:
+ *   OMEGA_OK            — *event_out written.
+ *   OMEGA_ERR_INVALID   — e or event_out is NULL.
+ *   OMEGA_ERR_NOT_FOUND — track is not registered, or idx >= event count.
+ */
+OMEGA_API omega_status_t omega_engine_track_event_at(const omega_engine_t* e,
+                                                     omega_track_id_t track,
+                                                     uint32_t idx,
+                                                     omega_event_t* event_out);
+
+/*
+ * Iterates events in a timeline track, invoking cb for each matching event.
+ *
+ * channel_filter: 0xFF = all channels; 0-15 = match specific channel.
+ * tag_filter:     0xFF = all payload tags; specific value = match that tag.
+ *
+ * The callback receives the zero-based event index (in the unfiltered track
+ * vector), a pointer to the event (valid only for the callback's duration),
+ * and the caller-supplied userdata.
+ *
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ *
+ * Returns:
+ *   OMEGA_OK            — iteration completed (zero or more events visited).
+ *   OMEGA_ERR_INVALID   — e or cb is NULL.
+ *   OMEGA_ERR_NOT_FOUND — track is not registered.
+ */
+OMEGA_API omega_status_t omega_engine_track_for_each_event(const omega_engine_t* e,
+                                                           omega_track_id_t track,
+                                                           uint8_t channel_filter,
+                                                           uint8_t tag_filter,
+                                                           void (*cb)(uint32_t index,
+                                                                      const omega_event_t* event,
+                                                                      void* userdata),
+                                                           void* userdata);
+
+/*
  * Enqueues a PLAY command. Playback begins on the next process() call.
  *
  * Thread: Mutation thread only.
