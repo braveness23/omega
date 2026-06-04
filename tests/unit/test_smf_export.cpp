@@ -1,5 +1,6 @@
 #include <omega/engine.h>
 #include <omega/marker_list.h>
+#include <omega/meta_event.h>
 #include <omega/omega.h>
 #include <omega/tempo_map.h>
 #include <omega/time_signature_map.h>
@@ -116,6 +117,170 @@ TEST_CASE("SMF export: round-trip Type 1 - two tracks", "[smf_export]")
 
     std::remove(path_in.c_str());
     std::remove(path_out.c_str());
+}
+
+TEST_CASE("SMF export: track names round-trip through Type 1", "[smf_export]")
+{
+    const std::string path = tmp_path("rt_tracknames");
+
+    omega::Engine eng_out;
+    omega::TrackId t0 = eng_out.add_track("Bass");
+    omega::TrackId t1 = eng_out.add_track("Lead Synth");
+
+    auto note = [](omega::TrackId, uint8_t pitch) {
+        omega::Event ev{};
+        ev.tick = 0u;
+        ev.payload_tag = OMEGA_NOTE_ON;
+        ev.channel = 0u;
+        ev.data[0] = pitch;
+        ev.data[1] = 100u;
+        uint32_t dur = 240u;
+        std::memcpy(&ev.data[2], &dur, sizeof(dur));
+        return ev;
+    };
+    eng_out.add_track_event(t0, note(t0, 36u));
+    eng_out.add_track_event(t1, note(t1, 72u));
+
+    REQUIRE(omega::smf_export(eng_out, path.c_str(), 1) == OMEGA_OK);
+
+    omega::Engine eng_in;
+    REQUIRE(omega::smf_import(eng_in, path.c_str()) == OMEGA_OK);
+
+    const auto& tracks = eng_in.timeline_source().tracks();
+    REQUIRE(tracks.size() == 2u);
+    CHECK(tracks[0].name == "Bass");
+    CHECK(tracks[1].name == "Lead Synth");
+
+    std::remove(path.c_str());
+}
+
+TEST_CASE("SMF export: track names are not written in Type 0", "[smf_export]")
+{
+    const std::string path = tmp_path("type0_noname");
+
+    omega::Engine eng_out;
+    omega::TrackId t0 = eng_out.add_track("Bass");
+    omega::Event ev{};
+    ev.tick = 0u;
+    ev.payload_tag = OMEGA_NOTE_ON;
+    ev.channel = 0u;
+    ev.data[0] = 36u;
+    ev.data[1] = 100u;
+    uint32_t dur = 240u;
+    std::memcpy(&ev.data[2], &dur, sizeof(dur));
+    eng_out.add_track_event(t0, ev);
+
+    REQUIRE(omega::smf_export(eng_out, path.c_str(), 0) == OMEGA_OK);
+
+    // Re-importing a Type 0 file yields the synthetic name, confirming no FF 03
+    // was emitted (a track name would have survived the round-trip).
+    omega::Engine eng_in;
+    REQUIRE(omega::smf_import(eng_in, path.c_str()) == OMEGA_OK);
+    const auto& tracks = eng_in.timeline_source().tracks();
+    REQUIRE(tracks.size() == 1u);
+    CHECK(tracks[0].name == "track_0");
+
+    std::remove(path.c_str());
+}
+
+namespace
+{
+// Returns the text of the first meta event of `type` in `v`, or "" if none.
+std::string meta_text(const std::pmr::vector<omega::MetaEvent>& v, uint8_t type)
+{
+    for (const auto& m : v)
+    {
+        if (m.type == type)
+        {
+            return m.text;
+        }
+    }
+    return {};
+}
+std::string meta_text(const std::vector<omega::MetaEvent>& v, uint8_t type)
+{
+    for (const auto& m : v)
+    {
+        if (m.type == type)
+        {
+            return m.text;
+        }
+    }
+    return {};
+}
+}  // namespace
+
+TEST_CASE("SMF export: track and session meta round-trip through Type 1", "[smf_export]")
+{
+    const std::string path = tmp_path("rt_meta");
+
+    omega::Engine eng_out;
+    omega::TrackId tid = eng_out.add_track("Piano");
+
+    omega::Event ev{};
+    ev.tick = 0u;
+    ev.payload_tag = OMEGA_NOTE_ON;
+    ev.channel = 0u;
+    ev.data[0] = 60u;
+    ev.data[1] = 100u;
+    uint32_t dur = 240u;
+    std::memcpy(&ev.data[2], &dur, sizeof(dur));
+    eng_out.add_track_event(tid, ev);
+
+    // Track-scoped meta: instrument name (FF 04) and a positional lyric (FF 05).
+    eng_out.add_track_meta(tid, omega::MetaEvent{0u, 0x04u, "Grand Piano"});
+    eng_out.add_track_meta(tid, omega::MetaEvent{240u, 0x05u, "la"});
+    // Session-level meta: copyright (FF 02) and text (FF 01) — conductor-track.
+    eng_out.session_meta().push_back(omega::MetaEvent{0u, 0x02u, "(c) 2026 omega"});
+    eng_out.session_meta().push_back(omega::MetaEvent{0u, 0x01u, "demo song"});
+
+    REQUIRE(omega::smf_export(eng_out, path.c_str(), 1) == OMEGA_OK);
+
+    omega::Engine eng_in;
+    REQUIRE(omega::smf_import(eng_in, path.c_str()) == OMEGA_OK);
+
+    const auto& tracks = eng_in.timeline_source().tracks();
+    REQUIRE(tracks.size() == 1u);
+    CHECK(tracks[0].name == "Piano");
+    CHECK(meta_text(tracks[0].meta, 0x04u) == "Grand Piano");
+    CHECK(meta_text(tracks[0].meta, 0x05u) == "la");
+
+    CHECK(meta_text(eng_in.session_meta(), 0x02u) == "(c) 2026 omega");
+    CHECK(meta_text(eng_in.session_meta(), 0x01u) == "demo song");
+
+    std::remove(path.c_str());
+}
+
+TEST_CASE("SMF export: positional lyric keeps its tick across round-trip", "[smf_export]")
+{
+    const std::string path = tmp_path("rt_lyric_tick");
+
+    omega::Engine eng_out;
+    omega::TrackId tid = eng_out.add_track("Vox");
+    omega::Event ev{};
+    ev.tick = 0u;
+    ev.payload_tag = OMEGA_NOTE_ON;
+    ev.channel = 0u;
+    ev.data[0] = 64u;
+    ev.data[1] = 90u;
+    uint32_t dur = 480u;
+    std::memcpy(&ev.data[2], &dur, sizeof(dur));
+    eng_out.add_track_event(tid, ev);
+    eng_out.add_track_meta(tid, omega::MetaEvent{960u, 0x05u, "world"});
+
+    REQUIRE(omega::smf_export(eng_out, path.c_str(), 1) == OMEGA_OK);
+
+    omega::Engine eng_in;
+    REQUIRE(omega::smf_import(eng_in, path.c_str()) == OMEGA_OK);
+
+    const auto& tracks = eng_in.timeline_source().tracks();
+    REQUIRE(tracks.size() == 1u);
+    REQUIRE(tracks[0].meta.size() == 1u);
+    CHECK(tracks[0].meta[0].type == 0x05u);
+    CHECK(tracks[0].meta[0].text == "world");
+    CHECK(tracks[0].meta[0].tick == 960u);
+
+    std::remove(path.c_str());
 }
 
 TEST_CASE("SMF export: round-trip tempo changes", "[smf_export]")

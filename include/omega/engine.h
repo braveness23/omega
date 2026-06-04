@@ -8,6 +8,7 @@
 #include <omega/event_source.h>
 #include <omega/input_bus.h>
 #include <omega/marker_list.h>
+#include <omega/meta_event.h>
 #include <omega/modulation_bus.h>
 #include <omega/omega.h>
 #include <omega/pattern_library.h>
@@ -262,6 +263,16 @@ public:
      * Returns OMEGA_ERR_NOT_FOUND if track_id is not registered.
      */
     omega_status_t set_track_name(TrackId track_id, std::string name);
+
+    /*
+     * Appends an SMF text-class meta event (text, instrument name, lyric, …) to
+     * a track's metadata store. Descriptive only; never read by the timing
+     * thread. Applied directly, not via the command queue.
+     * Thread: Mutation thread only.
+     *
+     * Returns OMEGA_ERR_NOT_FOUND if track_id is not registered.
+     */
+    omega_status_t add_track_meta(TrackId track_id, MetaEvent meta);
 
     /*
      * Enqueues a command to mute/solo a timeline track. While any track is
@@ -619,6 +630,19 @@ public:
     [[nodiscard]] const RegionList& region_list() const noexcept { return region_list_; }
 
     /*
+     * Session-level SMF meta events with no per-track home — typically a
+     * file-level copyright or text carried on a note-less conductor track, which
+     * omega deliberately does not materialize as a timeline track. Preserved so
+     * such metadata round-trips through SMF (and the native session format).
+     * Thread: Mutation thread only. Must not be called concurrently with process().
+     */
+    [[nodiscard]] std::vector<MetaEvent>& session_meta() noexcept { return session_meta_; }
+    [[nodiscard]] const std::vector<MetaEvent>& session_meta() const noexcept
+    {
+        return session_meta_;
+    }
+
+    /*
      * Returns the session event anchor table.
      * Thread: Mutation thread only. Must not be called concurrently with process().
      */
@@ -652,6 +676,23 @@ public:
                                        const Event& replacement);
 
     /*
+     * Enqueues a command to replace the timeline track event identified by the
+     * stable id `id`. Robust across intervening tick-changing edits (the id
+     * keeps naming the same event after a re-sort), so a multi-note edit can be
+     * expressed as a batch without re-snapshotting between commits. Undoable;
+     * participates in edit groups. If id does not resolve when applied, no-op.
+     *
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t replace_event_by_id(TrackId track_id,
+                                       omega_event_id_t id,
+                                       const Event& replacement);
+
+    /*
      * W11 fix: replace the event at 0-based flat index in the track's sorted
      * event vector. Convenience overload over replace_track_event(tick, index)
      * that avoids the caller needing to compute the tick and within-tick index.
@@ -668,6 +709,18 @@ public:
                                                 const Event& replacement);
 
     /*
+     * Enqueues a command to delete the timeline track event identified by stable
+     * id `id`. Undoable; participates in edit groups.
+     *
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t delete_event_by_id(TrackId track_id, omega_event_id_t id);
+
+    /*
      * W11 fix: enqueue deletion of the event at 0-based flat index in the
      * track's sorted event vector. Convenience overload over DeleteEventCmd
      * that avoids the caller needing to compute tick and within-tick index.
@@ -680,6 +733,38 @@ public:
      *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
      */
     omega_status_t delete_track_event_by_index(TrackId track_id, uint32_t flat_index);
+
+    /*
+     * Bulk-copies events of a track in [lo, hi) (optionally tag-filtered) into
+     * caller buffers, in tick order. Writes min(total, cap) events to out_events
+     * and (if non-NULL) their stable ids to out_ids; sets *out_total to the full
+     * match count. The single-call read path for graphical editors.
+     *
+     * Thread: Mutation thread only. Must not be called concurrently with process().
+     *
+     * Returns OMEGA_ERR_NOT_FOUND if track_id is not registered, else OMEGA_OK.
+     */
+    omega_status_t copy_track_events(TrackId track_id,
+                                     uint64_t lo,
+                                     uint64_t hi,
+                                     uint8_t tag_filter,
+                                     Event* out_events,
+                                     omega_event_id_t* out_ids,
+                                     size_t cap,
+                                     size_t* out_total) const;
+
+    /*
+     * Opens / closes an edit group. Undoable edits enqueued between begin and end
+     * collapse into a single undo step. Groups do not nest. Safe during playback.
+     *
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t begin_edit_group();
+    omega_status_t end_edit_group();
 
     /*
      * Shifts all events in a track by offset_ticks. Positive values delay the
@@ -908,6 +993,17 @@ public:
     [[nodiscard]] omega_position_t position() const noexcept;
 
     /*
+     * Returns a monotonically-increasing counter that the timing thread
+     * advances once per process() cycle in which at least one enqueued
+     * command was applied.  A UI thread that wants to wait for an enqueued
+     * edit (undo, redo, replace, add, delete, …) to take effect can read
+     * this value before enqueuing, then spin-poll until it changes.
+     *
+     * Thread: Any thread.
+     */
+    [[nodiscard]] uint32_t edit_epoch() const noexcept;
+
+    /*
      * Returns the current state of the given performance slot.
      * Returns SlotState::EMPTY for out-of-range slot indices.
      *
@@ -932,6 +1028,19 @@ public:
      */
     void set_event_callback(void (*cb)(omega_engine_event_t, uint32_t, void*),
                             void* userdata) noexcept;
+
+    /*
+     * Registers a per-event dispatch tap that fires from the timing thread
+     * immediately after each event is successfully sent to its sink (i.e., after
+     * mute/solo filtering — only events that actually reach a sink trigger the tap).
+     * Pass nullptr to clear. Userdata is passed through unchanged.
+     *
+     * Use this to drive activity indicators, meters, or any observer that needs
+     * to see every dispatched MIDI event without intercepting the sink chain.
+     *
+     * Thread: Mutation thread only.
+     */
+    void set_dispatch_tap(void (*fn)(const omega_event_t*, void*), void* userdata) noexcept;
 
     /*
      * Returns true if the given MIDI channel on the specified sink is soloed.
@@ -1000,6 +1109,10 @@ private:
     {
         Command undo_cmd;
         Command redo_cmd;
+        // Edit-group id this entry belongs to; 0 = standalone. Undo/redo of a
+        // nonzero group revert/re-apply all consecutive entries sharing the id
+        // as one step. Stamped by push_history() from current_group_.
+        uint32_t group{0};
     };
 
     // Depth cap for both stacks.  64 levels uses ≈ 16 KiB (128 bytes × 64 × 2).
@@ -1053,6 +1166,11 @@ private:
     void apply(const SetTrackMuteCmd& cmd);
     void apply(const SetTrackSoloCmd& cmd);
     void apply(const ReplaceTrackEventCmd& cmd);
+    void apply(const ReplaceEventByIdCmd& cmd);
+    void apply(const DeleteEventByIdCmd& cmd);
+    void apply(const InsertEventWithIdCmd& cmd);
+    void apply(const BeginEditGroupCmd& cmd);
+    void apply(const EndEditGroupCmd& cmd);
 
     /*
      * Flushes active notes for a given channel mask.
@@ -1105,6 +1223,7 @@ private:
 
     MarkerList marker_list_;
     RegionList region_list_;
+    std::vector<MetaEvent> session_meta_;
     EventAnchorTable event_anchors_;
 
     // Undo/redo history stacks — timing-thread-owned.
@@ -1115,6 +1234,11 @@ private:
     std::vector<HistoryEntry> undo_history_;
     std::vector<HistoryEntry> redo_history_;
     bool applying_undo_redo_{false};
+
+    // Edit-group state — timing-thread-owned. current_group_ is the id stamped
+    // onto history entries (0 = no open group); next_group_ hands out fresh ids.
+    uint32_t current_group_{0};
+    uint32_t next_group_{1};
 
     detail::SpscQueue<Command, 4096> queue_;
     TempoMap tempo_map_;
@@ -1151,6 +1275,14 @@ private:
     using EventCallbackFn = void (*)(omega_engine_event_t, uint32_t, void*);
     std::atomic<EventCallbackFn> event_cb_fn_{nullptr};
     void* event_cb_userdata_{nullptr};
+
+    using DispatchTapFn = void (*)(const omega_event_t*, void*);
+    std::atomic<DispatchTapFn> dispatch_tap_fn_{nullptr};
+    void* dispatch_tap_userdata_{nullptr};
+
+    // Incremented by the timing thread after each process() cycle that drained
+    // at least one command.  Lets UI threads detect when an enqueued edit is live.
+    std::atomic<uint32_t> edit_epoch_{0};
 };
 
 }  // namespace omega

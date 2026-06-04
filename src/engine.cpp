@@ -24,8 +24,14 @@ class FilteringDispatcher : public EventDispatcher
 public:
     FilteringDispatcher(const SinkList& sinks,
                         std::vector<Engine::SinkFilterState>& filters,
-                        bool any_soloed) noexcept
-        : EventDispatcher{sinks}, filters_{&filters}, any_soloed_{any_soloed}
+                        bool any_soloed,
+                        void (*tap)(const omega_event_t*, void*),
+                        void* tap_ud) noexcept
+        : EventDispatcher{sinks},
+          filters_{&filters},
+          any_soloed_{any_soloed},
+          tap_{tap},
+          tap_ud_{tap_ud}
     {}
 
     void dispatch(const Event& event) noexcept override
@@ -64,6 +70,10 @@ public:
                     f->active_notes[ch][note >> 3u] &= static_cast<uint8_t>(~(1u << (note & 7u)));
                 }
             }
+            if (tap_ != nullptr)
+            {
+                tap_(&event, tap_ud_);
+            }
         }
     }
 
@@ -82,6 +92,8 @@ private:
 
     std::vector<Engine::SinkFilterState>* filters_;
     bool any_soloed_;
+    void (*tap_)(const omega_event_t*, void*){nullptr};
+    void* tap_ud_;
 };
 
 // ── Undo helpers (file-local) ─────────────────────────────────────────────────
@@ -201,6 +213,40 @@ omega_status_t Engine::replace_track_event(TrackId track_id,
                                            const Event& replacement)
 {
     return enqueue(ReplaceTrackEventCmd{track_id, tick, index, replacement});
+}
+
+omega_status_t Engine::replace_event_by_id(TrackId track_id,
+                                           omega_event_id_t id,
+                                           const Event& replacement)
+{
+    return enqueue(ReplaceEventByIdCmd{track_id, id, replacement});
+}
+
+omega_status_t Engine::delete_event_by_id(TrackId track_id, omega_event_id_t id)
+{
+    return enqueue(DeleteEventByIdCmd{track_id, id});
+}
+
+omega_status_t Engine::copy_track_events(TrackId track_id,
+                                         uint64_t lo,
+                                         uint64_t hi,
+                                         uint8_t tag_filter,
+                                         Event* out_events,
+                                         omega_event_id_t* out_ids,
+                                         size_t cap,
+                                         size_t* out_total) const
+{
+    return timeline_.copy_events(track_id, lo, hi, tag_filter, out_events, out_ids, cap, out_total);
+}
+
+omega_status_t Engine::begin_edit_group()
+{
+    return enqueue(BeginEditGroupCmd{});
+}
+
+omega_status_t Engine::end_edit_group()
+{
+    return enqueue(EndEditGroupCmd{});
 }
 
 omega_status_t Engine::shift_track_events(TrackId track_id, int64_t offset_ticks)
@@ -342,6 +388,11 @@ omega_status_t Engine::set_track_channel(TrackId track_id, uint8_t channel)
 omega_status_t Engine::set_track_name(TrackId track_id, std::string name)
 {
     return timeline_.set_name(track_id, std::move(name));
+}
+
+omega_status_t Engine::add_track_meta(TrackId track_id, MetaEvent meta)
+{
+    return timeline_.add_meta(track_id, std::move(meta));
 }
 
 omega_status_t Engine::set_track_mute(TrackId track_id, bool muted)
@@ -621,6 +672,10 @@ omega_status_t Engine::redo()
 
 void Engine::push_history(HistoryEntry entry) noexcept
 {
+    // Stamp the entry with the open edit group (0 = standalone) so undo/redo can
+    // revert/re-apply a whole gesture as one step.
+    entry.group = current_group_;
+
     // Cap at UNDO_DEPTH — evict the oldest entry rather than over-growing.
     // After the initial reserve() in the constructor, neither erase() nor
     // push_back() here allocates new storage.
@@ -657,6 +712,18 @@ void Engine::apply_history_cmd(const Command& cmd) noexcept
             {
                 apply(c);
             }
+            else if constexpr (std::is_same_v<T, ReplaceEventByIdCmd>)
+            {
+                apply(c);
+            }
+            else if constexpr (std::is_same_v<T, DeleteEventByIdCmd>)
+            {
+                apply(c);
+            }
+            else if constexpr (std::is_same_v<T, InsertEventWithIdCmd>)
+            {
+                apply(c);
+            }
             // All other Command alternatives: not undoable; silently ignore.
         },
         cmd);
@@ -669,17 +736,23 @@ void Engine::apply(const UndoCmd&)
     {
         return;
     }
-    HistoryEntry entry = undo_history_.back();
-    undo_history_.pop_back();
-
-    // Move entry to the redo stack (capped).
-    if (redo_history_.size() >= UNDO_DEPTH)
+    // A nonzero group reverts all consecutive top entries sharing that id (in
+    // reverse application order); a standalone entry (group 0) reverts just one.
+    const uint32_t group = undo_history_.back().group;
+    do
     {
-        redo_history_.erase(redo_history_.begin());
-    }
-    redo_history_.push_back(entry);
+        HistoryEntry entry = undo_history_.back();
+        undo_history_.pop_back();
 
-    apply_history_cmd(entry.undo_cmd);
+        // Move entry to the redo stack (capped).
+        if (redo_history_.size() >= UNDO_DEPTH)
+        {
+            redo_history_.erase(redo_history_.begin());
+        }
+        redo_history_.push_back(entry);
+
+        apply_history_cmd(entry.undo_cmd);
+    } while (group != 0 && !undo_history_.empty() && undo_history_.back().group == group);
 }
 
 void Engine::apply(const RedoCmd&)
@@ -688,17 +761,21 @@ void Engine::apply(const RedoCmd&)
     {
         return;
     }
-    HistoryEntry entry = redo_history_.back();
-    redo_history_.pop_back();
-
-    // Move entry back to the undo stack (capped).
-    if (undo_history_.size() >= UNDO_DEPTH)
+    const uint32_t group = redo_history_.back().group;
+    do
     {
-        undo_history_.erase(undo_history_.begin());
-    }
-    undo_history_.push_back(entry);
+        HistoryEntry entry = redo_history_.back();
+        redo_history_.pop_back();
 
-    apply_history_cmd(entry.redo_cmd);
+        // Move entry back to the undo stack (capped).
+        if (undo_history_.size() >= UNDO_DEPTH)
+        {
+            undo_history_.erase(undo_history_.begin());
+        }
+        undo_history_.push_back(entry);
+
+        apply_history_cmd(entry.redo_cmd);
+    } while (group != 0 && !redo_history_.empty() && redo_history_.back().group == group);
 }
 
 // ── Undoable event-edit apply() overrides ────────────────────────────────────
@@ -850,8 +927,11 @@ void Engine::apply(const TransportCmd& cmd)
             ctx.input_bus = &input_bus_;
             ctx.modulation_bus = &mod_bus_;
             ctx.perf_ctx = perf_ctx_;
-            FilteringDispatcher dispatcher{
-                sinks_, sink_filters_, any_soloed_.load(std::memory_order_relaxed)};
+            FilteringDispatcher dispatcher{sinks_,
+                                           sink_filters_,
+                                           any_soloed_.load(std::memory_order_relaxed),
+                                           dispatch_tap_fn_.load(std::memory_order_acquire),
+                                           dispatch_tap_userdata_};
             for (auto& [pri, src] : custom_sources_)
             {
                 src->on_locate(cmd.locate_tick, dispatcher, ctx);
@@ -1260,6 +1340,69 @@ void Engine::apply(const ReplaceTrackEventCmd& cmd)
     timeline_.replace_event(cmd.track, cmd.tick, cmd.index, cmd.replacement);
 }
 
+void Engine::apply(const ReplaceEventByIdCmd& cmd)
+{
+    if (!applying_undo_redo_)
+    {
+        Event old_event{};
+        if (timeline_.event_for_id(cmd.track, cmd.id, &old_event))
+        {
+            timeline_.replace_event_by_id(cmd.track, cmd.id, cmd.replacement);
+            // Inverse is itself a replace-by-id with the old event — robust no
+            // matter how other events move, because the id is stable.
+            push_history({ReplaceEventByIdCmd{cmd.track, cmd.id, old_event},
+                          ReplaceEventByIdCmd{cmd.track, cmd.id, cmd.replacement}});
+        }
+        return;
+    }
+    timeline_.replace_event_by_id(cmd.track, cmd.id, cmd.replacement);
+}
+
+void Engine::apply(const DeleteEventByIdCmd& cmd)
+{
+    if (!applying_undo_redo_)
+    {
+        Event old_event{};
+        if (timeline_.event_for_id(cmd.track, cmd.id, &old_event))
+        {
+            timeline_.remove_event_by_id(cmd.track, cmd.id);
+            // Inverse re-inserts the captured event under its original id so any
+            // surviving id references (and further redo) stay valid.
+            push_history({InsertEventWithIdCmd{cmd.track, cmd.id, old_event},
+                          DeleteEventByIdCmd{cmd.track, cmd.id}});
+        }
+        return;
+    }
+    timeline_.remove_event_by_id(cmd.track, cmd.id);
+}
+
+void Engine::apply(const InsertEventWithIdCmd& cmd)
+{
+    // Generated internally (undo of a delete-by-id); kept undoable for symmetry.
+    if (!applying_undo_redo_)
+    {
+        push_history({DeleteEventByIdCmd{cmd.track, cmd.id},
+                      InsertEventWithIdCmd{cmd.track, cmd.id, cmd.event}});
+    }
+    timeline_.insert_event_with_id(cmd.track, cmd.id, cmd.event);
+}
+
+void Engine::apply(const BeginEditGroupCmd&)
+{
+    // Open a fresh group. Does not nest: a begin while one is open just starts a
+    // new id (the previous group is effectively closed at its last edit).
+    current_group_ = next_group_++;
+    if (next_group_ == 0)
+    {
+        next_group_ = 1;  // skip 0 (the "standalone" sentinel) on wraparound
+    }
+}
+
+void Engine::apply(const EndEditGroupCmd&)
+{
+    current_group_ = 0;
+}
+
 void Engine::process()
 {
     // Snapshot slot states at the top of the cycle so we can detect transitions
@@ -1277,8 +1420,10 @@ void Engine::process()
 
     Command cmd;
     uint32_t drain_limit = queue_.size();
+    bool any_drained = false;
     while (drain_limit-- > 0 && queue_.pop(cmd))
     {
+        any_drained = true;
         std::visit(
             [this](auto& c) {
                 using T = std::decay_t<decltype(c)>;
@@ -1438,6 +1583,26 @@ void Engine::process()
                 {
                     apply(c);
                 }
+                else if constexpr (std::is_same_v<T, ReplaceEventByIdCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, DeleteEventByIdCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, InsertEventWithIdCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, BeginEditGroupCmd>)
+                {
+                    apply(c);
+                }
+                else if constexpr (std::is_same_v<T, EndEditGroupCmd>)
+                {
+                    apply(c);
+                }
                 else if constexpr (std::is_same_v<T, UndoCmd>)
                 {
                     apply(c);
@@ -1448,6 +1613,10 @@ void Engine::process()
                 }
             },
             cmd);
+    }
+    if (any_drained)
+    {
+        edit_epoch_.fetch_add(1, std::memory_order_release);
     }
 
     if (state_.load(std::memory_order_acquire) != static_cast<uint8_t>(TransportState::PLAYING))
@@ -1473,8 +1642,11 @@ void Engine::process()
     ctx.modulation_bus = &mod_bus_;
     ctx.perf_ctx = perf_ctx_;
 
-    FilteringDispatcher dispatcher{
-        sinks_, sink_filters_, any_soloed_.load(std::memory_order_relaxed)};
+    FilteringDispatcher dispatcher{sinks_,
+                                   sink_filters_,
+                                   any_soloed_.load(std::memory_order_relaxed),
+                                   dispatch_tap_fn_.load(std::memory_order_acquire),
+                                   dispatch_tap_userdata_};
 
     // Loop detection: when the transport has reached or passed loop_end_tick_,
     // locate all sources back to loop_start_tick_ and resume from there.
@@ -1582,6 +1754,11 @@ uint64_t Engine::transport_position_tick() const
     return tempo_map_.ns_to_ticks(last_position_ns_.load(std::memory_order_relaxed));
 }
 
+uint32_t Engine::edit_epoch() const noexcept
+{
+    return edit_epoch_.load(std::memory_order_acquire);
+}
+
 omega_position_t Engine::position() const noexcept
 {
     omega_position_t out{};
@@ -1642,6 +1819,12 @@ void Engine::set_event_callback(void (*cb)(omega_engine_event_t, uint32_t, void*
 {
     event_cb_userdata_ = userdata;
     event_cb_fn_.store(cb, std::memory_order_release);
+}
+
+void Engine::set_dispatch_tap(void (*fn)(const omega_event_t*, void*), void* userdata) noexcept
+{
+    dispatch_tap_userdata_ = userdata;
+    dispatch_tap_fn_.store(fn, std::memory_order_release);
 }
 
 void Engine::fire_event(omega_engine_event_t event, uint32_t detail) noexcept

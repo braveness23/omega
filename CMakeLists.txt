@@ -20,6 +20,7 @@ set(OMEGA_SOVERSION 1)
 # ── Build options ────────────────────────────────────────────────────────────
 option(OMEGA_BUILD_TESTS       "Build the test suite"                         ON)
 option(OMEGA_BUILD_BENCHMARKS  "Build benchmark targets (requires test suite)" OFF)
+option(OMEGA_BUILD_SHARED      "Build omega as a shared library (DLL/.so)"    OFF)
 option(OMEGA_WITH_LINK         "Enable Ableton Link sync (requires GPL v2+)"  OFF)
 option(OMEGA_WITH_SANITIZERS   "Build with AddressSanitizer and UBSanitizer"  OFF)
 option(OMEGA_WITH_TSAN         "Build with ThreadSanitizer"                   OFF)
@@ -72,6 +73,20 @@ if(OMEGA_BUILD_TESTS)
     FetchContent_MakeAvailable(Catch2)
 endif()
 
+# libremidi: WinRT/UWP (WinUWP) and WinMIDI backends require cppwinrt headers
+# that are absent under mingw.  Disable them automatically so omega consumers
+# don't need to add workarounds themselves; the WinMM backend remains available
+# and is sufficient for classic MIDI I/O.
+if(MINGW)
+    set(LIBREMIDI_NO_WINUWP  ON CACHE BOOL "" FORCE)
+    set(LIBREMIDI_NO_WINMIDI ON CACHE BOOL "" FORCE)
+endif()
+
+# midifile declares cmake_minimum_required(VERSION 2.8), which CMake 4.x refuses.
+# CMAKE_POLICY_VERSION_MINIMUM (CMake 3.27+) floors the accepted version so the
+# sub-project declaration doesn't abort configure.  Has no effect on CMake < 3.27.
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
+
 FetchContent_MakeAvailable(libremidi midifile)
 
 find_package(Threads REQUIRED)
@@ -103,7 +118,16 @@ if(OMEGA_WITH_TSAN)
 endif()
 
 # ── Core library target ───────────────────────────────────────────────────────
-add_library(omega_core STATIC
+# When OMEGA_BUILD_SHARED is ON, omega_core is compiled as an OBJECT library:
+# its TUs are compiled once and bundled into the omega SHARED target, producing
+# a single omega.dll with no separate omega_core dependency for consumers.
+if(OMEGA_BUILD_SHARED)
+    set(_omega_core_type OBJECT)
+else()
+    set(_omega_core_type STATIC)
+endif()
+
+add_library(omega_core ${_omega_core_type}
     src/types.cpp
     src/tempo_map.cpp
     src/time_signature_map.cpp
@@ -136,9 +160,14 @@ add_library(omega::core ALIAS omega_core)
 set_target_properties(omega_core PROPERTIES
     CXX_VISIBILITY_PRESET     hidden
     VISIBILITY_INLINES_HIDDEN ON
-    VERSION                   ${PROJECT_VERSION}
-    SOVERSION                 ${OMEGA_SOVERSION}
 )
+# OBJECT libraries produce no output artifact; VERSION/SOVERSION don't apply.
+if(NOT OMEGA_BUILD_SHARED)
+    set_target_properties(omega_core PROPERTIES
+        VERSION   ${PROJECT_VERSION}
+        SOVERSION ${OMEGA_SOVERSION}
+    )
+endif()
 
 target_include_directories(omega_core
     PUBLIC
@@ -148,9 +177,14 @@ target_include_directories(omega_core
 
 target_compile_features(omega_core PUBLIC cxx_std_17)
 
-# Static builds need no dllimport/dllexport decoration on Windows.
-# Propagates to consumers so export.h resolves OMEGA_API correctly.
-target_compile_definitions(omega_core PUBLIC OMEGA_STATIC_LIBRARY)
+if(OMEGA_BUILD_SHARED)
+    # Compile with dllexport; stays PRIVATE so consumers see dllimport instead.
+    target_compile_definitions(omega_core PRIVATE omega_core_EXPORTS)
+else()
+    # Static builds need no dllimport/dllexport decoration on Windows.
+    # Propagates to consumers so export.h resolves OMEGA_API correctly.
+    target_compile_definitions(omega_core PUBLIC OMEGA_STATIC_LIBRARY)
+endif()
 
 target_link_libraries(omega_core
     PRIVATE
@@ -171,9 +205,49 @@ endif()
 
 # ── C API target ──────────────────────────────────────────────────────────────
 # Wraps omega_core with a stable C ABI.
-add_library(omega STATIC src/omega_c.cpp)
+# When OMEGA_BUILD_SHARED is ON, this is a SHARED library (DLL/.so) that bundles
+# omega_core's object files. Consumers (e.g. P/Invoke from .NET) load one file.
+if(OMEGA_BUILD_SHARED)
+    add_library(omega SHARED src/omega_c.cpp)
+    # omega_c.cpp also needs dllexport during the build pass.
+    target_compile_definitions(omega PRIVATE omega_core_EXPORTS)
+    set_target_properties(omega PROPERTIES
+        CXX_VISIBILITY_PRESET     hidden
+        VISIBILITY_INLINES_HIDDEN ON
+        VERSION                   ${PROJECT_VERSION}
+        SOVERSION                 ${OMEGA_SOVERSION}
+    )
+    # Windows: strip the lib prefix so [DllImport("omega")] resolves omega.dll.
+    if(WIN32)
+        set_target_properties(omega PROPERTIES PREFIX "")
+    endif()
+    # mingw: statically embed the C++ runtime so omega.dll is self-contained.
+    if(MINGW)
+        target_link_options(omega PRIVATE
+            -static-libgcc
+            -static-libstdc++
+            -Wl,-Bstatic,--whole-archive -lwinpthread -Wl,--no-whole-archive -Wl,-Bdynamic
+        )
+    endif()
+    # PRIVATE: omega_core's objects are bundled into the DLL; no export-set entry
+    # needed for omega_core. OBJECT lib PRIVATE deps don't auto-propagate, so
+    # libremidi/midifile/Threads are listed here explicitly.
+    target_link_libraries(omega PRIVATE omega::core libremidi midifile Threads::Threads)
+    target_include_directories(omega PRIVATE ${midifile_SOURCE_DIR}/include)
+    # Expose omega's public headers and C++ standard to consumers of the DLL.
+    target_include_directories(omega
+        INTERFACE
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+            $<INSTALL_INTERFACE:include>
+    )
+    target_compile_features(omega INTERFACE cxx_std_17)
+else()
+    add_library(omega STATIC src/omega_c.cpp)
+    # PUBLIC: omega_core's archive and INTERFACE (include dirs, cxx_std_17)
+    # propagate to consumers through the link chain.
+    target_link_libraries(omega PUBLIC omega::core)
+endif()
 add_library(omega::omega ALIAS omega)
-target_link_libraries(omega PUBLIC omega::core)
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 if(OMEGA_BUILD_TESTS)
@@ -195,7 +269,14 @@ include(CMakePackageConfigHelpers)
 set(OMEGA_INSTALL_CMAKEDIR "lib/cmake/omega"
     CACHE PATH "Installation directory for CMake package config files")
 
-install(TARGETS omega_core omega midifile
+# omega_core is an OBJECT library when OMEGA_BUILD_SHARED=ON; OBJECT libraries
+# have no installable artifact so they must be excluded from the install target.
+if(OMEGA_BUILD_SHARED)
+    set(_omega_install_targets omega midifile)
+else()
+    set(_omega_install_targets omega_core omega midifile)
+endif()
+install(TARGETS ${_omega_install_targets}
     EXPORT OmegaTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}

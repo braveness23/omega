@@ -10,6 +10,33 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **SMF meta-event fidelity** (Omega Complete, item 1): SMF import/export now round-trips the
+  text-class meta events that previously vanished, so a `.mid` survives an import→export with
+  its descriptive metadata intact.
+  - **Track names** (`FF 03`): `smf_import` applies the SMF track name to the created omega
+    track (was always a synthetic `track_N`); `smf_export` writes `FF 03` per track in Type 1
+    (skipped in Type 0, where all tracks merge and one name cannot represent them). In
+    `split_by_channel` mode the name is suffixed `" chN"` to keep fanned-out tracks distinct.
+  - **Text / instrument name / lyric** (`FF 01` / `FF 04` / `FF 05`): preserved per track in a
+    new `Track::meta` store (`std::pmr::vector<MetaEvent>`); positional lyrics keep their tick.
+  - **Copyright + conductor text** (`FF 02`, and text from note-less conductor tracks):
+    preserved in a new session-level store, `Engine::session_meta()`, because omega
+    deliberately does not materialize a note-less conductor track as a timeline track. Both
+    stores are cleared by `SmfImportOptions::clear_existing`.
+  - **Native session format**: both stores persist through `session_save`/`session_load` in
+    two new forward-compatible sections (`TMTA` per-track, `SMTA` session-level). Sessions
+    written before this change load cleanly with empty meta; older readers skip the new
+    sections.
+  - **C API** (for FFI consumers such as `examples/kcs-win`): `omega_engine_track_meta_count`
+    / `omega_engine_track_meta_at` / `omega_engine_add_track_meta` and the
+    `omega_engine_*session_meta*` equivalents. Readers copy the text into a caller buffer
+    (null-terminated, truncated to capacity) following the `omega_engine_track_name`
+    convention; tick/type out-params are optional.
+  - New C++ API: `omega::MetaEvent` (`<omega/meta_event.h>`), `Engine::add_track_meta()`,
+    `Engine::session_meta()`, `TimelineSource::add_meta()`. 10 new unit tests
+    (`test_smf_import.cpp`, `test_smf_export.cpp`, `test_session.cpp`) and 4 new integration
+    tests (`test_c_api_tracks.cpp`).
+- **`omega_recorder_*` C API**: exposes `omega::Recorder` to C / FFI consumers. `omega_recorder_create(e, sink_id)` allocates a Recorder and registers it at `OMEGA_SOURCE_PRIORITY_MODULATOR` (recorded notes immediately playable); `omega_recorder_start(rec, track_id, channel_filter)` arms recording; `omega_recorder_stop(rec)` disarms and flushes held notes, returning the event count; `omega_recorder_is_recording(rec)` is thread-safe; `omega_recorder_destroy(e, rec)` deregisters and frees. Motivation: `examples/kcs-win` (.NET P/Invoke) cannot use C++ constructors, so recording was unreachable without a C wrapper. 10 new integration tests in `tests/integration/test_c_api_recorder.cpp`.
 - **`omega_engine_create_with_clock(omega_clock_t*)`** (C API, W2): creates an engine using a caller-supplied C-vtable clock (`now_ns` function pointer + userdata). Enables WASM and plugin consumers to inject a custom clock without the C++ `Engine(ClockSource*)` constructor.
 - **SMF buffer overloads** (W4): `smf_import(Engine&, const uint8_t*, size_t, SmfImportOptions)` and `smf_export(Engine&, std::vector<uint8_t>&, int)`. Eliminates the need for a filesystem path in WASM/plugin contexts. `smf_export.cpp` refactored to share a `build_midifile()` helper; `smf_import.cpp` refactored to share a `process_midifile()` helper.
 - **Session buffer overloads** (W5): `session_save(Engine&, std::vector<uint8_t>&)` and `session_load(Engine&, const uint8_t*, size_t)`. Share `serialize_session()` and `session_load_bytes()` internal helpers with the path-based overloads.

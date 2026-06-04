@@ -36,7 +36,7 @@ extern "C" {
 
 /* Compile-time version. Use omega_version() for runtime version checking. */
 #define OMEGA_VERSION_MAJOR 1
-#define OMEGA_VERSION_MINOR 0
+#define OMEGA_VERSION_MINOR 1
 #define OMEGA_VERSION_PATCH 0
 
 /* ── Constants ────────────────────────────────────────────────────────────── */
@@ -48,6 +48,22 @@ extern "C" {
 
 /* Musical time in ticks from session start. */
 typedef uint64_t omega_tick_t;
+
+/* ── Event identity ───────────────────────────────────────────────────────── */
+
+/*
+ * Opaque, stable identity for a timeline track event. Assigned when an event is
+ * added and never reused within an engine's lifetime. Unlike the positional
+ * (tick, index) addressing used by omega_engine_replace_track_event /
+ * _delete_track_event, an id continues to name the same event after a
+ * tick-changing edit re-sorts the track — which is what a graphical editor needs
+ * when moving several selected notes at once. Obtain ids from
+ * omega_engine_track_copy_events(); use them with the *_event_by_id() mutators.
+ */
+typedef uint64_t omega_event_id_t;
+
+/* Sentinel for "no event" — never assigned to a real event. */
+#define OMEGA_INVALID_EVENT_ID 0ull
 
 /* ── Version ──────────────────────────────────────────────────────────────── */
 
@@ -94,8 +110,18 @@ OMEGA_API const char* omega_status_string(omega_status_t status);
 /* ── Events ───────────────────────────────────────────────────────────────── */
 
 /* payload_tag discriminants */
-#define OMEGA_NOTE_ON 0x00u    /* data[0]=note, data[1]=vel, data[2-5]=duration_ticks */
-#define OMEGA_NOTE_OFF 0x01u   /* data[0]=note, data[1]=vel */
+#define OMEGA_NOTE_ON 0x00u /* data[0]=note, data[1]=vel, data[2-5]=duration_ticks */
+#define OMEGA_NOTE_OFF                                                             \
+    0x01u                      /* data[0]=note, data[1]=vel.                       \
+                                * NOTE: omega's timeline model is duration-based.  \
+                                * smf_import() always emits NOTE_ON with inline    \
+                                * duration (data[2-5]); it never inserts paired    \
+                                * NOTE_OFF events. NOTE_OFF events may appear in   \
+                                * timelines built from non-pairing sources (e.g.   \
+                                * raw MIDI capture), but they carry no duration    \
+                                * and cannot be rendered as note bars.  Graphical  \
+                                * editors should filter to OMEGA_NOTE_ON and treat \
+                                * bare NOTE_OFFs as opaque pass-through events. */
 #define OMEGA_CC 0x02u         /* data[0]=controller, data[1]=value */
 #define OMEGA_PROGRAM 0x03u    /* data[0]=program */
 #define OMEGA_PITCH_BEND 0x04u /* data[0]=LSB (7-bit), data[1]=MSB (7-bit); center=0x40,0x00 */
@@ -333,6 +359,17 @@ typedef enum
 typedef void (*omega_event_callback_t)(omega_engine_event_t event, uint32_t detail, void* userdata);
 
 /*
+ * Callback for per-event dispatch tap (see omega_engine_set_dispatch_tap).
+ *
+ * ev:       pointer to the dispatched event. Valid only for the duration of the call.
+ * userdata: pointer passed to omega_engine_set_dispatch_tap().
+ *
+ * Constraint: fires from the timing thread. Must not block, allocate, or call
+ * back into the engine.
+ */
+typedef void (*omega_dispatch_tap_fn)(const omega_event_t* ev, void* userdata);
+
+/*
  * Registers an event callback. Pass NULL for cb to clear the callback.
  * Only one callback is supported; setting a new one replaces the previous.
  *
@@ -345,6 +382,24 @@ typedef void (*omega_event_callback_t)(omega_engine_event_t event, uint32_t deta
 OMEGA_API omega_status_t omega_engine_set_event_callback(omega_engine_t* e,
                                                          omega_event_callback_t cb,
                                                          void* userdata);
+
+/*
+ * Registers a per-event dispatch tap. The tap fires from the timing thread
+ * immediately after each event is successfully sent to its sink — that is,
+ * after mute/solo filtering. Only events that actually reach a sink fire the tap;
+ * suppressed events do not.
+ *
+ * Pass NULL for fn to clear a previously registered tap.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK          — tap registered (or cleared).
+ *   OMEGA_ERR_INVALID — e is NULL.
+ */
+OMEGA_API omega_status_t omega_engine_set_dispatch_tap(omega_engine_t* e,
+                                                       omega_dispatch_tap_fn fn,
+                                                       void* userdata);
 
 /*
  * Creates a new engine using the built-in real-time clock.
@@ -614,6 +669,299 @@ OMEGA_API omega_status_t omega_engine_add_event(omega_engine_t* e,
                                                 omega_event_t ev);
 
 /*
+ * Removes the track event at (tick, index) by enqueueing a DeleteEventCmd.
+ * index is the 0-based position among events sharing tick. Undo/redo aware;
+ * safe during playback (applied at the start of the next process() cycle).
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ *
+ * Note: OMEGA_ERR_NOT_FOUND (no event at tick/index) is detected on the timing
+ * thread; the function itself returns OMEGA_OK as long as enqueueing succeeded.
+ */
+OMEGA_API omega_status_t omega_engine_delete_track_event(omega_engine_t* e,
+                                                         omega_track_id_t track,
+                                                         omega_tick_t tick,
+                                                         uint32_t index);
+
+/* ── Track read API ───────────────────────────────────────────────────────── */
+
+/*
+ * Returns the number of timeline tracks.
+ *
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ *
+ * Returns: track count; 0 if e is NULL.
+ */
+OMEGA_API uint32_t omega_engine_track_count(const omega_engine_t* e);
+
+/*
+ * Iterates all timeline tracks in vector order, invoking cb(id, userdata) for
+ * each. The id is stable (never reused) and equals the value returned by
+ * omega_engine_add_track() when the track was created.
+ *
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ *
+ * Returns:
+ *   OMEGA_OK          — iteration completed (zero or more tracks visited).
+ *   OMEGA_ERR_INVALID — e or cb is NULL.
+ */
+OMEGA_API omega_status_t omega_engine_track_for_each(
+    const omega_engine_t* e, void (*cb)(omega_track_id_t id, void* userdata), void* userdata);
+
+/*
+ * Copies the track name into buf (null-terminated; truncated to buf_size - 1
+ * characters if the name is longer). Sets buf[0] to '\0' on NOT_FOUND.
+ *
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ *
+ * Returns:
+ *   OMEGA_OK            — name written into buf.
+ *   OMEGA_ERR_INVALID   — e or buf is NULL, or buf_size is 0.
+ *   OMEGA_ERR_NOT_FOUND — track is not registered.
+ */
+OMEGA_API omega_status_t omega_engine_track_name(const omega_engine_t* e,
+                                                 omega_track_id_t track,
+                                                 char* buf,
+                                                 size_t buf_size);
+
+/*
+ * Returns the representative MIDI channel (0-15) for a track.
+ * Returns 0xFF if e is NULL or track is not registered.
+ *
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ */
+OMEGA_API uint8_t omega_engine_track_channel(const omega_engine_t* e, omega_track_id_t track);
+
+/*
+ * Returns the number of events in a timeline track via *count_out.
+ *
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ *
+ * Returns:
+ *   OMEGA_OK            — *count_out written.
+ *   OMEGA_ERR_INVALID   — e or count_out is NULL.
+ *   OMEGA_ERR_NOT_FOUND — track is not registered.
+ */
+OMEGA_API omega_status_t omega_engine_track_event_count(const omega_engine_t* e,
+                                                        omega_track_id_t track,
+                                                        uint32_t* count_out);
+
+/*
+ * Copies the event at zero-based index idx in the track's sorted event vector
+ * into *event_out.
+ *
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ *
+ * Returns:
+ *   OMEGA_OK            — *event_out written.
+ *   OMEGA_ERR_INVALID   — e or event_out is NULL.
+ *   OMEGA_ERR_NOT_FOUND — track is not registered, or idx >= event count.
+ */
+OMEGA_API omega_status_t omega_engine_track_event_at(const omega_engine_t* e,
+                                                     omega_track_id_t track,
+                                                     uint32_t idx,
+                                                     omega_event_t* event_out);
+
+/*
+ * Iterates events in a timeline track, invoking cb for each matching event.
+ *
+ * channel_filter: 0xFF = all channels; 0-15 = match specific channel.
+ * tag_filter:     0xFF = all payload tags; specific value = match that tag.
+ *
+ * The callback receives the zero-based event index (in the unfiltered track
+ * vector), a pointer to the event (valid only for the callback's duration),
+ * and the caller-supplied userdata.
+ *
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ *
+ * Returns:
+ *   OMEGA_OK            — iteration completed (zero or more events visited).
+ *   OMEGA_ERR_INVALID   — e or cb is NULL.
+ *   OMEGA_ERR_NOT_FOUND — track is not registered.
+ */
+OMEGA_API omega_status_t omega_engine_track_for_each_event(const omega_engine_t* e,
+                                                           omega_track_id_t track,
+                                                           uint8_t channel_filter,
+                                                           uint8_t tag_filter,
+                                                           void (*cb)(uint32_t index,
+                                                                      const omega_event_t* event,
+                                                                      void* userdata),
+                                                           void* userdata);
+
+/*
+ * Bulk-copies the events of a timeline track whose tick falls in the half-open
+ * window [lo, hi) into caller-provided buffers, in tick-sorted order. This is
+ * the read path a graphical editor (e.g. a piano roll) wants: a single call that
+ * returns just the visible slice with no per-event callback marshaling.
+ *
+ * tag_filter: 0xFF = all payload tags; a specific value matches only that tag.
+ * out_events: receives up to `cap` events. May be NULL only if cap == 0 (in
+ *             which case the call just reports the match count via *total_out).
+ * out_ids:    optional, parallel to out_events; receives each event's stable
+ *             omega_event_id_t. Pass NULL if ids are not needed.
+ * cap:        capacity of out_events / out_ids in elements.
+ * total_out:  optional; receives the TOTAL number of events matching the window
+ *             and filter, even if it exceeds cap. The number actually written is
+ *             min(*total_out, cap); a caller that finds *total_out > cap can grow
+ *             its buffer and call again.
+ *
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ *
+ * Returns:
+ *   OMEGA_OK            — copy completed (zero or more events written).
+ *   OMEGA_ERR_INVALID   — e is NULL, or out_events is NULL with cap > 0.
+ *   OMEGA_ERR_NOT_FOUND — track is not registered.
+ */
+OMEGA_API omega_status_t omega_engine_track_copy_events(const omega_engine_t* e,
+                                                        omega_track_id_t track,
+                                                        omega_tick_t lo,
+                                                        omega_tick_t hi,
+                                                        uint8_t tag_filter,
+                                                        omega_event_t* out_events,
+                                                        omega_event_id_t* out_ids,
+                                                        size_t cap,
+                                                        size_t* total_out);
+
+/* ── SMF text-class meta events ─────────────────────────────────────────────────
+ *
+ * Descriptive metadata preserved for SMF round-trip fidelity. `type` is the raw
+ * SMF meta-event type byte: 0x01 Text, 0x02 Copyright, 0x04 Instrument name,
+ * 0x05 Lyric. (Track Name 0x03 is exposed via omega_engine_track_name; Marker
+ * 0x06 / Cue 0x07 via the marker API.) Per-track meta belongs to one timeline
+ * track; session meta (typically a file-level copyright) has no per-track home.
+ */
+
+/*
+ * Returns the number of meta events on `track`, or 0 if the engine is NULL or
+ * the track is not registered.
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ */
+OMEGA_API uint32_t omega_engine_track_meta_count(const omega_engine_t* e, omega_track_id_t track);
+
+/*
+ * Reads the meta event at `index` on `track`. out_tick / out_type may be NULL if
+ * not wanted. The text is copied into out_text (always null-terminated, possibly
+ * truncated to out_text_cap-1 bytes).
+ *
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ *
+ * Returns:
+ *   OMEGA_OK            — read completed.
+ *   OMEGA_ERR_INVALID   — e or out_text is NULL, or out_text_cap == 0.
+ *   OMEGA_ERR_NOT_FOUND — track is not registered, or index is out of range.
+ */
+OMEGA_API omega_status_t omega_engine_track_meta_at(const omega_engine_t* e,
+                                                    omega_track_id_t track,
+                                                    uint32_t index,
+                                                    omega_tick_t* out_tick,
+                                                    uint8_t* out_type,
+                                                    char* out_text,
+                                                    size_t out_text_cap);
+
+/*
+ * Appends a meta event to `track`.
+ * Thread: Mutation thread only.
+ *
+ * Returns OMEGA_ERR_INVALID (e or text NULL) or OMEGA_ERR_NOT_FOUND (no track).
+ */
+OMEGA_API omega_status_t omega_engine_add_track_meta(
+    omega_engine_t* e, omega_track_id_t track, omega_tick_t tick, uint8_t type, const char* text);
+
+/*
+ * Session-level meta (no per-track home). Same conventions as the per-track
+ * functions above.
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ */
+OMEGA_API uint32_t omega_engine_session_meta_count(const omega_engine_t* e);
+
+OMEGA_API omega_status_t omega_engine_session_meta_at(const omega_engine_t* e,
+                                                      uint32_t index,
+                                                      omega_tick_t* out_tick,
+                                                      uint8_t* out_type,
+                                                      char* out_text,
+                                                      size_t out_text_cap);
+
+OMEGA_API omega_status_t omega_engine_add_session_meta(omega_engine_t* e,
+                                                       omega_tick_t tick,
+                                                       uint8_t type,
+                                                       const char* text);
+
+/*
+ * Replaces the timeline track event identified by the stable id with
+ * replacement. Unlike omega_engine_replace_track_event (which addresses by
+ * positional tick+index and is invalidated when an earlier edit re-sorts the
+ * track), this remains correct across intervening tick-changing edits — so a
+ * multi-note drag can replace every selected event without re-snapshotting
+ * between commits. The id survives the edit even if replacement.tick differs.
+ * Undoable; participates in edit groups (see omega_engine_begin_edit_group).
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ *
+ * If the id does not resolve when the command is applied on the timing thread,
+ * it is a silent no-op (mirrors the positional mutators' async error contract).
+ */
+OMEGA_API omega_status_t omega_engine_replace_event_by_id(omega_engine_t* e,
+                                                          omega_track_id_t track,
+                                                          omega_event_id_t id,
+                                                          omega_event_t replacement);
+
+/*
+ * Deletes the timeline track event identified by the stable id. Robust under
+ * multi-event edits for the same reason as omega_engine_replace_event_by_id.
+ * Undoable; participates in edit groups.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_engine_delete_event_by_id(omega_engine_t* e,
+                                                         omega_track_id_t track,
+                                                         omega_event_id_t id);
+
+/*
+ * Opens an edit group: every undoable edit enqueued between this call and the
+ * matching omega_engine_end_edit_group() collapses into a single undo step, so
+ * one user gesture (e.g. transposing a 10-note chord) is reverted by one
+ * omega_engine_undo() instead of ten. Groups do not nest; a second begin before
+ * an end simply starts a new group id. `label` is reserved for future tooling
+ * and currently ignored (may be NULL).
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_engine_begin_edit_group(omega_engine_t* e, const char* label);
+
+/*
+ * Closes the current edit group. Edits enqueued after this are undone
+ * individually again. A no-op if no group is open.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns:
+ *   OMEGA_OK             — command enqueued.
+ *   OMEGA_ERR_INVALID    — e is NULL.
+ *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+ */
+OMEGA_API omega_status_t omega_engine_end_edit_group(omega_engine_t* e);
+
+/*
  * Enqueues a PLAY command. Playback begins on the next process() call.
  *
  * Thread: Mutation thread only.
@@ -675,6 +1023,23 @@ OMEGA_API omega_status_t omega_engine_undo(omega_engine_t* e);
  *   OMEGA_ERR_QUEUE_FULL — command queue is full.
  */
 OMEGA_API omega_status_t omega_engine_redo(omega_engine_t* e);
+
+/*
+ * Returns a monotonically-increasing counter that the timing thread advances
+ * once per process() cycle in which at least one enqueued command was applied.
+ *
+ * A UI thread that needs to re-read track state immediately after an enqueued
+ * edit (undo, redo, replace, add, delete, …) can use this as a lightweight
+ * read-after-write fence:
+ *
+ *   uint32_t epoch = omega_engine_edit_epoch(e);
+ *   omega_engine_undo(e);
+ *   while (omega_engine_edit_epoch(e) == epoch) { spin / sleep briefly; }
+ *   // now safe to re-snapshot — the undo has been applied
+ *
+ * Thread: Any thread.
+ */
+OMEGA_API uint32_t omega_engine_edit_epoch(const omega_engine_t* e);
 
 /*
  * Returns the current transport state.
@@ -1606,6 +1971,72 @@ OMEGA_API omega_input_t* omega_input_create_midi_in(const char* port_name);
  * Thread: Any thread, after omega_engine_remove_input() has been processed.
  */
 OMEGA_API void omega_input_destroy_midi_in(omega_input_t* input);
+
+/* ── Recorder ───────────────────────────────────────────────────────────────
+ * Records live MIDI input (delivered via an omega_input_t / the InputBus) into
+ * a timeline track. Wraps omega::Recorder. The recorder is a custom EventSource
+ * registered with the engine at OMEGA_SOURCE_PRIORITY_MODULATOR by
+ * omega_recorder_create(), so recorded notes are immediately playable.
+ *
+ * Note duration: a recorded NOTE_ON is inserted into the track only once its
+ * matching NOTE_OFF arrives (the duration is then known). Notes still held when
+ * omega_recorder_stop() is called are flushed with duration = stop - on.
+ */
+
+typedef struct omega_recorder_s omega_recorder_t;
+
+/*
+ * Creates a Recorder bound to the engine's built-in timeline and registers it
+ * with the engine as a MODULATOR-priority source. Recorded events route to
+ * sink_id (typically the same MIDI-out sink the track plays through).
+ *
+ * The engine must outlive the recorder. Destroy with omega_recorder_destroy().
+ *
+ * Thread: Mutation thread only, before playback starts.
+ *
+ * Returns: a caller-owned recorder handle, or NULL on allocation failure or if
+ * e is NULL.
+ */
+OMEGA_API omega_recorder_t* omega_recorder_create(omega_engine_t* e, uint32_t sink_id);
+
+/*
+ * Deregisters the recorder from the engine and destroys it. The engine must be
+ * stopped (the deregistration is applied synchronously on the next process()
+ * cycle; destroying while playing risks a use-after-free on the timing thread).
+ *
+ * Thread: Mutation thread only, after playback is stopped. No-op if rec is NULL.
+ */
+OMEGA_API void omega_recorder_destroy(omega_engine_t* e, omega_recorder_t* rec);
+
+/*
+ * Arms recording to the given timeline track. Events whose channel matches
+ * channel_filter (0-15) are captured; pass 0xFF to capture all channels.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns: OMEGA_OK on success, OMEGA_ERR_INVALID if rec is NULL.
+ */
+OMEGA_API omega_status_t omega_recorder_start(omega_recorder_t* rec,
+                                              omega_track_id_t track_id,
+                                              uint8_t channel_filter);
+
+/*
+ * Disarms recording. Flushes any still-held notes using the most recent
+ * advance() tick as their note-off tick.
+ *
+ * Thread: Mutation thread only. Must not run concurrently with process().
+ *
+ * Returns: the number of NOTE_ON events inserted into the timeline (0 if rec
+ * is NULL).
+ */
+OMEGA_API size_t omega_recorder_stop(omega_recorder_t* rec);
+
+/*
+ * Returns non-zero while recording is armed, 0 otherwise (or if rec is NULL).
+ *
+ * Thread: Any thread.
+ */
+OMEGA_API int omega_recorder_is_recording(const omega_recorder_t* rec);
 
 /*
  * Gets a modulation channel value from within an advance_fn callback.

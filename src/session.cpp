@@ -59,6 +59,8 @@ static constexpr uint32_t TAG_SONG = 0x474E4F53u;       // SONG
 static constexpr uint32_t TAG_CTX = 0x58544350u;        // PCTX
 static constexpr uint32_t TAG_TRACKS = 0x534B5254u;     // TRKS
 static constexpr uint32_t TAG_TRANSPORT = 0x534E5254u;  // TRNS
+static constexpr uint32_t TAG_SMETA = 0x41544D53u;      // SMTA — session-level meta
+static constexpr uint32_t TAG_TMETA = 0x41544D54u;      // TMTA — per-track meta
 
 // ── BufWriter ─────────────────────────────────────────────────────────────────
 
@@ -441,6 +443,48 @@ static BufWriter ser_tracks(const Engine& e)
     return w;
 }
 
+static void ser_meta_vec_size(BufWriter& w, size_t n)
+{
+    w.u32(static_cast<uint32_t>(n));
+}
+
+static void ser_meta_event(BufWriter& w, const MetaEvent& m)
+{
+    w.u64(m.tick);
+    w.u8(m.type);
+    w.str(m.text);
+}
+
+static BufWriter ser_session_meta(const Engine& e)
+{
+    BufWriter w;
+    const auto& sm = e.session_meta();
+    ser_meta_vec_size(w, sm.size());
+    for (const auto& m : sm)
+    {
+        ser_meta_event(w, m);
+    }
+    return w;
+}
+
+// Per-track meta, parallel to ser_tracks: one length-prefixed run per track, in
+// the same order, so the reader can map run i onto the i-th loaded track.
+static BufWriter ser_track_meta(const Engine& e)
+{
+    BufWriter w;
+    const auto& tracks = e.timeline_source().tracks();
+    w.u32(static_cast<uint32_t>(tracks.size()));
+    for (const auto& t : tracks)
+    {
+        ser_meta_vec_size(w, t.meta.size());
+        for (const auto& m : t.meta)
+        {
+            ser_meta_event(w, m);
+        }
+    }
+    return w;
+}
+
 static BufWriter ser_transport(const Engine& e)
 {
     BufWriter w;
@@ -468,6 +512,8 @@ static BufWriter serialize_session(Engine& engine)
     emit_section(out, TAG_SONG, ser_song(engine));
     emit_section(out, TAG_CTX, ser_ctx(engine));
     emit_section(out, TAG_TRACKS, ser_tracks(engine));
+    emit_section(out, TAG_TMETA, ser_track_meta(engine));
+    emit_section(out, TAG_SMETA, ser_session_meta(engine));
     emit_section(out, TAG_TRANSPORT, ser_transport(engine));
     out.u32(TAG_END);
     out.u32(0u);
@@ -853,9 +899,10 @@ static bool load_ctx(BufReader& r, Engine& e)
     return r.ok();
 }
 
-static bool load_tracks(BufReader& r, Engine& e)
+static bool load_tracks(BufReader& r, Engine& e, std::vector<TrackId>& track_order)
 {
     e.timeline_source().clear_tracks();
+    track_order.clear();
 
     uint32_t count = r.u32();
     for (uint32_t i = 0; i < count; ++i)
@@ -872,6 +919,7 @@ static bool load_tracks(BufReader& r, Engine& e)
         }
 
         TrackId new_id = e.add_track(std::move(name));
+        track_order.push_back(new_id);
         e.set_track_sink(new_id, sink_id);
         e.set_track_channel(new_id, channel);
 
@@ -893,6 +941,54 @@ static bool load_tracks(BufReader& r, Engine& e)
         if (soloed != 0u)
         {
             e.set_track_solo(new_id, true);
+        }
+    }
+    return r.ok();
+}
+
+static bool read_meta_event(BufReader& r, MetaEvent& out)
+{
+    out.tick = r.u64();
+    out.type = r.u8();
+    out.text = r.str();
+    return r.ok();
+}
+
+static bool load_session_meta(BufReader& r, Engine& e)
+{
+    e.session_meta().clear();
+    uint32_t count = r.u32();
+    for (uint32_t i = 0; i < count; ++i)
+    {
+        MetaEvent m;
+        if (!read_meta_event(r, m))
+        {
+            return false;
+        }
+        e.session_meta().push_back(std::move(m));
+    }
+    return r.ok();
+}
+
+// Reads per-track meta runs and attaches run i to the i-th loaded track. Relies
+// on TAG_TRACKS being read first (it is emitted first) to populate track_order.
+static bool load_track_meta(BufReader& r, Engine& e, const std::vector<TrackId>& track_order)
+{
+    uint32_t count = r.u32();
+    for (uint32_t i = 0; i < count; ++i)
+    {
+        uint32_t meta_count = r.u32();
+        for (uint32_t j = 0; j < meta_count; ++j)
+        {
+            MetaEvent m;
+            if (!read_meta_event(r, m))
+            {
+                return false;
+            }
+            if (i < track_order.size())
+            {
+                e.add_track_meta(track_order[i], std::move(m));
+            }
         }
     }
     return r.ok();
@@ -926,6 +1022,10 @@ static omega_status_t session_load_bytes(Engine& engine, const uint8_t* data, si
 
     // Pattern ID mapping: old ID (from file) → new ID (assigned on load)
     std::unordered_map<PatternId, PatternId> id_map;
+
+    // Track ids in load order, captured by load_tracks so load_track_meta (a
+    // later section) can attach each meta run to the right track.
+    std::vector<TrackId> track_order;
 
     // Process sections
     while (r.ok() && r.remaining() >= 8)
@@ -984,7 +1084,13 @@ static omega_status_t session_load_bytes(Engine& engine, const uint8_t* data, si
                 ok = load_ctx(sr, engine);
                 break;
             case TAG_TRACKS:
-                ok = load_tracks(sr, engine);
+                ok = load_tracks(sr, engine, track_order);
+                break;
+            case TAG_TMETA:
+                ok = load_track_meta(sr, engine, track_order);
+                break;
+            case TAG_SMETA:
+                ok = load_session_meta(sr, engine);
                 break;
             case TAG_TRANSPORT: /* saved but not restored */
                 break;

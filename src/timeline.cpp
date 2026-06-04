@@ -46,6 +46,17 @@ omega_status_t TimelineSource::set_name(TrackId track_id, std::string name)
     return OMEGA_OK;
 }
 
+omega_status_t TimelineSource::add_meta(TrackId track_id, MetaEvent meta)
+{
+    Track* trk = find_track(track_id);
+    if (trk == nullptr)
+    {
+        return OMEGA_ERR_NOT_FOUND;
+    }
+    trk->meta.push_back(std::move(meta));
+    return OMEGA_OK;
+}
+
 omega_status_t TimelineSource::set_track_mute(TrackId track_id, bool muted)
 {
     Track* trk = find_track(track_id);
@@ -80,7 +91,35 @@ bool TimelineSource::track_is_soloed(TrackId track_id) const noexcept
     return trk != nullptr && trk->soloed;
 }
 
-omega_status_t TimelineSource::add_event(TrackId track_id, const Event& event)
+void TimelineSource::insert_sorted(Track& trk, const Event& event, omega_event_id_t id)
+{
+    // lower_bound inserts before all events sharing the same tick, so a newly
+    // added event always lands at within-tick index 0 (matched by the legacy
+    // index-based undo paths in engine.cpp).
+    auto pos = std::lower_bound(
+        trk.events.begin(), trk.events.end(), event.tick, [](const Event& ev, uint64_t tick) {
+            return ev.tick < tick;
+        });
+    auto offset = pos - trk.events.begin();
+    trk.events.insert(trk.events.begin() + offset, event);
+    trk.ids.insert(trk.ids.begin() + offset, id);
+}
+
+int64_t TimelineSource::find_id_offset(const Track& trk, omega_event_id_t id) noexcept
+{
+    for (size_t i = 0; i < trk.ids.size(); ++i)
+    {
+        if (trk.ids[i] == id)
+        {
+            return static_cast<int64_t>(i);
+        }
+    }
+    return -1;
+}
+
+omega_status_t TimelineSource::add_event(TrackId track_id,
+                                         const Event& event,
+                                         omega_event_id_t* out_id)
 {
     Track* trk = find_track(track_id);
     if (trk == nullptr)
@@ -88,11 +127,26 @@ omega_status_t TimelineSource::add_event(TrackId track_id, const Event& event)
         return OMEGA_ERR_NOT_FOUND;
     }
 
-    auto pos = std::lower_bound(
-        trk->events.begin(), trk->events.end(), event.tick, [](const Event& ev, uint64_t tick) {
-            return ev.tick < tick;
-        });
-    trk->events.insert(pos, event);
+    const omega_event_id_t id = next_event_id_++;
+    insert_sorted(*trk, event, id);
+    if (out_id != nullptr)
+    {
+        *out_id = id;
+    }
+    return OMEGA_OK;
+}
+
+omega_status_t TimelineSource::insert_event_with_id(TrackId track_id,
+                                                    omega_event_id_t id,
+                                                    const Event& event)
+{
+    Track* trk = find_track(track_id);
+    if (trk == nullptr)
+    {
+        return OMEGA_ERR_NOT_FOUND;
+    }
+    // id is an already-issued value (< next_event_id_); do not bump the counter.
+    insert_sorted(*trk, event, id);
     return OMEGA_OK;
 }
 
@@ -113,13 +167,32 @@ omega_status_t TimelineSource::remove_event(TrackId track_id, uint64_t tick, uin
     {
         if (idx == index)
         {
-            trk->events.erase(pos);
+            auto offset = pos - trk->events.begin();
+            trk->events.erase(trk->events.begin() + offset);
+            trk->ids.erase(trk->ids.begin() + offset);
             return OMEGA_OK;
         }
         ++pos;
         ++idx;
     }
     return OMEGA_ERR_NOT_FOUND;
+}
+
+omega_status_t TimelineSource::remove_event_by_id(TrackId track_id, omega_event_id_t id)
+{
+    Track* trk = find_track(track_id);
+    if (trk == nullptr)
+    {
+        return OMEGA_ERR_NOT_FOUND;
+    }
+    const int64_t off = find_id_offset(*trk, id);
+    if (off < 0)
+    {
+        return OMEGA_ERR_NOT_FOUND;
+    }
+    trk->events.erase(trk->events.begin() + off);
+    trk->ids.erase(trk->ids.begin() + off);
+    return OMEGA_OK;
 }
 
 omega_status_t TimelineSource::replace_event(TrackId track_id,
@@ -142,13 +215,19 @@ omega_status_t TimelineSource::replace_event(TrackId track_id,
     {
         if (idx == index)
         {
-            *pos = replacement;
-            // Re-sort only if the tick changed; otherwise the order is still valid.
-            if (replacement.tick != tick)
+            auto offset = pos - trk->events.begin();
+            if (replacement.tick == tick)
             {
-                std::stable_sort(trk->events.begin(),
-                                 trk->events.end(),
-                                 [](const Event& a, const Event& b) { return a.tick < b.tick; });
+                trk->events[static_cast<size_t>(offset)] = replacement;
+            }
+            else
+            {
+                // Move the event (and its id) to the new sorted position so the
+                // events/ids vectors stay parallel and identity is preserved.
+                const omega_event_id_t id = trk->ids[static_cast<size_t>(offset)];
+                trk->events.erase(trk->events.begin() + offset);
+                trk->ids.erase(trk->ids.begin() + offset);
+                insert_sorted(*trk, replacement, id);
             }
             return OMEGA_OK;
         }
@@ -156,6 +235,99 @@ omega_status_t TimelineSource::replace_event(TrackId track_id,
         ++idx;
     }
     return OMEGA_ERR_NOT_FOUND;
+}
+
+omega_status_t TimelineSource::replace_event_by_id(TrackId track_id,
+                                                   omega_event_id_t id,
+                                                   const Event& replacement)
+{
+    Track* trk = find_track(track_id);
+    if (trk == nullptr)
+    {
+        return OMEGA_ERR_NOT_FOUND;
+    }
+    const int64_t off = find_id_offset(*trk, id);
+    if (off < 0)
+    {
+        return OMEGA_ERR_NOT_FOUND;
+    }
+    if (replacement.tick == trk->events[static_cast<size_t>(off)].tick)
+    {
+        trk->events[static_cast<size_t>(off)] = replacement;
+    }
+    else
+    {
+        trk->events.erase(trk->events.begin() + off);
+        trk->ids.erase(trk->ids.begin() + off);
+        insert_sorted(*trk, replacement, id);
+    }
+    return OMEGA_OK;
+}
+
+bool TimelineSource::event_for_id(TrackId track_id, omega_event_id_t id, Event* out) const noexcept
+{
+    const Track* trk = find_track(track_id);
+    if (trk == nullptr || out == nullptr)
+    {
+        return false;
+    }
+    const int64_t off = find_id_offset(*trk, id);
+    if (off < 0)
+    {
+        return false;
+    }
+    *out = trk->events[static_cast<size_t>(off)];
+    return true;
+}
+
+omega_status_t TimelineSource::copy_events(TrackId track_id,
+                                           uint64_t lo,
+                                           uint64_t hi,
+                                           uint8_t tag_filter,
+                                           Event* out_events,
+                                           omega_event_id_t* out_ids,
+                                           size_t cap,
+                                           size_t* out_total) const
+{
+    if (out_total != nullptr)
+    {
+        *out_total = 0;
+    }
+    const Track* trk = find_track(track_id);
+    if (trk == nullptr)
+    {
+        return OMEGA_ERR_NOT_FOUND;
+    }
+
+    // Events are tick-sorted; start at the first event with tick >= lo.
+    auto begin = std::lower_bound(
+        trk->events.begin(), trk->events.end(), lo, [](const Event& ev, uint64_t v) {
+            return ev.tick < v;
+        });
+    size_t total = 0;
+    size_t written = 0;
+    for (auto it = begin; it != trk->events.end() && it->tick < hi; ++it)
+    {
+        if (tag_filter != 0xFFu && it->payload_tag != tag_filter)
+        {
+            continue;
+        }
+        ++total;
+        if (written < cap)
+        {
+            out_events[written] = *it;
+            if (out_ids != nullptr)
+            {
+                out_ids[written] = trk->ids[static_cast<size_t>(it - trk->events.begin())];
+            }
+            ++written;
+        }
+    }
+    if (out_total != nullptr)
+    {
+        *out_total = total;
+    }
+    return OMEGA_OK;
 }
 
 omega_status_t TimelineSource::shift_events(TrackId track_id, int64_t offset_ticks)
@@ -170,10 +342,30 @@ omega_status_t TimelineSource::shift_events(TrackId track_id, int64_t offset_tic
         int64_t new_tick = static_cast<int64_t>(ev.tick) + offset_ticks;
         ev.tick = (new_tick < 0) ? 0u : static_cast<uint64_t>(new_tick);
     }
-    // Re-sort once after all ticks are updated.
-    std::stable_sort(trk->events.begin(), trk->events.end(), [](const Event& a, const Event& b) {
-        return a.tick < b.tick;
+    // Re-sort once after all ticks are updated, co-sorting ids to stay parallel.
+    // Stable by tick so events sharing a tick keep their relative order (and the
+    // matching id with each). Mutation thread / engine stopped, so the temporary
+    // permutation allocation is acceptable.
+    const size_t n = trk->events.size();
+    std::vector<uint32_t> perm(n);
+    for (uint32_t i = 0; i < n; ++i)
+    {
+        perm[i] = i;
+    }
+    std::stable_sort(perm.begin(), perm.end(), [&](uint32_t a, uint32_t b) {
+        return trk->events[a].tick < trk->events[b].tick;
     });
+    std::pmr::vector<Event> new_events{trk->events.get_allocator()};
+    std::pmr::vector<omega_event_id_t> new_ids{trk->ids.get_allocator()};
+    new_events.reserve(n);
+    new_ids.reserve(n);
+    for (uint32_t i : perm)
+    {
+        new_events.push_back(trk->events[i]);
+        new_ids.push_back(trk->ids[i]);
+    }
+    trk->events = std::move(new_events);
+    trk->ids = std::move(new_ids);
     return OMEGA_OK;
 }
 
@@ -208,6 +400,7 @@ void TimelineSource::clear_tracks() noexcept
 {
     tracks_.clear();
     next_id_ = 1;
+    next_event_id_ = 1;
     next_tick_ = 0;
     started_ = false;
     active_notes_.clear();
