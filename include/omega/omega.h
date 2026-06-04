@@ -111,7 +111,16 @@ OMEGA_API const char* omega_status_string(omega_status_t status);
 
 /* payload_tag discriminants */
 #define OMEGA_NOTE_ON 0x00u    /* data[0]=note, data[1]=vel, data[2-5]=duration_ticks */
-#define OMEGA_NOTE_OFF 0x01u   /* data[0]=note, data[1]=vel */
+#define OMEGA_NOTE_OFF 0x01u   /* data[0]=note, data[1]=vel.
+                                 * NOTE: omega's timeline model is duration-based.
+                                 * smf_import() always emits NOTE_ON with inline
+                                 * duration (data[2-5]); it never inserts paired
+                                 * NOTE_OFF events. NOTE_OFF events may appear in
+                                 * timelines built from non-pairing sources (e.g.
+                                 * raw MIDI capture), but they carry no duration
+                                 * and cannot be rendered as note bars.  Graphical
+                                 * editors should filter to OMEGA_NOTE_ON and treat
+                                 * bare NOTE_OFFs as opaque pass-through events. */
 #define OMEGA_CC 0x02u         /* data[0]=controller, data[1]=value */
 #define OMEGA_PROGRAM 0x03u    /* data[0]=program */
 #define OMEGA_PITCH_BEND 0x04u /* data[0]=LSB (7-bit), data[1]=MSB (7-bit); center=0x40,0x00 */
@@ -923,6 +932,23 @@ OMEGA_API omega_status_t omega_engine_undo(omega_engine_t* e);
  *   OMEGA_ERR_QUEUE_FULL — command queue is full.
  */
 OMEGA_API omega_status_t omega_engine_redo(omega_engine_t* e);
+
+/*
+ * Returns a monotonically-increasing counter that the timing thread advances
+ * once per process() cycle in which at least one enqueued command was applied.
+ *
+ * A UI thread that needs to re-read track state immediately after an enqueued
+ * edit (undo, redo, replace, add, delete, …) can use this as a lightweight
+ * read-after-write fence:
+ *
+ *   uint32_t epoch = omega_engine_edit_epoch(e);
+ *   omega_engine_undo(e);
+ *   while (omega_engine_edit_epoch(e) == epoch) { spin / sleep briefly; }
+ *   // now safe to re-snapshot — the undo has been applied
+ *
+ * Thread: Any thread.
+ */
+OMEGA_API uint32_t omega_engine_edit_epoch(const omega_engine_t* e);
 
 /*
  * Returns the current transport state.

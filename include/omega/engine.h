@@ -926,6 +926,17 @@ public:
     [[nodiscard]] omega_position_t position() const noexcept;
 
     /*
+     * Returns a monotonically-increasing counter that the timing thread
+     * advances once per process() cycle in which at least one enqueued
+     * command was applied.  A UI thread that wants to wait for an enqueued
+     * edit (undo, redo, replace, add, delete, …) to take effect can read
+     * this value before enqueuing, then spin-poll until it changes.
+     *
+     * Thread: Any thread.
+     */
+    [[nodiscard]] uint32_t edit_epoch() const noexcept;
+
+    /*
      * Returns the current state of the given performance slot.
      * Returns SlotState::EMPTY for out-of-range slot indices.
      *
@@ -1200,6 +1211,10 @@ private:
     using DispatchTapFn = void (*)(const omega_event_t*, void*);
     std::atomic<DispatchTapFn> dispatch_tap_fn_{nullptr};
     void* dispatch_tap_userdata_{nullptr};
+
+    // Incremented by the timing thread after each process() cycle that drained
+    // at least one command.  Lets UI threads detect when an enqueued edit is live.
+    std::atomic<uint32_t> edit_epoch_{0};
 };
 
 }  // namespace omega

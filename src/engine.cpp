@@ -1329,8 +1329,10 @@ void Engine::process()
 
     Command cmd;
     uint32_t drain_limit = queue_.size();
+    bool any_drained = false;
     while (drain_limit-- > 0 && queue_.pop(cmd))
     {
+        any_drained = true;
         std::visit(
             [this](auto& c) {
                 using T = std::decay_t<decltype(c)>;
@@ -1521,6 +1523,8 @@ void Engine::process()
             },
             cmd);
     }
+    if (any_drained)
+        edit_epoch_.fetch_add(1, std::memory_order_release);
 
     if (state_.load(std::memory_order_acquire) != static_cast<uint8_t>(TransportState::PLAYING))
     {
@@ -1653,6 +1657,11 @@ uint64_t Engine::transport_position_ns() const
 uint64_t Engine::transport_position_tick() const
 {
     return tempo_map_.ns_to_ticks(last_position_ns_.load(std::memory_order_relaxed));
+}
+
+uint32_t Engine::edit_epoch() const noexcept
+{
+    return edit_epoch_.load(std::memory_order_acquire);
 }
 
 omega_position_t Engine::position() const noexcept

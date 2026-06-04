@@ -595,6 +595,15 @@ omega_status_t omega_engine_redo(omega_engine_t* eng)
     return eng->engine.redo();
 }
 
+uint32_t omega_engine_edit_epoch(const omega_engine_t* eng)
+{
+    if (eng == nullptr)
+    {
+        return 0;
+    }
+    return eng->engine.edit_epoch();
+}
+
 omega_transport_state_t omega_engine_transport_state(const omega_engine_t* eng)
 {
     if (eng == nullptr)
