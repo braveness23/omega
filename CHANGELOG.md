@@ -10,6 +10,22 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Built-in modulation sources** (Omega Complete, item 2): backs the README claim that
+  "ModulationBus carries LFOs, envelopes, step modulators" with shipping code. Three
+  `EventSource` subclasses in `<omega/modulators.h>` write to a named `ModulationBus` channel
+  each `process()` cycle; register at `OMEGA_SOURCE_PRIORITY_MODULATOR` so playback sources
+  see updated values in the same cycle.
+  - **`LfoSource`** — four shapes (Sine, Triangle, Sawtooth, Square), rate in beats, depth,
+    DC offset. Params settable from the mutation thread while playing (atomic relaxed stores).
+  - **`EnvelopeSource`** — up to 64 linearly-interpolated breakpoints, optional looping with
+    period = last breakpoint tick. Values held outside the breakpoint range.
+  - **`StepModulatorSource`** — up to 64 steps, configurable step length in ticks, optional
+    looping. `set_step()` auto-extends the active step count.
+  - **C API**: `omega_lfo_create/set_shape/set_rate/set_depth/set_offset/destroy`;
+    `omega_envelope_create/add_point/clear/destroy`;
+    `omega_step_mod_create/set_step/set_count/destroy`. All create functions register the
+    source with the engine at `OMEGA_SOURCE_PRIORITY_MODULATOR`. 16 new unit tests +
+    7 new C API integration tests.
 - **SMF meta-event fidelity** (Omega Complete, item 1): SMF import/export now round-trips the
   text-class meta events that previously vanished, so a `.mid` survives an import→export with
   its descriptive metadata intact.
