@@ -143,7 +143,9 @@ public:
      * success, false if track_id or id is not found. Thread: any thread with the
      * usual no-concurrent-mutation rule.
      */
-    [[nodiscard]] bool event_for_id(TrackId track_id, omega_event_id_t id, Event* out) const noexcept;
+    [[nodiscard]] bool event_for_id(TrackId track_id,
+                                    omega_event_id_t id,
+                                    Event* out) const noexcept;
 
     /*
      * Bulk-copies events in [lo, hi) (optionally filtered by payload tag) into

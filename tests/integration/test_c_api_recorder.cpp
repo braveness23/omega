@@ -17,9 +17,17 @@ static omega_input_t* as_input(omega::MockEventInput& i)
     return reinterpret_cast<omega_input_t*>(&i);
 }
 
+// omega_event_t and omega::Event share an ABI-identical layout; bridge the C
+// event into the C++ Event that MockEventInput::prime() expects.
+static const omega::Event& as_event(const omega_event_t& ev)
+{
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    return *reinterpret_cast<const omega::Event*>(&ev);
+}
+
 // The C API has omega_make_note_on but no omega_make_note_off; construct manually.
-static omega_event_t make_note_off(uint64_t tick, uint32_t sink_id, uint8_t ch,
-                                   uint8_t note, uint8_t vel)
+static omega_event_t make_note_off(
+    uint64_t tick, uint32_t sink_id, uint8_t ch, uint8_t note, uint8_t vel)
 {
     omega_event_t ev{};
     ev.tick = tick;
@@ -130,11 +138,11 @@ TEST_CASE("omega_recorder: note-on + note-off produces one NOTE_ON in timeline")
     REQUIRE(omega_recorder_start(rec, track, 0xFFu) == OMEGA_OK);
 
     omega_event_t on = omega_make_note_on(0u, sid, 0u, 60u, 100u, 0u);
-    midi_in.prime(*reinterpret_cast<const omega::Event*>(&on));
+    midi_in.prime(as_event(on));
     omega_engine_process(e);  // NOTE_ON primed into InputBus, tick advances
 
     omega_event_t off = make_note_off(0u, sid, 0u, 60u, 0u);
-    midi_in.prime(*reinterpret_cast<const omega::Event*>(&off));
+    midi_in.prime(as_event(off));
     omega_engine_process(e);  // NOTE_OFF resolves duration; NOTE_ON committed to track
 
     const size_t n = omega_recorder_stop(rec);
@@ -171,14 +179,14 @@ TEST_CASE("omega_recorder: channel filter excludes events on other channels")
     // NOTE_ON on ch1 (filtered out) and ch0 (captured), then both NOTE_OFFs.
     omega_event_t on_ch1 = omega_make_note_on(0u, sid, 1u, 64u, 100u, 0u);
     omega_event_t on_ch0 = omega_make_note_on(0u, sid, 0u, 60u, 100u, 0u);
-    midi_in.prime(*reinterpret_cast<const omega::Event*>(&on_ch1));
-    midi_in.prime(*reinterpret_cast<const omega::Event*>(&on_ch0));
+    midi_in.prime(as_event(on_ch1));
+    midi_in.prime(as_event(on_ch0));
     omega_engine_process(e);
 
     omega_event_t off_ch1 = make_note_off(0u, sid, 1u, 64u, 0u);
     omega_event_t off_ch0 = make_note_off(0u, sid, 0u, 60u, 0u);
-    midi_in.prime(*reinterpret_cast<const omega::Event*>(&off_ch1));
-    midi_in.prime(*reinterpret_cast<const omega::Event*>(&off_ch0));
+    midi_in.prime(as_event(off_ch1));
+    midi_in.prime(as_event(off_ch0));
     omega_engine_process(e);
 
     const size_t n = omega_recorder_stop(rec);
@@ -214,7 +222,7 @@ TEST_CASE("omega_recorder: held note flushed on stop_recording")
 
     // Prime NOTE_ON but no NOTE_OFF — recorder should flush on stop.
     omega_event_t on = omega_make_note_on(0u, sid, 0u, 60u, 100u, 0u);
-    midi_in.prime(*reinterpret_cast<const omega::Event*>(&on));
+    midi_in.prime(as_event(on));
     omega_engine_process(e);
     omega_engine_process(e);  // extra cycle so last_tick_ > on_tick
 

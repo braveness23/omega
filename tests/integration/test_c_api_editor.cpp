@@ -47,16 +47,16 @@ struct Fixture
 TEST_CASE("F8: copy_events null engine is OMEGA_ERR_INVALID")
 {
     omega_event_t buf[4];
-    REQUIRE(omega_engine_track_copy_events(nullptr, 1u, 0u, 1000u, 0xFFu, buf, nullptr, 4u, nullptr)
-            == OMEGA_ERR_INVALID);
+    REQUIRE(omega_engine_track_copy_events(
+                nullptr, 1u, 0u, 1000u, 0xFFu, buf, nullptr, 4u, nullptr) == OMEGA_ERR_INVALID);
 }
 
 TEST_CASE("F8: copy_events unknown track is OMEGA_ERR_NOT_FOUND")
 {
     Fixture fx{0u};
     omega_event_t buf[4];
-    REQUIRE(omega_engine_track_copy_events(fx.e, 999u, 0u, 1000u, 0xFFu, buf, nullptr, 4u, nullptr)
-            == OMEGA_ERR_NOT_FOUND);
+    REQUIRE(omega_engine_track_copy_events(
+                fx.e, 999u, 0u, 1000u, 0xFFu, buf, nullptr, 4u, nullptr) == OMEGA_ERR_NOT_FOUND);
 }
 
 TEST_CASE("F8: copy_events returns only the events inside [lo, hi)")
@@ -86,16 +86,16 @@ TEST_CASE("F8: copy_events reports full total even when cap truncates")
     omega_status_t st =
         omega_engine_track_copy_events(fx.e, fx.track, 0u, 10000u, 0xFFu, buf, nullptr, 1u, &total);
     REQUIRE(st == OMEGA_OK);
-    REQUIRE(total == 3u);          // all three matched ...
-    REQUIRE(buf[0].tick == 0u);    // ... but only one written (cap == 1)
+    REQUIRE(total == 3u);        // all three matched ...
+    REQUIRE(buf[0].tick == 0u);  // ... but only one written (cap == 1)
 }
 
 TEST_CASE("F8: copy_events with cap 0 and null buffer just counts")
 {
     Fixture fx{0u, 480u, 960u};
     size_t total = 0;
-    omega_status_t st =
-        omega_engine_track_copy_events(fx.e, fx.track, 0u, 10000u, 0xFFu, nullptr, nullptr, 0u, &total);
+    omega_status_t st = omega_engine_track_copy_events(
+        fx.e, fx.track, 0u, 10000u, 0xFFu, nullptr, nullptr, 0u, &total);
     REQUIRE(st == OMEGA_OK);
     REQUIRE(total == 3u);
 }
@@ -115,9 +115,8 @@ TEST_CASE("F8: copy_events honours the tag filter")
 
     omega_event_t buf[8];
     size_t total = 0;
-    REQUIRE(omega_engine_track_copy_events(fx.e, fx.track, 0u, 10000u, OMEGA_NOTE_ON, buf, nullptr,
-                                           8u, &total)
-            == OMEGA_OK);
+    REQUIRE(omega_engine_track_copy_events(
+                fx.e, fx.track, 0u, 10000u, OMEGA_NOTE_ON, buf, nullptr, 8u, &total) == OMEGA_OK);
     REQUIRE(total == 2u);  // the CC is filtered out
 }
 

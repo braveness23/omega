@@ -480,11 +480,8 @@ omega_status_t omega_engine_track_meta_at(const omega_engine_t* eng,
     return OMEGA_ERR_NOT_FOUND;
 }
 
-omega_status_t omega_engine_add_track_meta(omega_engine_t* eng,
-                                           omega_track_id_t track,
-                                           omega_tick_t tick,
-                                           uint8_t type,
-                                           const char* text)
+omega_status_t omega_engine_add_track_meta(
+    omega_engine_t* eng, omega_track_id_t track, omega_tick_t tick, uint8_t type, const char* text)
 {
     if (eng == nullptr || text == nullptr)
     {
@@ -667,7 +664,7 @@ omega_status_t omega_engine_track_for_each_event(const omega_engine_t* eng,
         for (uint32_t i = 0; i < static_cast<uint32_t>(t.events.size()); ++i)
         {
             const auto& ev = t.events[i];
-            const bool ch_match  = (channel_filter == 0xFFu) || (ev.channel == channel_filter);
+            const bool ch_match = (channel_filter == 0xFFu) || (ev.channel == channel_filter);
             const bool tag_match = (tag_filter == 0xFFu) || (ev.payload_tag == tag_filter);
             if (ch_match && tag_match)
             {
@@ -2235,8 +2232,7 @@ omega_recorder_t* omega_recorder_create(omega_engine_t* eng, uint32_t sink_id)
     // Register the Recorder as an EventSource at MODULATOR priority so it runs
     // before TimelineSource on each process() cycle (recorded notes become
     // immediately playable without a one-cycle delay).
-    omega_status_t st = eng->engine.add_source(&holder->recorder,
-                                               OMEGA_SOURCE_PRIORITY_MODULATOR);
+    omega_status_t st = eng->engine.add_source(&holder->recorder, OMEGA_SOURCE_PRIORITY_MODULATOR);
     if (st != OMEGA_OK)
     {
         // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)

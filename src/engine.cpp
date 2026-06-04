@@ -27,8 +27,11 @@ public:
                         bool any_soloed,
                         void (*tap)(const omega_event_t*, void*),
                         void* tap_ud) noexcept
-        : EventDispatcher{sinks}, filters_{&filters}, any_soloed_{any_soloed},
-          tap_{tap}, tap_ud_{tap_ud}
+        : EventDispatcher{sinks},
+          filters_{&filters},
+          any_soloed_{any_soloed},
+          tap_{tap},
+          tap_ud_{tap_ud}
     {}
 
     void dispatch(const Event& event) noexcept override
@@ -843,9 +846,11 @@ void Engine::apply(const TransportCmd& cmd)
             ctx.input_bus = &input_bus_;
             ctx.modulation_bus = &mod_bus_;
             ctx.perf_ctx = perf_ctx_;
-            FilteringDispatcher dispatcher{
-                sinks_, sink_filters_, any_soloed_.load(std::memory_order_relaxed),
-                dispatch_tap_fn_.load(std::memory_order_acquire), dispatch_tap_userdata_};
+            FilteringDispatcher dispatcher{sinks_,
+                                           sink_filters_,
+                                           any_soloed_.load(std::memory_order_relaxed),
+                                           dispatch_tap_fn_.load(std::memory_order_acquire),
+                                           dispatch_tap_userdata_};
             for (auto& [pri, src] : custom_sources_)
             {
                 src->on_locate(cmd.locate_tick, dispatcher, ctx);
@@ -1554,9 +1559,11 @@ void Engine::process()
     ctx.modulation_bus = &mod_bus_;
     ctx.perf_ctx = perf_ctx_;
 
-    FilteringDispatcher dispatcher{
-        sinks_, sink_filters_, any_soloed_.load(std::memory_order_relaxed),
-        dispatch_tap_fn_.load(std::memory_order_acquire), dispatch_tap_userdata_};
+    FilteringDispatcher dispatcher{sinks_,
+                                   sink_filters_,
+                                   any_soloed_.load(std::memory_order_relaxed),
+                                   dispatch_tap_fn_.load(std::memory_order_acquire),
+                                   dispatch_tap_userdata_};
 
     // Loop detection: when the transport has reached or passed loop_end_tick_,
     // locate all sources back to loop_start_tick_ and resume from there.

@@ -443,7 +443,10 @@ static BufWriter ser_tracks(const Engine& e)
     return w;
 }
 
-static void ser_meta_vec_size(BufWriter& w, size_t n) { w.u32(static_cast<uint32_t>(n)); }
+static void ser_meta_vec_size(BufWriter& w, size_t n)
+{
+    w.u32(static_cast<uint32_t>(n));
+}
 
 static void ser_meta_event(BufWriter& w, const MetaEvent& m)
 {

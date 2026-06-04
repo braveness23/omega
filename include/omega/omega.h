@@ -110,17 +110,18 @@ OMEGA_API const char* omega_status_string(omega_status_t status);
 /* ── Events ───────────────────────────────────────────────────────────────── */
 
 /* payload_tag discriminants */
-#define OMEGA_NOTE_ON 0x00u    /* data[0]=note, data[1]=vel, data[2-5]=duration_ticks */
-#define OMEGA_NOTE_OFF 0x01u   /* data[0]=note, data[1]=vel.
-                                 * NOTE: omega's timeline model is duration-based.
-                                 * smf_import() always emits NOTE_ON with inline
-                                 * duration (data[2-5]); it never inserts paired
-                                 * NOTE_OFF events. NOTE_OFF events may appear in
-                                 * timelines built from non-pairing sources (e.g.
-                                 * raw MIDI capture), but they carry no duration
-                                 * and cannot be rendered as note bars.  Graphical
-                                 * editors should filter to OMEGA_NOTE_ON and treat
-                                 * bare NOTE_OFFs as opaque pass-through events. */
+#define OMEGA_NOTE_ON 0x00u /* data[0]=note, data[1]=vel, data[2-5]=duration_ticks */
+#define OMEGA_NOTE_OFF                                                             \
+    0x01u                      /* data[0]=note, data[1]=vel.                       \
+                                * NOTE: omega's timeline model is duration-based.  \
+                                * smf_import() always emits NOTE_ON with inline    \
+                                * duration (data[2-5]); it never inserts paired    \
+                                * NOTE_OFF events. NOTE_OFF events may appear in   \
+                                * timelines built from non-pairing sources (e.g.   \
+                                * raw MIDI capture), but they carry no duration    \
+                                * and cannot be rendered as note bars.  Graphical  \
+                                * editors should filter to OMEGA_NOTE_ON and treat \
+                                * bare NOTE_OFFs as opaque pass-through events. */
 #define OMEGA_CC 0x02u         /* data[0]=controller, data[1]=value */
 #define OMEGA_PROGRAM 0x03u    /* data[0]=program */
 #define OMEGA_PITCH_BEND 0x04u /* data[0]=LSB (7-bit), data[1]=MSB (7-bit); center=0x40,0x00 */
@@ -680,10 +681,8 @@ OMEGA_API uint32_t omega_engine_track_count(const omega_engine_t* e);
  *   OMEGA_OK          — iteration completed (zero or more tracks visited).
  *   OMEGA_ERR_INVALID — e or cb is NULL.
  */
-OMEGA_API omega_status_t omega_engine_track_for_each(const omega_engine_t* e,
-                                                     void (*cb)(omega_track_id_t id,
-                                                                void* userdata),
-                                                     void* userdata);
+OMEGA_API omega_status_t omega_engine_track_for_each(
+    const omega_engine_t* e, void (*cb)(omega_track_id_t id, void* userdata), void* userdata);
 
 /*
  * Copies the track name into buf (null-terminated; truncated to buf_size - 1
@@ -707,8 +706,7 @@ OMEGA_API omega_status_t omega_engine_track_name(const omega_engine_t* e,
  *
  * Thread: Mutation thread only. Must not be called concurrently with process().
  */
-OMEGA_API uint8_t omega_engine_track_channel(const omega_engine_t* e,
-                                             omega_track_id_t track);
+OMEGA_API uint8_t omega_engine_track_channel(const omega_engine_t* e, omega_track_id_t track);
 
 /*
  * Returns the number of events in a timeline track via *count_out.
@@ -842,11 +840,8 @@ OMEGA_API omega_status_t omega_engine_track_meta_at(const omega_engine_t* e,
  *
  * Returns OMEGA_ERR_INVALID (e or text NULL) or OMEGA_ERR_NOT_FOUND (no track).
  */
-OMEGA_API omega_status_t omega_engine_add_track_meta(omega_engine_t* e,
-                                                     omega_track_id_t track,
-                                                     omega_tick_t tick,
-                                                     uint8_t type,
-                                                     const char* text);
+OMEGA_API omega_status_t omega_engine_add_track_meta(
+    omega_engine_t* e, omega_track_id_t track, omega_tick_t tick, uint8_t type, const char* text);
 
 /*
  * Session-level meta (no per-track home). Same conventions as the per-track
