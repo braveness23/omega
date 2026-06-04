@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <string>
 
 // Cast CapturingSink to the opaque omega_sink_t* accepted by the C API.
 static omega_sink_t* as_sink(omega::CapturingSink& s)
@@ -282,5 +283,95 @@ TEST_CASE("C API tracks: omega_smf_import_ex clear_existing succeeds")
     opts.clear_existing = 1;
     REQUIRE(omega_smf_import_ex(e, path.c_str(), &opts) == OMEGA_OK);
 
+    omega_engine_destroy(e);
+}
+
+// ── Meta C API ───────────────────────────────────────────────────────────────
+
+TEST_CASE("C API meta: track meta add / count / read")
+{
+    omega_engine_t* e = omega_engine_create();
+    REQUIRE(e != nullptr);
+
+    omega_track_id_t tid = 0;
+    REQUIRE(omega_engine_add_track(e, "Piano", &tid) == OMEGA_OK);
+
+    REQUIRE(omega_engine_track_meta_count(e, tid) == 0u);
+    REQUIRE(omega_engine_add_track_meta(e, tid, 0u, 0x04, "Grand Piano") == OMEGA_OK);
+    REQUIRE(omega_engine_add_track_meta(e, tid, 480u, 0x05, "la") == OMEGA_OK);
+    REQUIRE(omega_engine_track_meta_count(e, tid) == 2u);
+
+    std::array<char, 64> buf{};
+    omega_tick_t tick = 0;
+    uint8_t type = 0;
+    REQUIRE(omega_engine_track_meta_at(e, tid, 1, &tick, &type, buf.data(), buf.size()) ==
+            OMEGA_OK);
+    CHECK(tick == 480u);
+    CHECK(type == 0x05);
+    CHECK(std::string(buf.data()) == "la");
+
+    // Optional out params may be NULL.
+    REQUIRE(omega_engine_track_meta_at(e, tid, 0, nullptr, nullptr, buf.data(), buf.size()) ==
+            OMEGA_OK);
+    CHECK(std::string(buf.data()) == "Grand Piano");
+
+    // Out-of-range index.
+    CHECK(omega_engine_track_meta_at(e, tid, 2, &tick, &type, buf.data(), buf.size()) ==
+          OMEGA_ERR_NOT_FOUND);
+
+    omega_engine_destroy(e);
+}
+
+TEST_CASE("C API meta: session meta add / count / read")
+{
+    omega_engine_t* e = omega_engine_create();
+    REQUIRE(e != nullptr);
+
+    REQUIRE(omega_engine_session_meta_count(e) == 0u);
+    REQUIRE(omega_engine_add_session_meta(e, 0u, 0x02, "(c) 2026") == OMEGA_OK);
+    REQUIRE(omega_engine_session_meta_count(e) == 1u);
+
+    std::array<char, 64> buf{};
+    uint8_t type = 0;
+    REQUIRE(omega_engine_session_meta_at(e, 0, nullptr, &type, buf.data(), buf.size()) == OMEGA_OK);
+    CHECK(type == 0x02);
+    CHECK(std::string(buf.data()) == "(c) 2026");
+
+    omega_engine_destroy(e);
+}
+
+TEST_CASE("C API meta: truncation null-terminates within capacity")
+{
+    omega_engine_t* e = omega_engine_create();
+    REQUIRE(e != nullptr);
+    REQUIRE(omega_engine_add_session_meta(e, 0u, 0x01, "abcdef") == OMEGA_OK);
+
+    std::array<char, 4> buf{};  // room for 3 chars + NUL
+    REQUIRE(omega_engine_session_meta_at(e, 0, nullptr, nullptr, buf.data(), buf.size()) ==
+            OMEGA_OK);
+    CHECK(std::string(buf.data()) == "abc");
+
+    omega_engine_destroy(e);
+}
+
+TEST_CASE("C API meta: NULL guards")
+{
+    CHECK(omega_engine_track_meta_count(nullptr, 1) == 0u);
+    CHECK(omega_engine_session_meta_count(nullptr) == 0u);
+    std::array<char, 8> buf{};
+    CHECK(omega_engine_track_meta_at(nullptr, 1, 0, nullptr, nullptr, buf.data(), buf.size()) ==
+          OMEGA_ERR_INVALID);
+    CHECK(omega_engine_session_meta_at(nullptr, 0, nullptr, nullptr, buf.data(), buf.size()) ==
+          OMEGA_ERR_INVALID);
+    CHECK(omega_engine_add_track_meta(nullptr, 1, 0, 0x01, "x") == OMEGA_ERR_INVALID);
+    CHECK(omega_engine_add_session_meta(nullptr, 0, 0x01, "x") == OMEGA_ERR_INVALID);
+
+    omega_engine_t* e = omega_engine_create();
+    REQUIRE(e != nullptr);
+    omega_track_id_t tid = 0;
+    REQUIRE(omega_engine_add_track(e, "T", &tid) == OMEGA_OK);
+    CHECK(omega_engine_add_track_meta(e, tid, 0, 0x01, nullptr) == OMEGA_ERR_INVALID);
+    CHECK(omega_engine_track_meta_at(e, tid, 0, nullptr, nullptr, buf.data(), 0u) ==
+          OMEGA_ERR_INVALID);
     omega_engine_destroy(e);
 }

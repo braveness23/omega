@@ -27,10 +27,15 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     two new forward-compatible sections (`TMTA` per-track, `SMTA` session-level). Sessions
     written before this change load cleanly with empty meta; older readers skip the new
     sections.
-  - New API: `omega::MetaEvent` (`<omega/meta_event.h>`), `Engine::add_track_meta()`,
-    `Engine::session_meta()`, `TimelineSource::add_meta()`. 10 new unit tests across
-    `tests/unit/test_smf_import.cpp`, `test_smf_export.cpp`, and `test_session.cpp`.
-    (A C API surface for FFI consumers follows in a subsequent commit.)
+  - **C API** (for FFI consumers such as `examples/kcs-win`): `omega_engine_track_meta_count`
+    / `omega_engine_track_meta_at` / `omega_engine_add_track_meta` and the
+    `omega_engine_*session_meta*` equivalents. Readers copy the text into a caller buffer
+    (null-terminated, truncated to capacity) following the `omega_engine_track_name`
+    convention; tick/type out-params are optional.
+  - New C++ API: `omega::MetaEvent` (`<omega/meta_event.h>`), `Engine::add_track_meta()`,
+    `Engine::session_meta()`, `TimelineSource::add_meta()`. 10 new unit tests
+    (`test_smf_import.cpp`, `test_smf_export.cpp`, `test_session.cpp`) and 4 new integration
+    tests (`test_c_api_tracks.cpp`).
 - **`omega_recorder_*` C API**: exposes `omega::Recorder` to C / FFI consumers. `omega_recorder_create(e, sink_id)` allocates a Recorder and registers it at `OMEGA_SOURCE_PRIORITY_MODULATOR` (recorded notes immediately playable); `omega_recorder_start(rec, track_id, channel_filter)` arms recording; `omega_recorder_stop(rec)` disarms and flushes held notes, returning the event count; `omega_recorder_is_recording(rec)` is thread-safe; `omega_recorder_destroy(e, rec)` deregisters and frees. Motivation: `examples/kcs-win` (.NET P/Invoke) cannot use C++ constructors, so recording was unreachable without a C wrapper. 10 new integration tests in `tests/integration/test_c_api_recorder.cpp`.
 
 ## [1.1.0] — 2026-05-30

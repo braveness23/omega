@@ -800,6 +800,73 @@ OMEGA_API omega_status_t omega_engine_track_copy_events(const omega_engine_t* e,
                                                         size_t cap,
                                                         size_t* total_out);
 
+/* ── SMF text-class meta events ─────────────────────────────────────────────────
+ *
+ * Descriptive metadata preserved for SMF round-trip fidelity. `type` is the raw
+ * SMF meta-event type byte: 0x01 Text, 0x02 Copyright, 0x04 Instrument name,
+ * 0x05 Lyric. (Track Name 0x03 is exposed via omega_engine_track_name; Marker
+ * 0x06 / Cue 0x07 via the marker API.) Per-track meta belongs to one timeline
+ * track; session meta (typically a file-level copyright) has no per-track home.
+ */
+
+/*
+ * Returns the number of meta events on `track`, or 0 if the engine is NULL or
+ * the track is not registered.
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ */
+OMEGA_API uint32_t omega_engine_track_meta_count(const omega_engine_t* e, omega_track_id_t track);
+
+/*
+ * Reads the meta event at `index` on `track`. out_tick / out_type may be NULL if
+ * not wanted. The text is copied into out_text (always null-terminated, possibly
+ * truncated to out_text_cap-1 bytes).
+ *
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ *
+ * Returns:
+ *   OMEGA_OK            — read completed.
+ *   OMEGA_ERR_INVALID   — e or out_text is NULL, or out_text_cap == 0.
+ *   OMEGA_ERR_NOT_FOUND — track is not registered, or index is out of range.
+ */
+OMEGA_API omega_status_t omega_engine_track_meta_at(const omega_engine_t* e,
+                                                    omega_track_id_t track,
+                                                    uint32_t index,
+                                                    omega_tick_t* out_tick,
+                                                    uint8_t* out_type,
+                                                    char* out_text,
+                                                    size_t out_text_cap);
+
+/*
+ * Appends a meta event to `track`.
+ * Thread: Mutation thread only.
+ *
+ * Returns OMEGA_ERR_INVALID (e or text NULL) or OMEGA_ERR_NOT_FOUND (no track).
+ */
+OMEGA_API omega_status_t omega_engine_add_track_meta(omega_engine_t* e,
+                                                     omega_track_id_t track,
+                                                     omega_tick_t tick,
+                                                     uint8_t type,
+                                                     const char* text);
+
+/*
+ * Session-level meta (no per-track home). Same conventions as the per-track
+ * functions above.
+ * Thread: Mutation thread only. Must not be called concurrently with process().
+ */
+OMEGA_API uint32_t omega_engine_session_meta_count(const omega_engine_t* e);
+
+OMEGA_API omega_status_t omega_engine_session_meta_at(const omega_engine_t* e,
+                                                      uint32_t index,
+                                                      omega_tick_t* out_tick,
+                                                      uint8_t* out_type,
+                                                      char* out_text,
+                                                      size_t out_text_cap);
+
+OMEGA_API omega_status_t omega_engine_add_session_meta(omega_engine_t* e,
+                                                       omega_tick_t tick,
+                                                       uint8_t type,
+                                                       const char* text);
+
 /*
  * Replaces the timeline track event identified by the stable id with
  * replacement. Unlike omega_engine_replace_track_event (which addresses by

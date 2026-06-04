@@ -408,6 +408,134 @@ omega_status_t omega_engine_end_edit_group(omega_engine_t* eng)
     return eng->engine.end_edit_group();
 }
 
+// ── SMF text-class meta ─────────────────────────────────────────────────────────
+
+namespace
+{
+// Copies a meta event's text into a caller buffer (always null-terminated) and
+// writes the optional out params. Shared by the per-track and session readers.
+void copy_meta(const omega::MetaEvent& m,
+               omega_tick_t* out_tick,
+               uint8_t* out_type,
+               char* out_text,
+               size_t out_text_cap)
+{
+    if (out_tick != nullptr)
+    {
+        *out_tick = m.tick;
+    }
+    if (out_type != nullptr)
+    {
+        *out_type = m.type;
+    }
+    const size_t n = std::min(m.text.size(), out_text_cap - 1u);
+    std::memcpy(out_text, m.text.data(), n);
+    out_text[n] = '\0';
+}
+}  // namespace
+
+uint32_t omega_engine_track_meta_count(const omega_engine_t* eng, omega_track_id_t track)
+{
+    if (eng == nullptr)
+    {
+        return 0u;
+    }
+    for (const auto& t : eng->engine.timeline_source().tracks())
+    {
+        if (t.id == track)
+        {
+            return static_cast<uint32_t>(t.meta.size());
+        }
+    }
+    return 0u;
+}
+
+omega_status_t omega_engine_track_meta_at(const omega_engine_t* eng,
+                                          omega_track_id_t track,
+                                          uint32_t index,
+                                          omega_tick_t* out_tick,
+                                          uint8_t* out_type,
+                                          char* out_text,
+                                          size_t out_text_cap)
+{
+    if (eng == nullptr || out_text == nullptr || out_text_cap == 0u)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    for (const auto& t : eng->engine.timeline_source().tracks())
+    {
+        if (t.id != track)
+        {
+            continue;
+        }
+        if (index >= t.meta.size())
+        {
+            out_text[0] = '\0';
+            return OMEGA_ERR_NOT_FOUND;
+        }
+        copy_meta(t.meta[index], out_tick, out_type, out_text, out_text_cap);
+        return OMEGA_OK;
+    }
+    out_text[0] = '\0';
+    return OMEGA_ERR_NOT_FOUND;
+}
+
+omega_status_t omega_engine_add_track_meta(omega_engine_t* eng,
+                                           omega_track_id_t track,
+                                           omega_tick_t tick,
+                                           uint8_t type,
+                                           const char* text)
+{
+    if (eng == nullptr || text == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return eng->engine.add_track_meta(track, omega::MetaEvent{tick, type, text});
+}
+
+uint32_t omega_engine_session_meta_count(const omega_engine_t* eng)
+{
+    if (eng == nullptr)
+    {
+        return 0u;
+    }
+    return static_cast<uint32_t>(eng->engine.session_meta().size());
+}
+
+omega_status_t omega_engine_session_meta_at(const omega_engine_t* eng,
+                                            uint32_t index,
+                                            omega_tick_t* out_tick,
+                                            uint8_t* out_type,
+                                            char* out_text,
+                                            size_t out_text_cap)
+{
+    if (eng == nullptr || out_text == nullptr || out_text_cap == 0u)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    const auto& sm = eng->engine.session_meta();
+    if (index >= sm.size())
+    {
+        out_text[0] = '\0';
+        return OMEGA_ERR_NOT_FOUND;
+    }
+    copy_meta(sm[index], out_tick, out_type, out_text, out_text_cap);
+    return OMEGA_OK;
+}
+
+omega_status_t omega_engine_add_session_meta(omega_engine_t* eng,
+                                             omega_tick_t tick,
+                                             uint8_t type,
+                                             const char* text)
+{
+    if (eng == nullptr || text == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    eng->engine.session_meta().push_back(omega::MetaEvent{tick, type, text});
+    return OMEGA_OK;
+}
+
 // ── Track read API ────────────────────────────────────────────────────────────
 
 uint32_t omega_engine_track_count(const omega_engine_t* eng)
