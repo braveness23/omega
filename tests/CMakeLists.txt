@@ -37,6 +37,7 @@ add_executable(omega_tests
     unit/test_undo_redo.cpp
     unit/test_convert_tracks.cpp
     unit/test_session.cpp
+    unit/test_drain_sink.cpp
     unit/test_modulators.cpp
 )
 
@@ -72,6 +73,7 @@ add_executable(omega_integration_tests
     integration/test_c_api_tracks.cpp
     integration/test_c_api_recorder.cpp
     integration/test_c_api_editor.cpp
+    integration/test_c_api_drain.cpp
     integration/test_c_api_modulators.cpp
 )
 
