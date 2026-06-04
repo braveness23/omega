@@ -10,6 +10,25 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **First-class WASM build target + DrainSink** (Omega Complete, item 3):
+  - **`OMEGA_BUILD_WASM` option**: guards out the three host-coupled sources
+    (`libremidi_sink.cpp`, `libremidi_input.cpp`, `timer.cpp`) and skips the libremidi
+    FetchContent + Threads dependency. Auto-enabled when CMake detects Emscripten. When
+    active, `OMEGA_NO_HOST_MIDI` is defined PUBLIC so consumers get a compile error (not a
+    link error) when they try to call the guarded APIs. This folds kcs-web's hand-curated
+    WASM source list into omega itself (resolves **W1**).
+  - **`DrainSink`** (`include/omega/drain_sink.h`, `src/drain_sink.cpp`): a lock-free
+    `OutputSink` backed by a 512-slot SPSC ring. The timing thread pushes events into it via
+    `send()` with no allocation or blocking; the consumer thread drains events via `pop()`.
+    Generalizes the test-only `CapturingSink` into a production primitive. Resolves
+    kcs-web friction **W6** (no drain API) and **W7** (event_callback fires from timing
+    thread — use DrainSink + consumer-side poll instead).
+  - **C API**: `omega_drain_sink_create()`, `omega_drain_pop()`, `omega_drain_size()`,
+    `omega_drain_dropped()`, `omega_drain_sink_destroy()`. 9 new unit tests +
+    4 new C API integration tests.
+  - **`omega_wasm` Embind target** emitted in omega's own `CMakeLists.txt` when
+    Emscripten is active and `wasm/bindings.cpp` is present. kcs-web no longer needs to
+    maintain its own source list; it links `omega::core` + `midifile` directly.
 - **SMF meta-event fidelity** (Omega Complete, item 1): SMF import/export now round-trips the
   text-class meta events that previously vanished, so a `.mid` survives an import→export with
   its descriptive metadata intact.

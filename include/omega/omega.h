@@ -1893,6 +1893,13 @@ OMEGA_API uint32_t omega_ctx_input_count(const omega_process_context_t* ctx);
 OMEGA_API const omega_event_t* omega_ctx_input_at(const omega_process_context_t* ctx, uint32_t i);
 
 /* ── MIDI I/O ─────────────────────────────────────────────────────────────── */
+/*
+ * OMEGA_NO_HOST_MIDI is defined when omega is built without host-coupled sources
+ * (OMEGA_BUILD_WASM=ON). In that mode the libremidi-backed sinks and inputs and
+ * the OmegaTimer are unavailable; the declarations below are hidden so callers
+ * get a compile error rather than a link error if they try to use them.
+ */
+#ifndef OMEGA_NO_HOST_MIDI
 
 /*
  * Creates an OutputSink backed by a real MIDI output port via libremidi.
@@ -1972,6 +1979,8 @@ OMEGA_API omega_input_t* omega_input_create_midi_in(const char* port_name);
  */
 OMEGA_API void omega_input_destroy_midi_in(omega_input_t* input);
 
+#endif /* OMEGA_NO_HOST_MIDI */
+
 /* ── Recorder ───────────────────────────────────────────────────────────────
  * Records live MIDI input (delivered via an omega_input_t / the InputBus) into
  * a timeline track. Wraps omega::Recorder. The recorder is a custom EventSource
@@ -2037,6 +2046,58 @@ OMEGA_API size_t omega_recorder_stop(omega_recorder_t* rec);
  * Thread: Any thread.
  */
 OMEGA_API int omega_recorder_is_recording(const omega_recorder_t* rec);
+
+/* ── Drain sink ───────────────────────────────────────────────────────────── */
+
+/*
+ * A lock-free OutputSink that buffers events from the timing thread into an
+ * SPSC ring (capacity 512). The host (JS main thread, audio worklet, etc.)
+ * polls omega_drain_pop() to consume events without racing the timing thread.
+ *
+ * Resolves kcs-web friction W6 (no drain API) and W7 (event_callback fires
+ * from timing thread — use DrainSink + poll from the consumer thread instead).
+ */
+typedef struct omega_drain_sink_s omega_drain_sink_t;
+
+/*
+ * Creates a DrainSink, registers it with the engine, and returns a handle.
+ * The engine must outlive the sink. Destroy with omega_drain_sink_destroy().
+ *
+ * Thread: Mutation thread only, before playback starts.
+ *
+ * Returns: caller-owned handle; NULL on invalid args or allocation failure.
+ */
+OMEGA_API omega_drain_sink_t* omega_drain_sink_create(omega_engine_t* e);
+
+/*
+ * Dequeue one event into *out. Returns 1 if an event was available, 0 if empty.
+ * Returns 0 if ds or out is NULL.
+ *
+ * Thread: Consumer thread only (single consumer).
+ */
+OMEGA_API int omega_drain_pop(omega_drain_sink_t* ds, omega_event_t* out);
+
+/*
+ * Returns the approximate number of events currently in the ring.
+ * Thread: Any thread (approximate).
+ */
+OMEGA_API uint32_t omega_drain_size(const omega_drain_sink_t* ds);
+
+/*
+ * Returns the total number of events dropped because the ring was full.
+ * Thread: Any thread.
+ */
+OMEGA_API uint32_t omega_drain_dropped(const omega_drain_sink_t* ds);
+
+/*
+ * Frees the drain sink. Call only after the engine is destroyed (or fully
+ * stopped and guaranteed not to dispatch events). The engine holds a raw
+ * reference to the sink; destroying the sink before the engine is
+ * use-after-free.
+ *
+ * Thread: Mutation thread only, after omega_engine_destroy().
+ */
+OMEGA_API void omega_drain_sink_destroy(omega_engine_t* e, omega_drain_sink_t* ds);
 
 /*
  * Gets a modulation channel value from within an advance_fn callback.
@@ -2794,6 +2855,8 @@ OMEGA_API void omega_midi_note_name(uint8_t pitch, char* out, size_t out_size);
  */
 OMEGA_API omega_status_t omega_midi_note_from_name(const char* name, uint8_t* out);
 
+#ifndef OMEGA_NO_HOST_MIDI
+
 /* ── Timer ────────────────────────────────────────────────────────────────── */
 
 typedef struct omega_timer_s omega_timer_t;
@@ -2819,6 +2882,8 @@ OMEGA_API omega_timer_t* omega_timer_create(omega_engine_t* e, uint32_t interval
  * Thread: Mutation thread only.
  */
 OMEGA_API void omega_timer_destroy(omega_timer_t* timer);
+
+#endif /* OMEGA_NO_HOST_MIDI */
 
 /* ── Snap ─────────────────────────────────────────────────────────────────── */
 
