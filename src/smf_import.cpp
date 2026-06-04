@@ -1,4 +1,5 @@
 #include <omega/engine.h>
+#include <omega/meta_event.h>
 #include <omega/omega.h>
 #include <omega/smf.h>
 #include <omega/types.h>
@@ -7,6 +8,7 @@
 #include <cstring>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "MidiFile.h"
 
@@ -34,6 +36,14 @@ public:
     // for the name to take effect; SMF files conventionally place the track
     // name at the head of the track, so this holds in practice.
     void set_track_name(std::string name) { pending_name_ = std::move(name); }
+
+    // True in split-by-channel mode, where one SMF track fans out to several
+    // omega tracks and per-track meta cannot be attributed to a single one.
+    [[nodiscard]] bool is_split() const noexcept { return opts_.split_by_channel; }
+
+    // The omega track this SMF track produced in non-split mode, if any. Empty
+    // when nothing was created (a note-less conductor track) or in split mode.
+    [[nodiscard]] std::optional<TrackId> single_track_id() const noexcept { return single_track_; }
 
     // Returns the omega TrackId that should receive an event on `channel`,
     // creating and routing the track on first use.
@@ -100,6 +110,7 @@ omega_status_t smf_import(Engine& engine, const char* path, const SmfImportOptio
         engine.tempo_map().insert(0u, 120'000u);
         engine.timesig_map().clear();
         engine.marker_list().clear();
+        engine.session_meta().clear();
     }
 
     smf::MidiFile mf;
@@ -125,6 +136,12 @@ omega_status_t smf_import(Engine& engine, const char* path, const SmfImportOptio
         // carrying only meta events (tempo, time sig, markers) do not appear as
         // empty tracks in the engine.
         TrackFactory factory{engine, t, opts};
+
+        // Buffered text-class meta for this SMF track. Flushed after the event
+        // loop: onto the omega track this SMF track produced, or — when it made
+        // none (a note-less conductor track) or split into several — onto the
+        // session-level store so nothing is lost.
+        std::vector<MetaEvent> track_meta;
 
         for (int e = 0; e < mf[t].size(); ++e)
         {
@@ -177,6 +194,20 @@ omega_status_t smf_import(Engine& engine, const char* path, const SmfImportOptio
                         name.insert(0, "[cue] ");
                     }
                     engine.marker_list().add(std::move(name), omega_tick);
+                }
+                // 0x02 = Copyright Notice (FF 02) — conceptually file-level; always
+                // kept in the session-level store regardless of which track carried it.
+                else if (meta_type == 0x02)
+                {
+                    engine.session_meta().push_back(
+                        MetaEvent{omega_tick, 0x02u, ev.getMetaContent()});
+                }
+                // 0x01 Text, 0x04 Instrument name, 0x05 Lyric — buffered and flushed
+                // to the owning omega track (or the session store) after this track.
+                else if (meta_type == 0x01 || meta_type == 0x04 || meta_type == 0x05)
+                {
+                    track_meta.push_back(MetaEvent{
+                        omega_tick, static_cast<uint8_t>(meta_type), ev.getMetaContent()});
                 }
             }
             else if (ev.isNoteOn())
@@ -241,6 +272,21 @@ omega_status_t smf_import(Engine& engine, const char* path, const SmfImportOptio
                 prog_ev.data[0] = program;
 
                 engine.add_track_event(factory.track_for(channel), prog_ev);
+            }
+        }
+
+        // Flush buffered text-class meta now that we know whether this SMF track
+        // produced a single omega track to attribute it to.
+        std::optional<TrackId> home = factory.is_split() ? std::nullopt : factory.single_track_id();
+        for (auto& m : track_meta)
+        {
+            if (home)
+            {
+                engine.add_track_meta(*home, std::move(m));
+            }
+            else
+            {
+                engine.session_meta().push_back(std::move(m));
             }
         }
     }

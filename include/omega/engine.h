@@ -8,6 +8,7 @@
 #include <omega/event_source.h>
 #include <omega/input_bus.h>
 #include <omega/marker_list.h>
+#include <omega/meta_event.h>
 #include <omega/modulation_bus.h>
 #include <omega/omega.h>
 #include <omega/pattern_library.h>
@@ -262,6 +263,16 @@ public:
      * Returns OMEGA_ERR_NOT_FOUND if track_id is not registered.
      */
     omega_status_t set_track_name(TrackId track_id, std::string name);
+
+    /*
+     * Appends an SMF text-class meta event (text, instrument name, lyric, …) to
+     * a track's metadata store. Descriptive only; never read by the timing
+     * thread. Applied directly, not via the command queue.
+     * Thread: Mutation thread only.
+     *
+     * Returns OMEGA_ERR_NOT_FOUND if track_id is not registered.
+     */
+    omega_status_t add_track_meta(TrackId track_id, MetaEvent meta);
 
     /*
      * Enqueues a command to mute/solo a timeline track. While any track is
@@ -604,6 +615,19 @@ public:
      */
     [[nodiscard]] RegionList& region_list() noexcept { return region_list_; }
     [[nodiscard]] const RegionList& region_list() const noexcept { return region_list_; }
+
+    /*
+     * Session-level SMF meta events with no per-track home — typically a
+     * file-level copyright or text carried on a note-less conductor track, which
+     * omega deliberately does not materialize as a timeline track. Preserved so
+     * such metadata round-trips through SMF (and the native session format).
+     * Thread: Mutation thread only. Must not be called concurrently with process().
+     */
+    [[nodiscard]] std::vector<MetaEvent>& session_meta() noexcept { return session_meta_; }
+    [[nodiscard]] const std::vector<MetaEvent>& session_meta() const noexcept
+    {
+        return session_meta_;
+    }
 
     /*
      * Returns the session event anchor table.
@@ -1156,6 +1180,7 @@ private:
 
     MarkerList marker_list_;
     RegionList region_list_;
+    std::vector<MetaEvent> session_meta_;
     EventAnchorTable event_anchors_;
 
     // Undo/redo history stacks — timing-thread-owned.

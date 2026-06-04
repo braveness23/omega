@@ -1,4 +1,5 @@
 #include <omega/engine.h>
+#include <omega/meta_event.h>
 #include <omega/omega.h>
 #include <omega/smf.h>
 #include <omega/test/capturing_sink.h>
@@ -261,6 +262,74 @@ TEST_CASE("SMF import: track name (FF 03) names the omega track", "[smf_import]"
     const auto& tracks = engine.timeline_source().tracks();
     REQUIRE(tracks.size() == 1u);
     CHECK(tracks[0].name == "Lead Synth");
+
+    std::remove(path.c_str());
+}
+
+TEST_CASE("SMF import: copyright to session meta, instrument name to track meta", "[smf_import]")
+{
+    const std::string path = tmp_path("meta_route");
+    smf::MidiFile mf;
+    mf.setTPQ(480);
+    mf.addCopyright(0, 0, "(c) test");
+    mf.addInstrumentName(0, 0, "Organ");
+    mf.addNoteOn(0, 0, 0, 60, 100);
+    mf.addNoteOff(0, 480, 0, 60, 0);
+    mf.sortTracks();
+    REQUIRE(mf.write(path) != 0);
+
+    omega::Engine engine;
+    REQUIRE(omega::smf_import(engine, path.c_str()) == OMEGA_OK);
+
+    // Copyright is file-level → session store; instrument name belongs to the
+    // track that carried the notes → that track's meta.
+    const auto& sm = engine.session_meta();
+    REQUIRE(sm.size() == 1u);
+    CHECK(sm[0].type == 0x02u);
+    CHECK(sm[0].text == "(c) test");
+
+    const auto& tracks = engine.timeline_source().tracks();
+    REQUIRE(tracks.size() == 1u);
+    REQUIRE(tracks[0].meta.size() == 1u);
+    CHECK(tracks[0].meta[0].type == 0x04u);
+    CHECK(tracks[0].meta[0].text == "Organ");
+
+    std::remove(path.c_str());
+}
+
+TEST_CASE("SMF import: copyright on a note-less conductor track to session meta", "[smf_import]")
+{
+    const std::string path = tmp_path("conductor_meta");
+    smf::MidiFile mf;
+    mf.setTPQ(480);
+    mf.addTracks(1);  // track 0 = conductor (meta only), track 1 = music
+    mf.addCopyright(0, 0, "(c) conductor");
+    mf.addText(0, 0, "title");
+    mf.addNoteOn(1, 0, 0, 60, 100);
+    mf.addNoteOff(1, 480, 0, 60, 0);
+    mf.sortTracks();
+    REQUIRE(mf.write(path) != 0);
+
+    omega::Engine engine;
+    REQUIRE(omega::smf_import(engine, path.c_str()) == OMEGA_OK);
+
+    // Conductor track has no notes → no omega track; its copyright AND text both
+    // land in the session store. Only the music track materializes.
+    const auto& tracks = engine.timeline_source().tracks();
+    REQUIRE(tracks.size() == 1u);
+    CHECK(tracks[0].meta.empty());
+
+    const auto& sm = engine.session_meta();
+    REQUIRE(sm.size() == 2u);
+    bool has_copyright = false;
+    bool has_text = false;
+    for (const auto& m : sm)
+    {
+        has_copyright = has_copyright || (m.type == 0x02u && m.text == "(c) conductor");
+        has_text = has_text || (m.type == 0x01u && m.text == "title");
+    }
+    CHECK(has_copyright);
+    CHECK(has_text);
 
     std::remove(path.c_str());
 }

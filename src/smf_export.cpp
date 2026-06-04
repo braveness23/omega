@@ -1,5 +1,6 @@
 #include <omega/engine.h>
 #include <omega/marker_list.h>
+#include <omega/meta_event.h>
 #include <omega/omega.h>
 #include <omega/smf.h>
 #include <omega/tempo_map.h>
@@ -72,6 +73,14 @@ omega_status_t smf_export(Engine& engine, const char* path, int smf_type)
         mf.addMarker(0, static_cast<int>(m.tick), m.name);
     }
 
+    // --- Export session-level meta (copyright / text with no per-track home) ---
+    // Track 0 is the conductor track in Type 1 and the single merged track in
+    // Type 0; either way it is the right home for file-level metadata.
+    for (const MetaEvent& m : engine.session_meta())
+    {
+        mf.addMetaEvent(0, static_cast<int>(m.tick), static_cast<int>(m.type), m.text);
+    }
+
     // --- Export track events (skip empty tracks) ---
     int midi_track_seq = 1;
     for (int t = 0; t < num_omega_tracks; ++t)
@@ -90,6 +99,12 @@ omega_status_t smf_export(Engine& engine, const char* path, int smf_type)
         if (smf_type != 0 && !tr.name.empty())
         {
             mf.addTrackName(midi_track, 0, tr.name);
+        }
+
+        // Track-scoped text-class meta (text / instrument name / lyric).
+        for (const MetaEvent& m : tr.meta)
+        {
+            mf.addMetaEvent(midi_track, static_cast<int>(m.tick), static_cast<int>(m.type), m.text);
         }
 
         for (const Event& ev : tr.events)

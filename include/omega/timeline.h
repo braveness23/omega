@@ -61,6 +61,15 @@ public:
     omega_status_t set_name(TrackId track_id, std::string name);
 
     /*
+     * Appends an SMF text-class meta event to a track's metadata store (see
+     * Track::meta). Descriptive only — never read by the timing thread — so it
+     * is safe at any time. Thread: Mutation thread only.
+     *
+     * Returns OMEGA_ERR_NOT_FOUND if track_id is not registered.
+     */
+    omega_status_t add_meta(TrackId track_id, MetaEvent meta);
+
+    /*
      * Per-track mute/solo. While any track is soloed, only soloed tracks play.
      * A muted (or solo-suppressed) track dispatches no new events; notes it has
      * already started with an inline duration still release at their scheduled

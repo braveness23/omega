@@ -46,6 +46,17 @@ omega_status_t TimelineSource::set_name(TrackId track_id, std::string name)
     return OMEGA_OK;
 }
 
+omega_status_t TimelineSource::add_meta(TrackId track_id, MetaEvent meta)
+{
+    Track* trk = find_track(track_id);
+    if (trk == nullptr)
+    {
+        return OMEGA_ERR_NOT_FOUND;
+    }
+    trk->meta.push_back(std::move(meta));
+    return OMEGA_OK;
+}
+
 omega_status_t TimelineSource::set_track_mute(TrackId track_id, bool muted)
 {
     Track* trk = find_track(track_id);

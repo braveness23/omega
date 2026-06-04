@@ -306,6 +306,11 @@ omega_status_t Engine::set_track_name(TrackId track_id, std::string name)
     return timeline_.set_name(track_id, std::move(name));
 }
 
+omega_status_t Engine::add_track_meta(TrackId track_id, MetaEvent meta)
+{
+    return timeline_.add_meta(track_id, std::move(meta));
+}
+
 omega_status_t Engine::set_track_mute(TrackId track_id, bool muted)
 {
     return enqueue(SetTrackMuteCmd{track_id, static_cast<uint8_t>(muted ? 1u : 0u)});
