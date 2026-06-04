@@ -153,6 +153,7 @@ add_library(omega_core ${_omega_core_type}
     src/timer.cpp
     src/recorder.cpp
     src/control_sink.cpp
+    src/clock_sync.cpp
     src/engine.cpp
 )
 add_library(omega::core ALIAS omega_core)

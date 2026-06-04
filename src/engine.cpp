@@ -1635,7 +1635,18 @@ void Engine::process()
 
     uint64_t now = clock_->now_ns();
     uint64_t position = now - session_start_ns_;
-    uint64_t to_tick = tempo_map_.ns_to_ticks(position);
+    uint64_t to_tick;
+    if (ext_bpm_milli_ != 0u)
+    {
+        // External tempo override for MIDI clock slaving.
+        // tick = position_ms * PPQN * BPM / 60_000
+        uint64_t pos_ms = position / 1'000'000u;
+        to_tick = pos_ms * PPQN * (ext_bpm_milli_ / 1000u) / 60'000u;
+    }
+    else
+    {
+        to_tick = tempo_map_.ns_to_ticks(position);
+    }
 
     ProcessContext ctx{};
     ctx.input_bus = &input_bus_;
@@ -1757,6 +1768,33 @@ uint64_t Engine::transport_position_tick() const
 uint32_t Engine::edit_epoch() const noexcept
 {
     return edit_epoch_.load(std::memory_order_acquire);
+}
+
+void Engine::sync_external_tempo(uint32_t bpm_milli) noexcept
+{
+    ext_bpm_milli_ = bpm_milli;
+}
+
+void Engine::sync_external_play() noexcept
+{
+    uint64_t pos = last_position_ns_.load(std::memory_order_relaxed);
+    session_start_ns_ = clock_->now_ns() - pos;
+    state_.store(static_cast<uint8_t>(TransportState::PLAYING), std::memory_order_release);
+}
+
+void Engine::sync_external_stop() noexcept
+{
+    apply(TransportCmd{TransportAction::STOP, 0u});
+}
+
+void Engine::sync_external_locate(uint64_t tick) noexcept
+{
+    uint64_t pos = tempo_map_.ticks_to_ns(tick);
+    last_position_ns_.store(pos, std::memory_order_relaxed);
+    if (state_.load(std::memory_order_relaxed) == static_cast<uint8_t>(TransportState::PLAYING))
+    {
+        session_start_ns_ = clock_->now_ns() - pos;
+    }
 }
 
 omega_position_t Engine::position() const noexcept

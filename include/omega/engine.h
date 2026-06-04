@@ -1003,6 +1003,45 @@ public:
      */
     [[nodiscard]] uint32_t edit_epoch() const noexcept;
 
+    /* ── MIDI sync (external clock control) ──────────────────────────────── */
+
+    /*
+     * Adjusts the engine's tempo to match an external clock source (MIDI slave).
+     * Stores bpm_milli as an atomic override; process() uses it in preference to
+     * the TempoMap for the next tick computation. Pass 0 to disable override and
+     * return to TempoMap-driven timing.
+     *
+     * Thread: Timing thread only (call from EventSource::advance()).
+     */
+    void sync_external_tempo(uint32_t bpm_milli) noexcept;
+
+    /*
+     * Starts transport from the current position (MIDI Continue / FB).
+     * Equivalent to enqueuing TransportCmd::PLAY but callable from the timing
+     * thread (e.g. from ClockSlaveSource::advance()).
+     *
+     * Thread: Timing thread only.
+     */
+    void sync_external_play() noexcept;
+
+    /*
+     * Stops transport (MIDI Stop / FC).
+     * Safe to call from the timing thread.
+     *
+     * Thread: Timing thread only.
+     */
+    void sync_external_stop() noexcept;
+
+    /*
+     * Moves the transport position to `tick` WITHOUT calling on_locate() on
+     * registered EventSources (avoids recursion when called from advance()).
+     * MIDI Start (FA) from the slave should call sync_external_locate(0) then
+     * sync_external_play().
+     *
+     * Thread: Timing thread only.
+     */
+    void sync_external_locate(uint64_t tick) noexcept;
+
     /*
      * Returns the current state of the given performance slot.
      * Returns SlotState::EMPTY for out-of-range slot indices.
@@ -1245,6 +1284,9 @@ private:
     std::atomic<uint8_t> state_{static_cast<uint8_t>(TransportState::STOPPED)};
     uint64_t session_start_ns_{0};
     std::atomic<uint64_t> last_position_ns_{0};
+    // External BPM override for MIDI clock slaving (0 = disabled; use TempoMap).
+    // Written by sync_external_tempo(); read in process(). Both from timing thread.
+    uint32_t ext_bpm_milli_{0u};
 
     // Loop region — timing-thread-owned; read from mutation thread only when
     // process() is not running (same contract as smpte_config_ and perf_ctx_).

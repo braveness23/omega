@@ -139,6 +139,17 @@ OMEGA_API const char* omega_status_string(omega_status_t status);
  * data[0..3]=target_slot, data[4]=cue_mode, data[5]=ctrl_slot (0-127) */
 #define OMEGA_CTRL_START_SLOT_WAIT 0x0Fu
 
+/* MIDI system real-time payload tags (range 0x10–0x14).
+ * Used by ClockMasterSource (output) and ClockSlaveSource (input via InputBus).
+ * channel and reserved fields are zero; data fields unused unless noted. */
+#define OMEGA_MIDI_CLOCK 0x10u    /* F8: timing clock (24 per quarter note) */
+#define OMEGA_MIDI_START 0x11u    /* FA: start transport from tick 0 */
+#define OMEGA_MIDI_CONTINUE 0x12u /* FB: continue from current position */
+#define OMEGA_MIDI_STOP_RT 0x13u  /* FC: stop transport */
+#define OMEGA_MIDI_SPP                  \
+    0x14u /* F2: song position pointer; \
+           *   data[0]=LSB, data[1]=MSB (16th notes) */
+
 typedef struct
 {
     uint64_t tick;       /* absolute musical position from session start */
@@ -2056,6 +2067,98 @@ OMEGA_API float omega_ctx_mod_get_ctx(const omega_process_context_t* ctx,
 OMEGA_API void omega_ctx_mod_set_ctx(omega_process_context_t* ctx,
                                      omega_mod_channel_t channel,
                                      float value);
+
+/* ── MIDI sync ────────────────────────────────────────────────────────────── */
+
+/*
+ * Engine methods for MIDI clock slaving, callable from the timing thread
+ * (i.e. from within EventSource::advance()). These are exposed here as thin
+ * C-API wrappers for FFI consumers; C++ code can call the Engine methods
+ * directly.
+ *
+ * sync_external_tempo — sets an external BPM override (non-zero) or disables
+ *   it (0). While active, the TempoMap is bypassed for tick computation.
+ * sync_external_play  — start transport from current position (MIDI Continue).
+ * sync_external_stop  — stop transport (MIDI Stop).
+ * sync_external_locate — reposition transport without calling on_locate() on
+ *   EventSources (avoids recursion when called from advance()).
+ */
+OMEGA_API void omega_sync_external_tempo(omega_engine_t* e, uint32_t bpm_milli);
+OMEGA_API void omega_sync_external_play(omega_engine_t* e);
+OMEGA_API void omega_sync_external_stop(omega_engine_t* e);
+OMEGA_API void omega_sync_external_locate(omega_engine_t* e, omega_tick_t tick);
+
+/* ── Clock master ── */
+
+typedef struct omega_clock_master_s omega_clock_master_t;
+
+/*
+ * Creates a ClockMasterSource and registers it with the engine at
+ * OMEGA_SOURCE_PRIORITY_MODULATOR. Also registers an engine event callback to
+ * emit FC (MIDI Stop) when the transport stops — this replaces any existing
+ * engine event callback.
+ *
+ * midi_out — sink that receives MIDI clock events. Must be a sink registered
+ *   with the same engine (e.g. created via omega_sink_create_midi_out()).
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns: caller-owned handle; NULL on invalid args or allocation failure.
+ *   Destroy with omega_clock_master_destroy() after stopping the engine.
+ */
+OMEGA_API omega_clock_master_t* omega_clock_master_create(omega_engine_t* e,
+                                                          omega_sink_t* midi_out);
+
+/*
+ * Removes the clock master source, restores a null engine event callback,
+ * and frees the handle.
+ * Thread: Mutation thread only, after the engine is stopped.
+ */
+OMEGA_API void omega_clock_master_destroy(omega_engine_t* e, omega_clock_master_t* master);
+
+/* ── Clock slave ── */
+
+typedef struct omega_clock_slave_input_s omega_clock_slave_input_t;
+typedef struct omega_clock_slave_s omega_clock_slave_t;
+
+/*
+ * Creates a ClockSlaveInput that opens a MIDI port with timing enabled.
+ * Register it with omega_engine_add_input() to deliver F8/FA/FC/F2 bytes to
+ * the InputBus where ClockSlaveSource can consume them.
+ *
+ * port_name — NULL: first available port. "": virtual port. other: name match.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns: caller-owned; NULL on allocation failure.
+ *   Destroy with omega_clock_slave_input_destroy() after removing from engine.
+ */
+OMEGA_API omega_clock_slave_input_t* omega_clock_slave_input_create(const char* port_name);
+
+/*
+ * Destroys a ClockSlaveInput handle. Must not be registered with an engine.
+ * Thread: Mutation thread only.
+ */
+OMEGA_API void omega_clock_slave_input_destroy(omega_clock_slave_input_t* input);
+
+/*
+ * Creates a ClockSlaveSource and registers it with the engine at
+ * OMEGA_SOURCE_PRIORITY_MODULATOR. It reads OMEGA_MIDI_* events from the
+ * InputBus (delivered by ClockSlaveInput) and adjusts the engine's tempo and
+ * transport accordingly.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns: caller-owned handle; NULL on invalid args or allocation failure.
+ *   Destroy with omega_clock_slave_destroy() after stopping the engine.
+ */
+OMEGA_API omega_clock_slave_t* omega_clock_slave_create(omega_engine_t* e);
+
+/*
+ * Removes the clock slave source and frees the handle.
+ * Thread: Mutation thread only, after the engine is stopped.
+ */
+OMEGA_API void omega_clock_slave_destroy(omega_engine_t* e, omega_clock_slave_t* slave);
 
 /* ── Tempo map ────────────────────────────────────────────────────────────── */
 
