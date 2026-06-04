@@ -17,7 +17,7 @@ TEST_CASE("DrainSink: initially empty")
 {
     DrainSink ds;
     REQUIRE(ds.empty());
-    REQUIRE(ds.size() == 0u);
+    REQUIRE(ds.size() == 0u);  // NOLINT(readability-container-size-empty)
     REQUIRE(ds.dropped() == 0u);
 }
 
