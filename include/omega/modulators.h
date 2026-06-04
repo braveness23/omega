@@ -44,8 +44,8 @@ public:
      * depth      — peak amplitude; output = offset ± depth * wave.
      * offset     — DC centre of the waveform; default 0.0.
      */
-    explicit LfoSource(uint32_t channel, Shape shape, float rate_beats,
-                       float depth, float offset = 0.0f) noexcept;
+    explicit LfoSource(
+        uint32_t channel, Shape shape, float rate_beats, float depth, float offset = 0.0f) noexcept;
 
     ~LfoSource() override = default;
 
@@ -65,10 +65,10 @@ public:
 
 private:
     uint32_t channel_;
-    std::atomic<uint32_t> shape_{};
-    std::atomic<uint32_t> rate_bits_{};
-    std::atomic<uint32_t> depth_bits_{};
-    std::atomic<uint32_t> offset_bits_{};
+    std::atomic<uint32_t> shape_;
+    std::atomic<uint32_t> rate_bits_;
+    std::atomic<uint32_t> depth_bits_;
+    std::atomic<uint32_t> offset_bits_;
 };
 
 /* ── EnvelopeSource ───────────────────────────────────────────────────────── */

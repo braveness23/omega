@@ -58,7 +58,7 @@ TEST_CASE("C API: omega_lfo_set_shape changes waveform")
 TEST_CASE("C API: omega_lfo null guards")
 {
     omega_lfo_create(nullptr, 0u, OMEGA_LFO_SINE, 1.0f, 1.0f, 0.0f);  // must not crash
-    omega_lfo_set_shape(nullptr, OMEGA_LFO_SINE);                       // must not crash
+    omega_lfo_set_shape(nullptr, OMEGA_LFO_SINE);                     // must not crash
     omega_lfo_set_rate(nullptr, 1.0f);
     omega_lfo_set_depth(nullptr, 1.0f);
     omega_lfo_set_offset(nullptr, 0.0f);
@@ -97,9 +97,8 @@ TEST_CASE("C API: omega_envelope_create and add_point; interpolates correctly")
     omega_engine_process(eng);  // tick=0 → 0.0
     REQUIRE(omega_mod_get(eng, ch) == Approx(0.0f).margin(1e-5f));
 
-    omega_engine_destroy(eng);  // destroys engine; env is dangling — use destroy first
-    /* Note: in correct usage call omega_envelope_destroy(eng, env) before
-       omega_engine_destroy. This test exercises the NULL-engine path. */
+    omega_envelope_destroy(eng, env);
+    omega_engine_destroy(eng);
 }
 
 TEST_CASE("C API: omega_envelope_add_point overflow returns error")
@@ -161,7 +160,7 @@ TEST_CASE("C API: omega_step_mod set_step returns error for out-of-range index")
     omega_step_mod_t* sm = omega_step_mod_create(eng, ch, 480u, 0);
     REQUIRE(sm != nullptr);
 
-    REQUIRE(omega_step_mod_set_step(sm, 63u, 1.0f) == OMEGA_OK);   // last valid
+    REQUIRE(omega_step_mod_set_step(sm, 63u, 1.0f) == OMEGA_OK);           // last valid
     REQUIRE(omega_step_mod_set_step(sm, 64u, 1.0f) == OMEGA_ERR_INVALID);  // out of range
 
     omega_step_mod_destroy(eng, sm);
@@ -171,7 +170,7 @@ TEST_CASE("C API: omega_step_mod set_step returns error for out-of-range index")
 TEST_CASE("C API: omega_step_mod null guards")
 {
     REQUIRE(omega_step_mod_create(nullptr, 0u, 480u, 0) == nullptr);
-    REQUIRE(omega_step_mod_create(nullptr, 0u, 0u, 0) == nullptr);   // step_ticks=0 invalid
+    REQUIRE(omega_step_mod_create(nullptr, 0u, 0u, 0) == nullptr);  // step_ticks=0 invalid
     REQUIRE(omega_step_mod_set_step(nullptr, 0u, 0.0f) == OMEGA_ERR_INVALID);
     omega_step_mod_set_count(nullptr, 4u);
     omega_step_mod_destroy(nullptr, nullptr);

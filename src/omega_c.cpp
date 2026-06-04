@@ -2338,8 +2338,12 @@ int omega_recorder_is_recording(const omega_recorder_t* rec)
 
 struct omega_lfo_s  // NOLINT(readability-identifier-naming)
 {
-    omega_lfo_s(omega::Engine& eng, uint32_t ch, omega::LfoSource::Shape shape,
-                float rate, float depth, float offset) noexcept
+    omega_lfo_s(omega::Engine& eng,
+                uint32_t ch,
+                omega::LfoSource::Shape shape,
+                float rate,
+                float depth,
+                float offset) noexcept
         : lfo{ch, shape, rate, depth, offset}, engine{eng}
     {}
 
@@ -2348,11 +2352,11 @@ struct omega_lfo_s  // NOLINT(readability-identifier-naming)
 };
 
 omega_lfo_t* omega_lfo_create(omega_engine_t* e,
-                               omega_mod_channel_t channel,
-                               omega_lfo_shape_t shape,
-                               float rate_beats,
-                               float depth,
-                               float offset)
+                              omega_mod_channel_t channel,
+                              omega_lfo_shape_t shape,
+                              float rate_beats,
+                              float depth,
+                              float offset)
 {
     if (e == nullptr || rate_beats <= 0.0f)
     {
@@ -2360,8 +2364,8 @@ omega_lfo_t* omega_lfo_create(omega_engine_t* e,
     }
     auto lfo_shape = static_cast<omega::LfoSource::Shape>(shape);
     // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-    auto* holder = new (std::nothrow) omega_lfo_s{e->engine, channel, lfo_shape,
-                                                   rate_beats, depth, offset};
+    auto* holder =
+        new (std::nothrow) omega_lfo_s{e->engine, channel, lfo_shape, rate_beats, depth, offset};
     if (holder == nullptr)
     {
         return nullptr;
@@ -2434,9 +2438,7 @@ struct omega_envelope_s  // NOLINT(readability-identifier-naming)
     omega::Engine& engine;
 };
 
-omega_envelope_t* omega_envelope_create(omega_engine_t* e,
-                                         omega_mod_channel_t channel,
-                                         int loop)
+omega_envelope_t* omega_envelope_create(omega_engine_t* e, omega_mod_channel_t channel, int loop)
 {
     if (e == nullptr)
     {
@@ -2459,8 +2461,8 @@ omega_envelope_t* omega_envelope_create(omega_engine_t* e,
 }
 
 omega_status_t omega_envelope_add_point(omega_envelope_t* env,
-                                         omega_tick_t tick_offset,
-                                         float value)
+                                        omega_tick_t tick_offset,
+                                        float value)
 {
     if (env == nullptr)
     {
@@ -2504,9 +2506,9 @@ struct omega_step_mod_s  // NOLINT(readability-identifier-naming)
 };
 
 omega_step_mod_t* omega_step_mod_create(omega_engine_t* e,
-                                         omega_mod_channel_t channel,
-                                         omega_tick_t step_ticks,
-                                         int loop)
+                                        omega_mod_channel_t channel,
+                                        omega_tick_t step_ticks,
+                                        int loop)
 {
     if (e == nullptr || step_ticks == 0u)
     {

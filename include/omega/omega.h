@@ -2053,10 +2053,10 @@ OMEGA_API int omega_recorder_is_recording(const omega_recorder_t* rec);
 /* ── LFO ── */
 
 typedef uint32_t omega_lfo_shape_t;
-#define OMEGA_LFO_SINE     0u  /* sin(2pi·phase)                      */
-#define OMEGA_LFO_TRIANGLE 1u  /* linear rise/fall between +/-1        */
-#define OMEGA_LFO_SAWTOOTH 2u  /* linear ramp -1 to +1 per cycle       */
-#define OMEGA_LFO_SQUARE   3u  /* +1 for first half, -1 for second     */
+#define OMEGA_LFO_SINE 0u     /* sin(2pi·phase)                      */
+#define OMEGA_LFO_TRIANGLE 1u /* linear rise/fall between +/-1        */
+#define OMEGA_LFO_SAWTOOTH 2u /* linear ramp -1 to +1 per cycle       */
+#define OMEGA_LFO_SQUARE 3u   /* +1 for first half, -1 for second     */
 
 typedef struct omega_lfo_s omega_lfo_t;
 
@@ -2112,8 +2112,8 @@ typedef struct omega_envelope_s omega_envelope_t;
  * Returns: caller-owned handle; NULL on invalid args or allocation failure.
  */
 OMEGA_API omega_envelope_t* omega_envelope_create(omega_engine_t* e,
-                                                   omega_mod_channel_t channel,
-                                                   int loop);
+                                                  omega_mod_channel_t channel,
+                                                  int loop);
 
 /*
  * Add a breakpoint at tick_offset ticks from tick 0. Must be added in
@@ -2127,8 +2127,8 @@ OMEGA_API omega_envelope_t* omega_envelope_create(omega_engine_t* e,
  *   OMEGA_ERR_INVALID — env is NULL, or 64 breakpoints already added.
  */
 OMEGA_API omega_status_t omega_envelope_add_point(omega_envelope_t* env,
-                                                   omega_tick_t tick_offset,
-                                                   float value);
+                                                  omega_tick_t tick_offset,
+                                                  float value);
 
 /*
  * Remove all breakpoints.
@@ -2158,9 +2158,9 @@ typedef struct omega_step_mod_s omega_step_mod_t;
  * Returns: caller-owned handle; NULL on invalid args or allocation failure.
  */
 OMEGA_API omega_step_mod_t* omega_step_mod_create(omega_engine_t* e,
-                                                   omega_mod_channel_t channel,
-                                                   omega_tick_t step_ticks,
-                                                   int loop);
+                                                  omega_mod_channel_t channel,
+                                                  omega_tick_t step_ticks,
+                                                  int loop);
 
 /*
  * Set the value of a step (index must be < 64).
@@ -2172,9 +2172,7 @@ OMEGA_API omega_step_mod_t* omega_step_mod_create(omega_engine_t* e,
  *   OMEGA_OK          — value set.
  *   OMEGA_ERR_INVALID — sm is NULL or index >= 64.
  */
-OMEGA_API omega_status_t omega_step_mod_set_step(omega_step_mod_t* sm,
-                                                  uint32_t index,
-                                                  float value);
+OMEGA_API omega_status_t omega_step_mod_set_step(omega_step_mod_t* sm, uint32_t index, float value);
 
 /*
  * Set the active step count (clamped to 64).

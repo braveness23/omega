@@ -137,7 +137,7 @@ TEST_CASE("EnvelopeSource: holds first value before first breakpoint")
 
     uint32_t ch = eng.modulation_bus().register_channel("env", 0.0f);
     EnvelopeSource env{ch, false};
-    env.add_point(480u, 0.0f);   // first point at tick 480
+    env.add_point(480u, 0.0f);  // first point at tick 480
     env.add_point(960u, 1.0f);
 
     eng.add_source(&env, OMEGA_SOURCE_PRIORITY_MODULATOR);
