@@ -19,8 +19,8 @@
 #include <omega/time_signature_map.h>
 #include <omega/types.h>
 #ifndef OMEGA_NO_HOST_MIDI
-#include <omega/midi_io.h>
-#include <omega/timer.h>
+    #include <omega/midi_io.h>
+    #include <omega/timer.h>
 #endif
 
 #include <algorithm>
@@ -2355,8 +2355,6 @@ int omega_recorder_is_recording(const omega_recorder_t* rec)
 struct omega_drain_sink_s  // NOLINT(readability-identifier-naming)
 {
     omega::DrainSink sink;
-    omega::Engine& engine;
-    explicit omega_drain_sink_s(omega::Engine& eng) noexcept : engine{eng} {}
 };
 
 omega_drain_sink_t* omega_drain_sink_create(omega_engine_t* e)
@@ -2366,7 +2364,7 @@ omega_drain_sink_t* omega_drain_sink_create(omega_engine_t* e)
         return nullptr;
     }
     // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-    auto* holder = new (std::nothrow) omega_drain_sink_s{e->engine};
+    auto* holder = new (std::nothrow) omega_drain_sink_s{};
     if (holder == nullptr)
     {
         return nullptr;

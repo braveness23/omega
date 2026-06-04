@@ -84,7 +84,7 @@ public:
     [[nodiscard]] uint32_t dropped() const noexcept;
 
 private:
-    detail::SpscQueue<Event, CAPACITY> queue_{};
+    detail::SpscQueue<Event, CAPACITY> queue_;
     std::atomic<uint32_t> dropped_{0u};
 };
 

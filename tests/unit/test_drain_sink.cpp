@@ -32,7 +32,7 @@ TEST_CASE("DrainSink: send then pop round-trip")
 
     Event out{};
     REQUIRE(ds.pop(out));
-    REQUIRE(out.data[0] == 60);    // note pitch
+    REQUIRE(out.data[0] == 60);  // note pitch
     REQUIRE(out.payload_tag == OMEGA_NOTE_ON);
     REQUIRE(ds.empty());
 }
