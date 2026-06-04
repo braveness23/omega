@@ -1615,7 +1615,9 @@ void Engine::process()
             cmd);
     }
     if (any_drained)
+    {
         edit_epoch_.fetch_add(1, std::memory_order_release);
+    }
 
     if (state_.load(std::memory_order_acquire) != static_cast<uint8_t>(TransportState::PLAYING))
     {
