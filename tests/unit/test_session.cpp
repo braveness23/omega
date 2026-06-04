@@ -388,3 +388,65 @@ TEST_CASE("session_load: corrupt magic returns ERR_IO")
     REQUIRE(session_load(e, path.c_str()) == OMEGA_ERR_IO);
     std::remove(path.c_str());
 }
+
+TEST_CASE("session: track meta and session meta round-trip")
+{
+    const std::string path = tmp_path("omega_session_meta.oms");
+
+    {
+        MockClock clk;
+        Engine e(&clk);
+        TrackId t = e.add_track("Piano");
+        e.add_track_meta(t, MetaEvent{0u, 0x04u, "Grand"});
+        e.add_track_meta(t, MetaEvent{120u, 0x05u, "do"});
+        e.session_meta().push_back(MetaEvent{0u, 0x02u, "(c) me"});
+        REQUIRE(session_save(e, path.c_str()) == OMEGA_OK);
+    }
+
+    {
+        MockClock clk;
+        Engine e(&clk);
+        REQUIRE(session_load(e, path.c_str()) == OMEGA_OK);
+
+        const auto& tracks = e.timeline_source().tracks();
+        REQUIRE(tracks.size() == 1u);
+        REQUIRE(tracks[0].meta.size() == 2u);
+        CHECK(tracks[0].meta[0].type == 0x04u);
+        CHECK(tracks[0].meta[0].text == "Grand");
+        CHECK(tracks[0].meta[1].type == 0x05u);
+        CHECK(tracks[0].meta[1].text == "do");
+        CHECK(tracks[0].meta[1].tick == 120u);
+
+        REQUIRE(e.session_meta().size() == 1u);
+        CHECK(e.session_meta()[0].type == 0x02u);
+        CHECK(e.session_meta()[0].text == "(c) me");
+    }
+
+    std::remove(path.c_str());
+}
+
+TEST_CASE("session: file without meta sections loads with empty meta")
+{
+    // A session saved by an engine that has no meta must load cleanly, leaving
+    // both meta stores empty (forward/backward-compatible section handling).
+    const std::string path = tmp_path("omega_session_nometa.oms");
+
+    {
+        MockClock clk;
+        Engine e(&clk);
+        e.add_track("Drums");
+        REQUIRE(session_save(e, path.c_str()) == OMEGA_OK);
+    }
+
+    {
+        MockClock clk;
+        Engine e(&clk);
+        REQUIRE(session_load(e, path.c_str()) == OMEGA_OK);
+        const auto& tracks = e.timeline_source().tracks();
+        REQUIRE(tracks.size() == 1u);
+        CHECK(tracks[0].meta.empty());
+        CHECK(e.session_meta().empty());
+    }
+
+    std::remove(path.c_str());
+}
