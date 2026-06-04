@@ -254,6 +254,87 @@ omega_status_t Engine::shift_track_events(TrackId track_id, int64_t offset_ticks
     return timeline_.shift_events(track_id, offset_ticks);
 }
 
+// W11: flat-index convenience overloads — avoids callers computing tick+within_tick.
+omega_status_t Engine::replace_track_event_by_index(TrackId track_id,
+                                                    uint32_t flat_index,
+                                                    const Event& replacement)
+{
+    const auto& tracks = timeline_.tracks();
+    for (const auto& t : tracks)
+    {
+        if (t.id != track_id)
+        {
+            continue;
+        }
+        if (flat_index >= static_cast<uint32_t>(t.events.size()))
+        {
+            return OMEGA_ERR_NOT_FOUND;
+        }
+        const uint64_t orig_tick = t.events[flat_index].tick;
+        uint32_t within = 0;
+        for (uint32_t k = 0; k < flat_index; ++k)
+        {
+            if (t.events[k].tick == orig_tick)
+            {
+                ++within;
+            }
+        }
+        return replace_track_event(track_id, orig_tick, within, replacement);
+    }
+    return OMEGA_ERR_NOT_FOUND;
+}
+
+omega_status_t Engine::delete_track_event_by_index(TrackId track_id, uint32_t flat_index)
+{
+    const auto& tracks = timeline_.tracks();
+    for (const auto& t : tracks)
+    {
+        if (t.id != track_id)
+        {
+            continue;
+        }
+        if (flat_index >= static_cast<uint32_t>(t.events.size()))
+        {
+            return OMEGA_ERR_NOT_FOUND;
+        }
+        const uint64_t tick = t.events[flat_index].tick;
+        uint32_t within = 0;
+        for (uint32_t k = 0; k < flat_index; ++k)
+        {
+            if (t.events[k].tick == tick)
+            {
+                ++within;
+            }
+        }
+        return enqueue(DeleteEventCmd{track_id, tick, within});
+    }
+    return OMEGA_ERR_NOT_FOUND;
+}
+
+// G18: compute the maximum event end tick across all timeline tracks.
+uint64_t Engine::compute_timeline_loop_end() const noexcept
+{
+    uint64_t result = 0;
+    for (const auto& t : timeline_.tracks())
+    {
+        for (const auto& ev : t.events)
+        {
+            uint64_t end = ev.tick;
+            if (ev.payload_tag == OMEGA_NOTE_ON)
+            {
+                uint32_t dur = 0;
+                __builtin_memcpy(&dur, &ev.data[2], sizeof(dur));
+                end += dur;
+            }
+            if (end > result)
+            {
+                result = end;
+            }
+        }
+    }
+    return result;
+}
+
 omega_status_t Engine::swap_tracks(TrackId a, TrackId b)
 {
     return timeline_.swap_tracks(a, b);

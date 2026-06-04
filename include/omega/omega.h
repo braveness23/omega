@@ -412,6 +412,35 @@ OMEGA_API omega_status_t omega_engine_set_dispatch_tap(omega_engine_t* e,
 OMEGA_API omega_engine_t* omega_engine_create(void);
 
 /*
+ * W2 fix: A C-vtable clock source for use with omega_engine_create_with_clock().
+ * The engine calls now_ns() once per process() cycle to get the current time.
+ *
+ * now_ns  — returns the current monotonic time in nanoseconds.
+ * userdata — opaque pointer forwarded to now_ns on every call.
+ *
+ * The clock object must outlive the engine.
+ */
+typedef struct omega_clock_s
+{
+    uint64_t (*now_ns)(void* userdata);
+    void* userdata;
+} omega_clock_t;
+
+/*
+ * W2 fix: Creates a new engine using a caller-supplied clock.
+ * Use when you need the engine on the same time base as an external clock
+ * (e.g., AudioContext.currentTime in a WASM/browser environment).
+ *
+ * clock — non-null; must outlive the returned engine.
+ *
+ * Thread: Any thread, before first use.
+ *
+ * Returns: caller-owned handle; NULL on allocation failure or if clock is NULL.
+ * Call omega_engine_destroy() when done.
+ */
+OMEGA_API omega_engine_t* omega_engine_create_with_clock(omega_clock_t* clock);
+
+/*
  * Destroys the engine and frees all associated resources.
  * Stop the engine (omega_engine_stop + process) before destroying it.
  *

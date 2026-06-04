@@ -42,12 +42,42 @@ omega::CueMode to_cpp_cue_mode(omega_cue_mode_t m) noexcept
 
 }  // namespace
 
+// W2: C-vtable clock adapter — wraps omega_clock_t* as an omega::ClockSource.
+// Lifetime: owned by omega_engine_s_with_clock (below); must outlive the Engine.
+class CClock final : public omega::ClockSource
+{
+public:
+    explicit CClock(omega_clock_t* c) noexcept : c_(c) {}
+    [[nodiscard]] uint64_t now_ns() const noexcept override
+    {
+        return ((c_ != nullptr) && (c_->now_ns != nullptr)) ? c_->now_ns(c_->userdata) : 0u;
+    }
+
+private:
+    omega_clock_t* c_;
+};
+
 // omega_engine_s is the heap-allocated owner of the C++ Engine.
 // omega_engine_t* (opaque to C callers) points to one of these.
 struct omega_engine_s  // NOLINT(readability-identifier-naming)
 {
     omega::Engine engine;
     omega_engine_s() {}  // NOLINT(modernize-use-equals-default) — prevents aggregate init
+};
+
+// omega_engine_s_with_clock: variant that owns a CClock adapter.
+struct omega_engine_s_with_clock : omega_engine_s  // NOLINT(readability-identifier-naming)
+{
+    CClock clock_adapter;
+    explicit omega_engine_s_with_clock(omega_clock_t* c) : clock_adapter(c)
+    {
+        // Re-construct engine with the custom clock.
+        // The base omega_engine_s default-constructed an engine with InternalClock;
+        // we need placement-new here to pass the clock to the ctor.
+        // Cleanest approach: destroy and reconstruct.
+        engine.~Engine();
+        new (&engine) omega::Engine(&clock_adapter);  // NOLINT
+    }
 };
 
 // omega_timer_s owns the OmegaTimer.
@@ -139,6 +169,18 @@ extern "C" {
 omega_engine_t* omega_engine_create(void)
 {
     return new (std::nothrow) omega_engine_s{};  // NOLINT(cppcoreguidelines-owning-memory)
+}
+
+// W2: create engine with a caller-supplied C-vtable clock.
+// NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+omega_engine_t* omega_engine_create_with_clock(omega_clock_t* clock)
+{
+    if (clock == nullptr || clock->now_ns == nullptr)
+    {
+        return nullptr;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    return new (std::nothrow) omega_engine_s_with_clock{clock};
 }
 
 void omega_engine_destroy(omega_engine_t* eng)

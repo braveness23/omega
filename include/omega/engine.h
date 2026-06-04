@@ -580,6 +580,19 @@ public:
     [[nodiscard]] const TimelineSource& timeline_source() const noexcept { return timeline_; }
     [[nodiscard]] TimelineSource& timeline_source() noexcept { return timeline_; }
 
+    /*
+     * G18 fix: compute the end tick of the timeline content as the maximum
+     * over all tracks of (last_event.tick + last_event.duration_if_note_on).
+     * Returns 0 if there are no tracks or all tracks are empty.
+     *
+     * Useful when you need a loop_end or pattern_length derived from actual
+     * content (e.g., for convert_tracks_to_patterns) without iterating tracks
+     * manually in calling code.
+     *
+     * Thread: Mutation thread only. Must not be called concurrently with process().
+     */
+    [[nodiscard]] uint64_t compute_timeline_loop_end() const noexcept;
+
     /* Raw access to the built-in performance source.
      * Same contract as timeline_source(). */
     [[nodiscard]] const PerformanceSource& perf_source() const noexcept { return perf_; }
@@ -680,6 +693,22 @@ public:
                                        const Event& replacement);
 
     /*
+     * W11 fix: replace the event at 0-based flat index in the track's sorted
+     * event vector. Convenience overload over replace_track_event(tick, index)
+     * that avoids the caller needing to compute the tick and within-tick index.
+     *
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_NOT_FOUND  — track_id not found or flat_index out of range.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t replace_track_event_by_index(TrackId track_id,
+                                                uint32_t flat_index,
+                                                const Event& replacement);
+
+    /*
      * Enqueues a command to delete the timeline track event identified by stable
      * id `id`. Undoable; participates in edit groups.
      *
@@ -690,6 +719,20 @@ public:
      *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
      */
     omega_status_t delete_event_by_id(TrackId track_id, omega_event_id_t id);
+
+    /*
+     * W11 fix: enqueue deletion of the event at 0-based flat index in the
+     * track's sorted event vector. Convenience overload over DeleteEventCmd
+     * that avoids the caller needing to compute tick and within-tick index.
+     *
+     * Thread: Mutation thread only.
+     *
+     * Returns:
+     *   OMEGA_OK             — command enqueued.
+     *   OMEGA_ERR_NOT_FOUND  — track_id not found or flat_index out of range.
+     *   OMEGA_ERR_QUEUE_FULL — queue at capacity.
+     */
+    omega_status_t delete_track_event_by_index(TrackId track_id, uint32_t flat_index);
 
     /*
      * Bulk-copies events of a track in [lo, hi) (optionally tag-filtered) into
