@@ -148,7 +148,7 @@ void ClockSlaveSource::advance(uint64_t to_tick,
                 {
                     sum += interval_buf_[j];
                 }
-                const uint32_t avg = static_cast<uint32_t>(sum / interval_count_);
+                const auto avg = static_cast<uint32_t>(sum / interval_count_);
                 if (avg == 0u)
                 {
                     break;
@@ -298,9 +298,8 @@ struct ClockSlaveInput::Impl
 };
 
 ClockSlaveInput::ClockSlaveInput(const char* port_name) noexcept
-{
-    impl_ = new (std::nothrow) Impl{port_name};  // NOLINT(cppcoreguidelines-owning-memory)
-}
+    : impl_{new(std::nothrow) Impl{port_name}}  // NOLINT(cppcoreguidelines-owning-memory)
+{}
 
 ClockSlaveInput::~ClockSlaveInput()
 {

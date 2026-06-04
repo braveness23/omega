@@ -5,6 +5,7 @@
 #include <omega/test/mock_clock.h>
 #include <omega/types.h>
 
+#include <algorithm>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <cstdint>
@@ -48,14 +49,7 @@ public:
 
     [[nodiscard]] bool has(uint8_t byte) const noexcept
     {
-        for (auto b : bytes_)
-        {
-            if (b == byte)
-            {
-                return true;
-            }
-        }
-        return false;
+        return std::any_of(bytes_.cbegin(), bytes_.cend(), [byte](uint8_t b) { return b == byte; });
     }
 
     [[nodiscard]] uint32_t count_of(uint8_t byte) const noexcept

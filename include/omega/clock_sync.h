@@ -6,6 +6,7 @@
 #include <omega/export.h>
 #include <omega/sink.h>
 
+#include <array>
 #include <cstdint>
 
 namespace omega
@@ -102,7 +103,7 @@ private:
     /* F8 pulse tracking — timing thread only. */
     uint64_t last_f8_tick_{0u};
     bool has_last_f8_{false};
-    uint32_t interval_buf_[SMOOTH_WINDOW]{};
+    std::array<uint32_t, SMOOTH_WINDOW> interval_buf_{};
     uint32_t interval_idx_{0u};
     uint32_t interval_count_{0u};
 };

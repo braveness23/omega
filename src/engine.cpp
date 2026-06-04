@@ -1635,7 +1635,7 @@ void Engine::process()
 
     uint64_t now = clock_->now_ns();
     uint64_t position = now - session_start_ns_;
-    uint64_t to_tick;
+    uint64_t to_tick = 0u;
     if (ext_bpm_milli_ != 0u)
     {
         // External tempo override for MIDI clock slaving.
