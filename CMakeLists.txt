@@ -139,6 +139,7 @@ add_library(omega_core ${_omega_core_type}
     src/song_arrangement_source.cpp
     src/performance_source.cpp
     src/modulation_bus.cpp
+    src/modulators.cpp
     src/transform_source.cpp
     src/marker_list.cpp
     src/region_list.cpp

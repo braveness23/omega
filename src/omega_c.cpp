@@ -6,6 +6,7 @@
 #include <omega/event_input.h>
 #include <omega/event_source.h>
 #include <omega/midi_io.h>
+#include <omega/modulators.h>
 #include <omega/omega.h>
 #include <omega/perf_slot.h>
 #include <omega/recorder.h>
@@ -2329,6 +2330,233 @@ int omega_recorder_is_recording(const omega_recorder_t* rec)
         return 0;
     }
     return rec->recorder.is_recording() ? 1 : 0;
+}
+
+/* ── Built-in modulation sources ──────────────────────────────────────────── */
+
+/* ── LFO ── */
+
+struct omega_lfo_s  // NOLINT(readability-identifier-naming)
+{
+    omega_lfo_s(omega::Engine& eng, uint32_t ch, omega::LfoSource::Shape shape,
+                float rate, float depth, float offset) noexcept
+        : lfo{ch, shape, rate, depth, offset}, engine{eng}
+    {}
+
+    omega::LfoSource lfo;
+    omega::Engine& engine;
+};
+
+omega_lfo_t* omega_lfo_create(omega_engine_t* e,
+                               omega_mod_channel_t channel,
+                               omega_lfo_shape_t shape,
+                               float rate_beats,
+                               float depth,
+                               float offset)
+{
+    if (e == nullptr || rate_beats <= 0.0f)
+    {
+        return nullptr;
+    }
+    auto lfo_shape = static_cast<omega::LfoSource::Shape>(shape);
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    auto* holder = new (std::nothrow) omega_lfo_s{e->engine, channel, lfo_shape,
+                                                   rate_beats, depth, offset};
+    if (holder == nullptr)
+    {
+        return nullptr;
+    }
+    omega_status_t st = e->engine.add_source(&holder->lfo, OMEGA_SOURCE_PRIORITY_MODULATOR);
+    if (st != OMEGA_OK)
+    {
+        // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+        delete holder;
+        return nullptr;
+    }
+    return holder;
+}
+
+void omega_lfo_set_shape(omega_lfo_t* lfo, omega_lfo_shape_t shape)
+{
+    if (lfo != nullptr)
+    {
+        lfo->lfo.set_shape(static_cast<omega::LfoSource::Shape>(shape));
+    }
+}
+
+void omega_lfo_set_rate(omega_lfo_t* lfo, float rate_beats)
+{
+    if (lfo != nullptr)
+    {
+        lfo->lfo.set_rate_beats(rate_beats);
+    }
+}
+
+void omega_lfo_set_depth(omega_lfo_t* lfo, float depth)
+{
+    if (lfo != nullptr)
+    {
+        lfo->lfo.set_depth(depth);
+    }
+}
+
+void omega_lfo_set_offset(omega_lfo_t* lfo, float offset)
+{
+    if (lfo != nullptr)
+    {
+        lfo->lfo.set_offset(offset);
+    }
+}
+
+void omega_lfo_destroy(omega_engine_t* e, omega_lfo_t* lfo)
+{
+    if (lfo == nullptr)
+    {
+        return;
+    }
+    if (e != nullptr)
+    {
+        e->engine.remove_source(&lfo->lfo);
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    delete lfo;
+}
+
+/* ── Envelope ── */
+
+struct omega_envelope_s  // NOLINT(readability-identifier-naming)
+{
+    omega_envelope_s(omega::Engine& eng, uint32_t ch, bool loop) noexcept
+        : env{ch, loop}, engine{eng}
+    {}
+
+    omega::EnvelopeSource env;
+    omega::Engine& engine;
+};
+
+omega_envelope_t* omega_envelope_create(omega_engine_t* e,
+                                         omega_mod_channel_t channel,
+                                         int loop)
+{
+    if (e == nullptr)
+    {
+        return nullptr;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    auto* holder = new (std::nothrow) omega_envelope_s{e->engine, channel, loop != 0};
+    if (holder == nullptr)
+    {
+        return nullptr;
+    }
+    omega_status_t st = e->engine.add_source(&holder->env, OMEGA_SOURCE_PRIORITY_MODULATOR);
+    if (st != OMEGA_OK)
+    {
+        // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+        delete holder;
+        return nullptr;
+    }
+    return holder;
+}
+
+omega_status_t omega_envelope_add_point(omega_envelope_t* env,
+                                         omega_tick_t tick_offset,
+                                         float value)
+{
+    if (env == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return env->env.add_point(tick_offset, value) ? OMEGA_OK : OMEGA_ERR_INVALID;
+}
+
+void omega_envelope_clear(omega_envelope_t* env)
+{
+    if (env != nullptr)
+    {
+        env->env.clear_points();
+    }
+}
+
+void omega_envelope_destroy(omega_engine_t* e, omega_envelope_t* env)
+{
+    if (env == nullptr)
+    {
+        return;
+    }
+    if (e != nullptr)
+    {
+        e->engine.remove_source(&env->env);
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    delete env;
+}
+
+/* ── Step modulator ── */
+
+struct omega_step_mod_s  // NOLINT(readability-identifier-naming)
+{
+    omega_step_mod_s(omega::Engine& eng, uint32_t ch, uint64_t step_ticks, bool loop) noexcept
+        : sm{ch, step_ticks, loop}, engine{eng}
+    {}
+
+    omega::StepModulatorSource sm;
+    omega::Engine& engine;
+};
+
+omega_step_mod_t* omega_step_mod_create(omega_engine_t* e,
+                                         omega_mod_channel_t channel,
+                                         omega_tick_t step_ticks,
+                                         int loop)
+{
+    if (e == nullptr || step_ticks == 0u)
+    {
+        return nullptr;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    auto* holder = new (std::nothrow) omega_step_mod_s{e->engine, channel, step_ticks, loop != 0};
+    if (holder == nullptr)
+    {
+        return nullptr;
+    }
+    omega_status_t st = e->engine.add_source(&holder->sm, OMEGA_SOURCE_PRIORITY_MODULATOR);
+    if (st != OMEGA_OK)
+    {
+        // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+        delete holder;
+        return nullptr;
+    }
+    return holder;
+}
+
+omega_status_t omega_step_mod_set_step(omega_step_mod_t* sm, uint32_t index, float value)
+{
+    if (sm == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return sm->sm.set_step(index, value) ? OMEGA_OK : OMEGA_ERR_INVALID;
+}
+
+void omega_step_mod_set_count(omega_step_mod_t* sm, uint32_t count)
+{
+    if (sm != nullptr)
+    {
+        sm->sm.set_count(count);
+    }
+}
+
+void omega_step_mod_destroy(omega_engine_t* e, omega_step_mod_t* sm)
+{
+    if (sm == nullptr)
+    {
+        return;
+    }
+    if (e != nullptr)
+    {
+        e->engine.remove_source(&sm->sm);
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    delete sm;
 }
 
 }  // extern "C"

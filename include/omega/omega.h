@@ -2038,6 +2038,156 @@ OMEGA_API size_t omega_recorder_stop(omega_recorder_t* rec);
  */
 OMEGA_API int omega_recorder_is_recording(const omega_recorder_t* rec);
 
+/* ── Built-in modulation sources ──────────────────────────────────────────── */
+
+/*
+ * Three concrete EventSource implementations that write to a ModulationBus
+ * channel each process() cycle. Register them with omega_engine_add_source()
+ * at OMEGA_SOURCE_PRIORITY_MODULATOR so playback sources see updated values
+ * in the same cycle.
+ *
+ * Phase / position is derived from to_tick — no internal state — so
+ * on_locate() is a no-op and there is no need to reset on transport seek.
+ */
+
+/* ── LFO ── */
+
+typedef uint32_t omega_lfo_shape_t;
+#define OMEGA_LFO_SINE     0u  /* sin(2pi·phase)                      */
+#define OMEGA_LFO_TRIANGLE 1u  /* linear rise/fall between +/-1        */
+#define OMEGA_LFO_SAWTOOTH 2u  /* linear ramp -1 to +1 per cycle       */
+#define OMEGA_LFO_SQUARE   3u  /* +1 for first half, -1 for second     */
+
+typedef struct omega_lfo_s omega_lfo_t;
+
+/*
+ * Creates an LFO modulator and registers it with the engine at
+ * OMEGA_SOURCE_PRIORITY_MODULATOR. The engine must outlive the LFO.
+ *
+ * channel    — ModulationBus channel (from omega_mod_register()).
+ * shape      — OMEGA_LFO_* waveform constant.
+ * rate_beats — period in beats (1.0 = one cycle per quarter note). Must be > 0.
+ * depth      — peak amplitude; output = offset +/- depth * wave.
+ * offset     — DC centre of the waveform.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns: caller-owned handle; NULL on invalid args or allocation failure.
+ *   Destroy with omega_lfo_destroy().
+ */
+OMEGA_API omega_lfo_t* omega_lfo_create(omega_engine_t* e,
+                                        omega_mod_channel_t channel,
+                                        omega_lfo_shape_t shape,
+                                        float rate_beats,
+                                        float depth,
+                                        float offset);
+
+/*
+ * Param setters — safe to call from the mutation thread while the engine plays.
+ * Thread: Mutation thread only.
+ */
+OMEGA_API void omega_lfo_set_shape(omega_lfo_t* lfo, omega_lfo_shape_t shape);
+OMEGA_API void omega_lfo_set_rate(omega_lfo_t* lfo, float rate_beats);
+OMEGA_API void omega_lfo_set_depth(omega_lfo_t* lfo, float depth);
+OMEGA_API void omega_lfo_set_offset(omega_lfo_t* lfo, float offset);
+
+/*
+ * Removes the LFO from the engine and frees it.
+ * Thread: Mutation thread only, after the engine is stopped.
+ */
+OMEGA_API void omega_lfo_destroy(omega_engine_t* e, omega_lfo_t* lfo);
+
+/* ── Envelope ── */
+
+typedef struct omega_envelope_s omega_envelope_t;
+
+/*
+ * Creates an envelope modulator and registers it with the engine.
+ *
+ * channel — ModulationBus channel.
+ * loop    — non-zero: repeats with period equal to the last breakpoint tick.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns: caller-owned handle; NULL on invalid args or allocation failure.
+ */
+OMEGA_API omega_envelope_t* omega_envelope_create(omega_engine_t* e,
+                                                   omega_mod_channel_t channel,
+                                                   int loop);
+
+/*
+ * Add a breakpoint at tick_offset ticks from tick 0. Must be added in
+ * ascending tick_offset order. Returns OMEGA_ERR_OVERFLOW if MAX_POINTS (64)
+ * is already reached.
+ *
+ * Thread: Mutation thread only, before add_source() or between sessions.
+ *
+ * Returns:
+ *   OMEGA_OK          — point added.
+ *   OMEGA_ERR_INVALID — env is NULL, or 64 breakpoints already added.
+ */
+OMEGA_API omega_status_t omega_envelope_add_point(omega_envelope_t* env,
+                                                   omega_tick_t tick_offset,
+                                                   float value);
+
+/*
+ * Remove all breakpoints.
+ * Thread: Mutation thread only, before add_source() or between sessions.
+ */
+OMEGA_API void omega_envelope_clear(omega_envelope_t* env);
+
+/*
+ * Removes the envelope from the engine and frees it.
+ * Thread: Mutation thread only, after the engine is stopped.
+ */
+OMEGA_API void omega_envelope_destroy(omega_engine_t* e, omega_envelope_t* env);
+
+/* ── Step modulator ── */
+
+typedef struct omega_step_mod_s omega_step_mod_t;
+
+/*
+ * Creates a step modulator and registers it with the engine.
+ *
+ * channel    — ModulationBus channel.
+ * step_ticks — ticks per step (must be > 0).
+ * loop       — non-zero: sequence wraps after the active step count.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns: caller-owned handle; NULL on invalid args or allocation failure.
+ */
+OMEGA_API omega_step_mod_t* omega_step_mod_create(omega_engine_t* e,
+                                                   omega_mod_channel_t channel,
+                                                   omega_tick_t step_ticks,
+                                                   int loop);
+
+/*
+ * Set the value of a step (index must be < 64).
+ * Automatically extends the active step count if index >= current count.
+ *
+ * Thread: Mutation thread only, before add_source() or between sessions.
+ *
+ * Returns:
+ *   OMEGA_OK          — value set.
+ *   OMEGA_ERR_INVALID — sm is NULL or index >= 64.
+ */
+OMEGA_API omega_status_t omega_step_mod_set_step(omega_step_mod_t* sm,
+                                                  uint32_t index,
+                                                  float value);
+
+/*
+ * Set the active step count (clamped to 64).
+ * Thread: Mutation thread only.
+ */
+OMEGA_API void omega_step_mod_set_count(omega_step_mod_t* sm, uint32_t count);
+
+/*
+ * Removes the step modulator from the engine and frees it.
+ * Thread: Mutation thread only, after the engine is stopped.
+ */
+OMEGA_API void omega_step_mod_destroy(omega_engine_t* e, omega_step_mod_t* sm);
+
 /*
  * Gets a modulation channel value from within an advance_fn callback.
  *
