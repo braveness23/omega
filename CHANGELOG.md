@@ -10,6 +10,14 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **SMF track-name fidelity** (Omega Complete, item 1 — SMF meta-event round-trip):
+  `smf_import` now reads the Track Name meta event (`FF 03`) and applies it as the created
+  omega track's name (previously every imported track got a synthetic `track_N` name);
+  `smf_export` writes `FF 03` per track in Type 1 (skipped in Type 0, where all tracks merge
+  into one and a single name cannot represent them). In `split_by_channel` mode the SMF name
+  is suffixed with `" chN"` to keep the fanned-out tracks distinct. Track names already
+  round-trip through the native session format; this closes the gap for the SMF interchange
+  format. 4 new unit tests in `tests/unit/test_smf_import.cpp` and `test_smf_export.cpp`.
 - **`omega_recorder_*` C API**: exposes `omega::Recorder` to C / FFI consumers. `omega_recorder_create(e, sink_id)` allocates a Recorder and registers it at `OMEGA_SOURCE_PRIORITY_MODULATOR` (recorded notes immediately playable); `omega_recorder_start(rec, track_id, channel_filter)` arms recording; `omega_recorder_stop(rec)` disarms and flushes held notes, returning the event count; `omega_recorder_is_recording(rec)` is thread-safe; `omega_recorder_destroy(e, rec)` deregisters and frees. Motivation: `examples/kcs-win` (.NET P/Invoke) cannot use C++ constructors, so recording was unreachable without a C wrapper. 10 new integration tests in `tests/integration/test_c_api_recorder.cpp`.
 
 ## [1.1.0] — 2026-05-30

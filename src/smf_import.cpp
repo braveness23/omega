@@ -29,6 +29,12 @@ public:
         : engine_(engine), smf_track_(smf_track), opts_(opts)
     {}
 
+    // Records the SMF track-name (FF 03) so it becomes the name of the omega
+    // track(s) created for this SMF track. Must be called before track_for()
+    // for the name to take effect; SMF files conventionally place the track
+    // name at the head of the track, so this holds in practice.
+    void set_track_name(std::string name) { pending_name_ = std::move(name); }
+
     // Returns the omega TrackId that should receive an event on `channel`,
     // creating and routing the track on first use.
     TrackId track_for(uint8_t channel)
@@ -38,8 +44,14 @@ public:
             auto& slot = channel_tracks_[channel & 0x0Fu];
             if (!slot)
             {
-                TrackId id = engine_.add_track("track_" + std::to_string(smf_track_) + "_ch" +
-                                               std::to_string((channel & 0x0Fu) + 1u));
+                // In split mode one SMF track fans out to several omega tracks,
+                // so the SMF name alone cannot name them uniquely — suffix the
+                // channel. Fall back to the synthetic name when none was given.
+                std::string ch = std::to_string((channel & 0x0Fu) + 1u);
+                std::string name = pending_name_.empty()
+                                       ? "track_" + std::to_string(smf_track_) + "_ch" + ch
+                                       : pending_name_ + " ch" + ch;
+                TrackId id = engine_.add_track(std::move(name));
                 engine_.set_track_channel(id, static_cast<uint8_t>(channel & 0x0Fu));
                 engine_.set_track_sink(id, opts_.sink_id);
                 slot = id;
@@ -49,7 +61,9 @@ public:
 
         if (!single_track_)
         {
-            TrackId id = engine_.add_track("track_" + std::to_string(smf_track_));
+            std::string name =
+                pending_name_.empty() ? "track_" + std::to_string(smf_track_) : pending_name_;
+            TrackId id = engine_.add_track(std::move(name));
             engine_.set_track_channel(id, static_cast<uint8_t>(channel & 0x0Fu));
             engine_.set_track_sink(id, opts_.sink_id);
             single_track_ = id;
@@ -63,6 +77,7 @@ private:
     const SmfImportOptions& opts_;
     // NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
     int smf_track_;
+    std::string pending_name_;
     std::optional<TrackId> single_track_;
     std::array<std::optional<TrackId>, 16> channel_tracks_{};
 };
@@ -144,10 +159,17 @@ omega_status_t smf_import(Engine& engine, const char* path, const SmfImportOptio
             else if (ev.isMeta())
             {
                 int meta_type = ev.getMetaType();
+                // 0x03 = Track Name (FF 03) — names the omega track(s) created for
+                // this SMF track. Captured into the factory so the lazily-created
+                // track carries it instead of a synthetic "track_N" name.
+                if (meta_type == 0x03)
+                {
+                    factory.set_track_name(ev.getMetaContent());
+                }
                 // 0x06 = Marker (FF 06) — a named position marker in the SMF.
                 // 0x07 = Cue Point (FF 07) — like a marker but intended for synchronisation cues.
                 // Both are imported as omega markers; cue points get a "[cue] " prefix.
-                if (meta_type == 0x06 || meta_type == 0x07)
+                else if (meta_type == 0x06 || meta_type == 0x07)
                 {
                     std::string name = ev.getMetaContent();
                     if (meta_type == 0x07)

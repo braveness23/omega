@@ -244,6 +244,47 @@ TEST_CASE("SMF import: split_by_channel creates one track per channel", "[smf_im
     std::remove(path.c_str());
 }
 
+TEST_CASE("SMF import: track name (FF 03) names the omega track", "[smf_import]")
+{
+    const std::string path = tmp_path("trackname");
+    smf::MidiFile mf;
+    mf.setTPQ(480);
+    mf.addTrackName(0, 0, "Lead Synth");
+    mf.addNoteOn(0, 0, 0, 60, 100);
+    mf.addNoteOff(0, 480, 0, 60, 0);
+    mf.sortTracks();
+    REQUIRE(mf.write(path) != 0);
+
+    omega::Engine engine;
+    REQUIRE(omega::smf_import(engine, path.c_str()) == OMEGA_OK);
+
+    const auto& tracks = engine.timeline_source().tracks();
+    REQUIRE(tracks.size() == 1u);
+    CHECK(tracks[0].name == "Lead Synth");
+
+    std::remove(path.c_str());
+}
+
+TEST_CASE("SMF import: track with no name falls back to synthetic name", "[smf_import]")
+{
+    const std::string path = tmp_path("noname");
+    smf::MidiFile mf;
+    mf.setTPQ(480);
+    mf.addNoteOn(0, 0, 0, 60, 100);
+    mf.addNoteOff(0, 480, 0, 60, 0);
+    mf.sortTracks();
+    REQUIRE(mf.write(path) != 0);
+
+    omega::Engine engine;
+    REQUIRE(omega::smf_import(engine, path.c_str()) == OMEGA_OK);
+
+    const auto& tracks = engine.timeline_source().tracks();
+    REQUIRE(tracks.size() == 1u);
+    CHECK(tracks[0].name == "track_0");
+
+    std::remove(path.c_str());
+}
+
 TEST_CASE("SMF import: non-split keeps multi-channel events in one track", "[smf_import]")
 {
     const std::string path = tmp_path("nosplit");

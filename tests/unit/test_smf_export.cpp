@@ -118,6 +118,70 @@ TEST_CASE("SMF export: round-trip Type 1 - two tracks", "[smf_export]")
     std::remove(path_out.c_str());
 }
 
+TEST_CASE("SMF export: track names round-trip through Type 1", "[smf_export]")
+{
+    const std::string path = tmp_path("rt_tracknames");
+
+    omega::Engine eng_out;
+    omega::TrackId t0 = eng_out.add_track("Bass");
+    omega::TrackId t1 = eng_out.add_track("Lead Synth");
+
+    auto note = [](omega::TrackId, uint8_t pitch) {
+        omega::Event ev{};
+        ev.tick = 0u;
+        ev.payload_tag = OMEGA_NOTE_ON;
+        ev.channel = 0u;
+        ev.data[0] = pitch;
+        ev.data[1] = 100u;
+        uint32_t dur = 240u;
+        std::memcpy(&ev.data[2], &dur, sizeof(dur));
+        return ev;
+    };
+    eng_out.add_track_event(t0, note(t0, 36u));
+    eng_out.add_track_event(t1, note(t1, 72u));
+
+    REQUIRE(omega::smf_export(eng_out, path.c_str(), 1) == OMEGA_OK);
+
+    omega::Engine eng_in;
+    REQUIRE(omega::smf_import(eng_in, path.c_str()) == OMEGA_OK);
+
+    const auto& tracks = eng_in.timeline_source().tracks();
+    REQUIRE(tracks.size() == 2u);
+    CHECK(tracks[0].name == "Bass");
+    CHECK(tracks[1].name == "Lead Synth");
+
+    std::remove(path.c_str());
+}
+
+TEST_CASE("SMF export: track names are not written in Type 0", "[smf_export]")
+{
+    const std::string path = tmp_path("type0_noname");
+
+    omega::Engine eng_out;
+    omega::TrackId t0 = eng_out.add_track("Bass");
+    omega::Event ev{};
+    ev.tick = 0u;
+    ev.payload_tag = OMEGA_NOTE_ON;
+    ev.channel = 0u;
+    ev.data[0] = 36u;
+    ev.data[1] = 100u;
+    uint32_t dur = 240u;
+    std::memcpy(&ev.data[2], &dur, sizeof(dur));
+    eng_out.add_track_event(t0, ev);
+
+    REQUIRE(omega::smf_export(eng_out, path.c_str(), 0) == OMEGA_OK);
+
+    // Re-importing a Type 0 file yields the synthetic name, confirming no FF 03
+    // was emitted (a track name would have survived the round-trip).
+    omega::Engine eng_in;
+    REQUIRE(omega::smf_import(eng_in, path.c_str()) == OMEGA_OK);
+    const auto& tracks = eng_in.timeline_source().tracks();
+    REQUIRE(tracks.size() == 1u);
+    CHECK(tracks[0].name == "track_0");
+
+    std::remove(path.c_str());
+}
+
 TEST_CASE("SMF export: round-trip tempo changes", "[smf_export]")
 {
     const std::string path = tmp_path("rt_tempo");

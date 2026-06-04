@@ -84,6 +84,14 @@ omega_status_t smf_export(Engine& engine, const char* path, int smf_type)
 
         int midi_track = (smf_type == 0) ? 0 : midi_track_seq++;
 
+        // Track Name (FF 03): only meaningful in Type 1, where each omega track
+        // maps to its own MIDI track. In Type 0 every track is merged into track
+        // 0, so a single track name cannot represent them all — skip it there.
+        if (smf_type != 0 && !tr.name.empty())
+        {
+            mf.addTrackName(midi_track, 0, tr.name);
+        }
+
         for (const Event& ev : tr.events)
         {
             auto tick_i = static_cast<int>(ev.tick);
