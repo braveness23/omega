@@ -161,6 +161,7 @@ set(_omega_wasm_safe_sources
     src/song_arrangement_source.cpp
     src/performance_source.cpp
     src/modulation_bus.cpp
+    src/modulators.cpp
     src/transform_source.cpp
     src/marker_list.cpp
     src/region_list.cpp
