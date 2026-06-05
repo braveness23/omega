@@ -7,7 +7,7 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [Unreleased]
+## [1.5.0] — 2026-06-04
 
 ### Added
 - **MIDI sync: clock master and slave** (Omega Complete, item 4): omega can now master
@@ -354,7 +354,9 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-[Unreleased]: https://github.com/braveness23/omega/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/braveness23/omega/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/braveness23/omega/compare/v1.1.0...v1.5.0
+[1.1.0]: https://github.com/braveness23/omega/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/braveness23/omega/compare/v0.6.0-beta...v1.0.0
 [0.5.0-alpha]: https://github.com/braveness23/omega/compare/v0.4.0...v0.5.0-alpha
 [0.4.0]: https://github.com/braveness23/omega/compare/v0.3.0...v0.4.0
