@@ -1904,6 +1904,13 @@ OMEGA_API uint32_t omega_ctx_input_count(const omega_process_context_t* ctx);
 OMEGA_API const omega_event_t* omega_ctx_input_at(const omega_process_context_t* ctx, uint32_t i);
 
 /* ── MIDI I/O ─────────────────────────────────────────────────────────────── */
+/*
+ * OMEGA_NO_HOST_MIDI is defined when omega is built without host-coupled sources
+ * (OMEGA_BUILD_WASM=ON). In that mode the libremidi-backed sinks and inputs and
+ * the OmegaTimer are unavailable; the declarations below are hidden so callers
+ * get a compile error rather than a link error if they try to use them.
+ */
+#ifndef OMEGA_NO_HOST_MIDI
 
 /*
  * Creates an OutputSink backed by a real MIDI output port via libremidi.
@@ -1983,6 +1990,8 @@ OMEGA_API omega_input_t* omega_input_create_midi_in(const char* port_name);
  */
 OMEGA_API void omega_input_destroy_midi_in(omega_input_t* input);
 
+#endif /* OMEGA_NO_HOST_MIDI */
+
 /* ── Recorder ───────────────────────────────────────────────────────────────
  * Records live MIDI input (delivered via an omega_input_t / the InputBus) into
  * a timeline track. Wraps omega::Recorder. The recorder is a custom EventSource
@@ -2048,6 +2057,206 @@ OMEGA_API size_t omega_recorder_stop(omega_recorder_t* rec);
  * Thread: Any thread.
  */
 OMEGA_API int omega_recorder_is_recording(const omega_recorder_t* rec);
+
+/* ── Drain sink ───────────────────────────────────────────────────────────── */
+
+/*
+ * A lock-free OutputSink that buffers events from the timing thread into an
+ * SPSC ring (capacity 512). The host (JS main thread, audio worklet, etc.)
+ * polls omega_drain_pop() to consume events without racing the timing thread.
+ *
+ * Resolves kcs-web friction W6 (no drain API) and W7 (event_callback fires
+ * from timing thread — use DrainSink + poll from the consumer thread instead).
+ */
+typedef struct omega_drain_sink_s omega_drain_sink_t;
+
+/*
+ * Creates a DrainSink, registers it with the engine, and returns a handle.
+ * The engine must outlive the sink. Destroy with omega_drain_sink_destroy().
+ *
+ * Thread: Mutation thread only, before playback starts.
+ *
+ * Returns: caller-owned handle; NULL on invalid args or allocation failure.
+ */
+OMEGA_API omega_drain_sink_t* omega_drain_sink_create(omega_engine_t* e);
+
+/*
+ * Dequeue one event into *out. Returns 1 if an event was available, 0 if empty.
+ * Returns 0 if ds or out is NULL.
+ *
+ * Thread: Consumer thread only (single consumer).
+ */
+OMEGA_API int omega_drain_pop(omega_drain_sink_t* ds, omega_event_t* out);
+
+/*
+ * Returns the approximate number of events currently in the ring.
+ * Thread: Any thread (approximate).
+ */
+OMEGA_API uint32_t omega_drain_size(const omega_drain_sink_t* ds);
+
+/*
+ * Returns the total number of events dropped because the ring was full.
+ * Thread: Any thread.
+ */
+OMEGA_API uint32_t omega_drain_dropped(const omega_drain_sink_t* ds);
+
+/*
+ * Frees the drain sink. Call only after the engine is destroyed (or fully
+ * stopped and guaranteed not to dispatch events). The engine holds a raw
+ * reference to the sink; destroying the sink before the engine is
+ * use-after-free.
+ *
+ * Thread: Mutation thread only, after omega_engine_destroy().
+ */
+OMEGA_API void omega_drain_sink_destroy(omega_engine_t* e, omega_drain_sink_t* ds);
+
+/* ── Built-in modulation sources ──────────────────────────────────────────── */
+
+/*
+ * Three concrete EventSource implementations that write to a ModulationBus
+ * channel each process() cycle. Register them with omega_engine_add_source()
+ * at OMEGA_SOURCE_PRIORITY_MODULATOR so playback sources see updated values
+ * in the same cycle.
+ *
+ * Phase / position is derived from to_tick — no internal state — so
+ * on_locate() is a no-op and there is no need to reset on transport seek.
+ */
+
+/* ── LFO ── */
+
+typedef uint32_t omega_lfo_shape_t;
+#define OMEGA_LFO_SINE 0u     /* sin(2pi·phase)                      */
+#define OMEGA_LFO_TRIANGLE 1u /* linear rise/fall between +/-1        */
+#define OMEGA_LFO_SAWTOOTH 2u /* linear ramp -1 to +1 per cycle       */
+#define OMEGA_LFO_SQUARE 3u   /* +1 for first half, -1 for second     */
+
+typedef struct omega_lfo_s omega_lfo_t;
+
+/*
+ * Creates an LFO modulator and registers it with the engine at
+ * OMEGA_SOURCE_PRIORITY_MODULATOR. The engine must outlive the LFO.
+ *
+ * channel    — ModulationBus channel (from omega_mod_register()).
+ * shape      — OMEGA_LFO_* waveform constant.
+ * rate_beats — period in beats (1.0 = one cycle per quarter note). Must be > 0.
+ * depth      — peak amplitude; output = offset +/- depth * wave.
+ * offset     — DC centre of the waveform.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns: caller-owned handle; NULL on invalid args or allocation failure.
+ *   Destroy with omega_lfo_destroy().
+ */
+OMEGA_API omega_lfo_t* omega_lfo_create(omega_engine_t* e,
+                                        omega_mod_channel_t channel,
+                                        omega_lfo_shape_t shape,
+                                        float rate_beats,
+                                        float depth,
+                                        float offset);
+
+/*
+ * Param setters — safe to call from the mutation thread while the engine plays.
+ * Thread: Mutation thread only.
+ */
+OMEGA_API void omega_lfo_set_shape(omega_lfo_t* lfo, omega_lfo_shape_t shape);
+OMEGA_API void omega_lfo_set_rate(omega_lfo_t* lfo, float rate_beats);
+OMEGA_API void omega_lfo_set_depth(omega_lfo_t* lfo, float depth);
+OMEGA_API void omega_lfo_set_offset(omega_lfo_t* lfo, float offset);
+
+/*
+ * Removes the LFO from the engine and frees it.
+ * Thread: Mutation thread only, after the engine is stopped.
+ */
+OMEGA_API void omega_lfo_destroy(omega_engine_t* e, omega_lfo_t* lfo);
+
+/* ── Envelope ── */
+
+typedef struct omega_envelope_s omega_envelope_t;
+
+/*
+ * Creates an envelope modulator and registers it with the engine.
+ *
+ * channel — ModulationBus channel.
+ * loop    — non-zero: repeats with period equal to the last breakpoint tick.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns: caller-owned handle; NULL on invalid args or allocation failure.
+ */
+OMEGA_API omega_envelope_t* omega_envelope_create(omega_engine_t* e,
+                                                  omega_mod_channel_t channel,
+                                                  int loop);
+
+/*
+ * Add a breakpoint at tick_offset ticks from tick 0. Must be added in
+ * ascending tick_offset order. Returns OMEGA_ERR_OVERFLOW if MAX_POINTS (64)
+ * is already reached.
+ *
+ * Thread: Mutation thread only, before add_source() or between sessions.
+ *
+ * Returns:
+ *   OMEGA_OK          — point added.
+ *   OMEGA_ERR_INVALID — env is NULL, or 64 breakpoints already added.
+ */
+OMEGA_API omega_status_t omega_envelope_add_point(omega_envelope_t* env,
+                                                  omega_tick_t tick_offset,
+                                                  float value);
+
+/*
+ * Remove all breakpoints.
+ * Thread: Mutation thread only, before add_source() or between sessions.
+ */
+OMEGA_API void omega_envelope_clear(omega_envelope_t* env);
+
+/*
+ * Removes the envelope from the engine and frees it.
+ * Thread: Mutation thread only, after the engine is stopped.
+ */
+OMEGA_API void omega_envelope_destroy(omega_engine_t* e, omega_envelope_t* env);
+
+/* ── Step modulator ── */
+
+typedef struct omega_step_mod_s omega_step_mod_t;
+
+/*
+ * Creates a step modulator and registers it with the engine.
+ *
+ * channel    — ModulationBus channel.
+ * step_ticks — ticks per step (must be > 0).
+ * loop       — non-zero: sequence wraps after the active step count.
+ *
+ * Thread: Mutation thread only.
+ *
+ * Returns: caller-owned handle; NULL on invalid args or allocation failure.
+ */
+OMEGA_API omega_step_mod_t* omega_step_mod_create(omega_engine_t* e,
+                                                  omega_mod_channel_t channel,
+                                                  omega_tick_t step_ticks,
+                                                  int loop);
+
+/*
+ * Set the value of a step (index must be < 64).
+ * Automatically extends the active step count if index >= current count.
+ *
+ * Thread: Mutation thread only, before add_source() or between sessions.
+ *
+ * Returns:
+ *   OMEGA_OK          — value set.
+ *   OMEGA_ERR_INVALID — sm is NULL or index >= 64.
+ */
+OMEGA_API omega_status_t omega_step_mod_set_step(omega_step_mod_t* sm, uint32_t index, float value);
+
+/*
+ * Set the active step count (clamped to 64).
+ * Thread: Mutation thread only.
+ */
+OMEGA_API void omega_step_mod_set_count(omega_step_mod_t* sm, uint32_t count);
+
+/*
+ * Removes the step modulator from the engine and frees it.
+ * Thread: Mutation thread only, after the engine is stopped.
+ */
+OMEGA_API void omega_step_mod_destroy(omega_engine_t* e, omega_step_mod_t* sm);
 
 /*
  * Gets a modulation channel value from within an advance_fn callback.
@@ -2897,6 +3106,8 @@ OMEGA_API void omega_midi_note_name(uint8_t pitch, char* out, size_t out_size);
  */
 OMEGA_API omega_status_t omega_midi_note_from_name(const char* name, uint8_t* out);
 
+#ifndef OMEGA_NO_HOST_MIDI
+
 /* ── Timer ────────────────────────────────────────────────────────────────── */
 
 typedef struct omega_timer_s omega_timer_t;
@@ -2922,6 +3133,8 @@ OMEGA_API omega_timer_t* omega_timer_create(omega_engine_t* e, uint32_t interval
  * Thread: Mutation thread only.
  */
 OMEGA_API void omega_timer_destroy(omega_timer_t* timer);
+
+#endif /* OMEGA_NO_HOST_MIDI */
 
 /* ── Snap ─────────────────────────────────────────────────────────────────── */
 

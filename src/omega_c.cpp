@@ -2,11 +2,12 @@
 #include <omega/clock_sync.h>
 #include <omega/commands.h>
 #include <omega/control_sink.h>
+#include <omega/drain_sink.h>
 #include <omega/engine.h>
 #include <omega/event_anchor_table.h>
 #include <omega/event_input.h>
 #include <omega/event_source.h>
-#include <omega/midi_io.h>
+#include <omega/modulators.h>
 #include <omega/omega.h>
 #include <omega/perf_slot.h>
 #include <omega/recorder.h>
@@ -18,8 +19,11 @@
 #include <omega/snap.h>
 #include <omega/tempo_map.h>
 #include <omega/time_signature_map.h>
-#include <omega/timer.h>
 #include <omega/types.h>
+#ifndef OMEGA_NO_HOST_MIDI
+    #include <omega/midi_io.h>
+    #include <omega/timer.h>
+#endif
 
 #include <algorithm>
 #include <new>
@@ -81,12 +85,14 @@ struct omega_engine_s_with_clock : omega_engine_s  // NOLINT(readability-identif
     }
 };
 
+#ifndef OMEGA_NO_HOST_MIDI
 // omega_timer_s owns the OmegaTimer.
 struct omega_timer_s  // NOLINT(readability-identifier-naming)
 {
     omega::OmegaTimer timer;
     explicit omega_timer_s(omega::Engine& e, uint32_t us) : timer(e, us != 0u ? us : 1000u) {}
 };
+#endif /* OMEGA_NO_HOST_MIDI */
 
 // omega_sink_t is an opaque alias for omega::OutputSink.
 // C++ callers cast OutputSink* to omega_sink_t* and pass it to the C API.
@@ -152,6 +158,7 @@ private:
     uint32_t priority_;
 };
 
+#ifndef OMEGA_NO_HOST_MIDI
 // Owns a LibremidiInput and exposes it as an omega::EventInput (for the C API).
 // Returned by omega_input_create_midi_in(); destroyed by omega_input_destroy_midi_in().
 class MidiInputHolder : public omega::EventInput
@@ -163,6 +170,7 @@ public:
 private:
     omega::LibremidiInput input_;
 };
+#endif /* OMEGA_NO_HOST_MIDI */
 
 extern "C" {
 
@@ -1663,6 +1671,8 @@ omega_status_t omega_smpte_to_tick(const omega_engine_t* eng,
 
 // ── MIDI I/O ──────────────────────────────────────────────────────────────────
 
+#ifndef OMEGA_NO_HOST_MIDI
+
 omega_sink_t* omega_sink_create_midi_out(const char* port_name)
 {
     // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
@@ -1677,6 +1687,8 @@ void omega_sink_destroy_midi_out(omega_sink_t* sink)
     // NOLINTNEXTLINE(cppcoreguidelines-owning-memory,cppcoreguidelines-pro-type-reinterpret-cast)
     delete reinterpret_cast<omega::LibremidiSink*>(sink);
 }
+
+#endif /* OMEGA_NO_HOST_MIDI */
 
 omega_sink_t* omega_sink_create_control(omega_engine_t* eng)
 {
@@ -1696,6 +1708,8 @@ void omega_sink_destroy_control(omega_sink_t* sink)
     delete reinterpret_cast<omega::ControlSink*>(sink);
 }
 
+#ifndef OMEGA_NO_HOST_MIDI
+
 omega_input_t* omega_input_create_midi_in(const char* port_name)
 {
     // MidiInputHolder owns a LibremidiInput and implements EventInput::poll().
@@ -1711,6 +1725,8 @@ void omega_input_destroy_midi_in(omega_input_t* input)
     // NOLINTNEXTLINE(cppcoreguidelines-owning-memory,cppcoreguidelines-pro-type-reinterpret-cast)
     delete reinterpret_cast<omega::EventInput*>(input);
 }
+
+#endif /* OMEGA_NO_HOST_MIDI */
 
 // ── Session save / load ───────────────────────────────────────────────────────
 
@@ -1985,6 +2001,8 @@ omega_status_t omega_event_remove_anchor(omega_engine_t* eng,
     return al->remove(std::string(name));
 }
 
+#ifndef OMEGA_NO_HOST_MIDI
+
 omega_timer_t* omega_timer_create(omega_engine_t* eng, uint32_t interval_us)
 {
     if (eng == nullptr)
@@ -1999,6 +2017,8 @@ void omega_timer_destroy(omega_timer_t* timer)
 {
     delete timer;  // NOLINT(cppcoreguidelines-owning-memory)
 }
+
+#endif /* OMEGA_NO_HOST_MIDI */
 
 omega_status_t omega_snap(const omega_engine_t* eng,
                           omega_tick_t tick,
@@ -2330,6 +2350,296 @@ int omega_recorder_is_recording(const omega_recorder_t* rec)
         return 0;
     }
     return rec->recorder.is_recording() ? 1 : 0;
+}
+/* ── Built-in modulation sources ──────────────────────────────────────────── */
+
+/* ── LFO ── */
+
+struct omega_lfo_s  // NOLINT(readability-identifier-naming)
+{
+    omega_lfo_s(omega::Engine& eng,
+                uint32_t ch,
+                omega::LfoSource::Shape shape,
+                float rate,
+                float depth,
+                float offset) noexcept
+        : lfo{ch, shape, rate, depth, offset}, engine{eng}
+    {}
+
+    omega::LfoSource lfo;
+    omega::Engine& engine;
+};
+
+omega_lfo_t* omega_lfo_create(omega_engine_t* e,
+                              omega_mod_channel_t channel,
+                              omega_lfo_shape_t shape,
+                              float rate_beats,
+                              float depth,
+                              float offset)
+{
+    if (e == nullptr || rate_beats <= 0.0f)
+    {
+        return nullptr;
+    }
+    auto lfo_shape = static_cast<omega::LfoSource::Shape>(shape);
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    auto* holder =
+        new (std::nothrow) omega_lfo_s{e->engine, channel, lfo_shape, rate_beats, depth, offset};
+    if (holder == nullptr)
+    {
+        return nullptr;
+    }
+    omega_status_t st = e->engine.add_source(&holder->lfo, OMEGA_SOURCE_PRIORITY_MODULATOR);
+    if (st != OMEGA_OK)
+    {
+        // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+        delete holder;
+        return nullptr;
+    }
+    return holder;
+}
+
+void omega_lfo_set_shape(omega_lfo_t* lfo, omega_lfo_shape_t shape)
+{
+    if (lfo != nullptr)
+    {
+        lfo->lfo.set_shape(static_cast<omega::LfoSource::Shape>(shape));
+    }
+}
+
+void omega_lfo_set_rate(omega_lfo_t* lfo, float rate_beats)
+{
+    if (lfo != nullptr)
+    {
+        lfo->lfo.set_rate_beats(rate_beats);
+    }
+}
+
+void omega_lfo_set_depth(omega_lfo_t* lfo, float depth)
+{
+    if (lfo != nullptr)
+    {
+        lfo->lfo.set_depth(depth);
+    }
+}
+
+void omega_lfo_set_offset(omega_lfo_t* lfo, float offset)
+{
+    if (lfo != nullptr)
+    {
+        lfo->lfo.set_offset(offset);
+    }
+}
+
+void omega_lfo_destroy(omega_engine_t* e, omega_lfo_t* lfo)
+{
+    if (lfo == nullptr)
+    {
+        return;
+    }
+    if (e != nullptr)
+    {
+        e->engine.remove_source(&lfo->lfo);
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    delete lfo;
+}
+
+/* ── Envelope ── */
+
+struct omega_envelope_s  // NOLINT(readability-identifier-naming)
+{
+    omega_envelope_s(omega::Engine& eng, uint32_t ch, bool loop) noexcept
+        : env{ch, loop}, engine{eng}
+    {}
+
+    omega::EnvelopeSource env;
+    omega::Engine& engine;
+};
+
+omega_envelope_t* omega_envelope_create(omega_engine_t* e, omega_mod_channel_t channel, int loop)
+{
+    if (e == nullptr)
+    {
+        return nullptr;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    auto* holder = new (std::nothrow) omega_envelope_s{e->engine, channel, loop != 0};
+    if (holder == nullptr)
+    {
+        return nullptr;
+    }
+    omega_status_t st = e->engine.add_source(&holder->env, OMEGA_SOURCE_PRIORITY_MODULATOR);
+    if (st != OMEGA_OK)
+    {
+        // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+        delete holder;
+        return nullptr;
+    }
+    return holder;
+}
+
+omega_status_t omega_envelope_add_point(omega_envelope_t* env,
+                                        omega_tick_t tick_offset,
+                                        float value)
+{
+    if (env == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return env->env.add_point(tick_offset, value) ? OMEGA_OK : OMEGA_ERR_INVALID;
+}
+
+void omega_envelope_clear(omega_envelope_t* env)
+{
+    if (env != nullptr)
+    {
+        env->env.clear_points();
+    }
+}
+
+void omega_envelope_destroy(omega_engine_t* e, omega_envelope_t* env)
+{
+    if (env == nullptr)
+    {
+        return;
+    }
+    if (e != nullptr)
+    {
+        e->engine.remove_source(&env->env);
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    delete env;
+}
+
+/* ── Step modulator ── */
+
+struct omega_step_mod_s  // NOLINT(readability-identifier-naming)
+{
+    omega_step_mod_s(omega::Engine& eng, uint32_t ch, uint64_t step_ticks, bool loop) noexcept
+        : sm{ch, step_ticks, loop}, engine{eng}
+    {}
+
+    omega::StepModulatorSource sm;
+    omega::Engine& engine;
+};
+
+omega_step_mod_t* omega_step_mod_create(omega_engine_t* e,
+                                        omega_mod_channel_t channel,
+                                        omega_tick_t step_ticks,
+                                        int loop)
+{
+    if (e == nullptr || step_ticks == 0u)
+    {
+        return nullptr;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    auto* holder = new (std::nothrow) omega_step_mod_s{e->engine, channel, step_ticks, loop != 0};
+    if (holder == nullptr)
+    {
+        return nullptr;
+    }
+    omega_status_t st = e->engine.add_source(&holder->sm, OMEGA_SOURCE_PRIORITY_MODULATOR);
+    if (st != OMEGA_OK)
+    {
+        // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+        delete holder;
+        return nullptr;
+    }
+    return holder;
+}
+
+omega_status_t omega_step_mod_set_step(omega_step_mod_t* sm, uint32_t index, float value)
+{
+    if (sm == nullptr)
+    {
+        return OMEGA_ERR_INVALID;
+    }
+    return sm->sm.set_step(index, value) ? OMEGA_OK : OMEGA_ERR_INVALID;
+}
+
+void omega_step_mod_set_count(omega_step_mod_t* sm, uint32_t count)
+{
+    if (sm != nullptr)
+    {
+        sm->sm.set_count(count);
+    }
+}
+
+void omega_step_mod_destroy(omega_engine_t* e, omega_step_mod_t* sm)
+{
+    if (sm == nullptr)
+    {
+        return;
+    }
+    if (e != nullptr)
+    {
+        e->engine.remove_source(&sm->sm);
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    delete sm;
+}
+
+// ── Drain sink ────────────────────────────────────────────────────────────────
+
+struct omega_drain_sink_s  // NOLINT(readability-identifier-naming)
+{
+    omega::DrainSink sink;
+};
+
+omega_drain_sink_t* omega_drain_sink_create(omega_engine_t* e)
+{
+    if (e == nullptr)
+    {
+        return nullptr;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    auto* holder = new (std::nothrow) omega_drain_sink_s{};
+    if (holder == nullptr)
+    {
+        return nullptr;
+    }
+    omega_status_t st = e->engine.add_sink(&holder->sink);
+    if (st != OMEGA_OK)
+    {
+        // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+        delete holder;
+        return nullptr;
+    }
+    return holder;
+}
+
+int omega_drain_pop(omega_drain_sink_t* ds, omega_event_t* out)
+{
+    if (ds == nullptr || out == nullptr)
+    {
+        return 0;
+    }
+    return ds->sink.pop(*out) ? 1 : 0;
+}
+
+uint32_t omega_drain_size(const omega_drain_sink_t* ds)
+{
+    if (ds == nullptr)
+    {
+        return 0u;
+    }
+    return ds->sink.size();
+}
+
+uint32_t omega_drain_dropped(const omega_drain_sink_t* ds)
+{
+    if (ds == nullptr)
+    {
+        return 0u;
+    }
+    return ds->sink.dropped();
+}
+
+void omega_drain_sink_destroy(omega_engine_t* /*e*/, omega_drain_sink_t* ds)
+{
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    delete ds;
 }
 
 // ── MIDI sync ─────────────────────────────────────────────────────────────────

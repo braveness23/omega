@@ -24,6 +24,17 @@ option(OMEGA_BUILD_SHARED      "Build omega as a shared library (DLL/.so)"    OF
 option(OMEGA_WITH_LINK         "Enable Ableton Link sync (requires GPL v2+)"  OFF)
 option(OMEGA_WITH_SANITIZERS   "Build with AddressSanitizer and UBSanitizer"  OFF)
 option(OMEGA_WITH_TSAN         "Build with ThreadSanitizer"                   OFF)
+# OMEGA_BUILD_WASM: exclude host-coupled sources (libremidi, OmegaTimer) so the
+# build produces a WASM-safe library. Auto-enabled when CMake detects Emscripten.
+option(OMEGA_BUILD_WASM
+    "Build without host-coupled sources (libremidi, OmegaTimer) — WASM/plugin-safe"
+    OFF)
+
+# Auto-enable when building under Emscripten.
+if(EMSCRIPTEN)
+    set(OMEGA_BUILD_WASM ON CACHE BOOL
+        "WASM mode auto-enabled for Emscripten" FORCE)
+endif()
 
 if(OMEGA_WITH_SANITIZERS AND OMEGA_WITH_TSAN)
     message(FATAL_ERROR
@@ -77,7 +88,7 @@ endif()
 # that are absent under mingw.  Disable them automatically so omega consumers
 # don't need to add workarounds themselves; the WinMM backend remains available
 # and is sufficient for classic MIDI I/O.
-if(MINGW)
+if(MINGW AND NOT OMEGA_BUILD_WASM)
     set(LIBREMIDI_NO_WINUWP  ON CACHE BOOL "" FORCE)
     set(LIBREMIDI_NO_WINMIDI ON CACHE BOOL "" FORCE)
 endif()
@@ -87,9 +98,14 @@ endif()
 # sub-project declaration doesn't abort configure.  Has no effect on CMake < 3.27.
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
 
-FetchContent_MakeAvailable(libremidi midifile)
-
-find_package(Threads REQUIRED)
+if(OMEGA_BUILD_WASM)
+    # In WASM mode, libremidi is excluded — it links OS MIDI libraries that do
+    # not exist under Emscripten (or in plugin hosts). Only fetch midifile.
+    FetchContent_MakeAvailable(midifile)
+else()
+    FetchContent_MakeAvailable(libremidi midifile)
+    find_package(Threads REQUIRED)
+endif()
 
 # Ableton Link (GPL v2+) — optional
 if(OMEGA_WITH_LINK)
@@ -127,18 +143,25 @@ else()
     set(_omega_core_type STATIC)
 endif()
 
-add_library(omega_core ${_omega_core_type}
+# ── Source lists ─────────────────────────────────────────────────────────────
+# WASM-safe sources compile under Emscripten and in plugin-host contexts.
+# Host-coupled sources link OS MIDI (libremidi) or spawn threads (OmegaTimer)
+# and are excluded when OMEGA_BUILD_WASM is ON.
+
+set(_omega_wasm_safe_sources
     src/types.cpp
     src/tempo_map.cpp
     src/time_signature_map.cpp
     src/smpte_converter.cpp
     src/clock.cpp
     src/sink.cpp
+    src/drain_sink.cpp
     src/timeline.cpp
     src/pattern_library.cpp
     src/song_arrangement_source.cpp
     src/performance_source.cpp
     src/modulation_bus.cpp
+    src/modulators.cpp
     src/transform_source.cpp
     src/marker_list.cpp
     src/region_list.cpp
@@ -148,14 +171,26 @@ add_library(omega_core ${_omega_core_type}
     src/smf_import.cpp
     src/smf_export.cpp
     src/session.cpp
-    src/libremidi_sink.cpp
-    src/libremidi_input.cpp
-    src/timer.cpp
     src/recorder.cpp
     src/control_sink.cpp
     src/clock_sync.cpp
     src/engine.cpp
 )
+
+set(_omega_host_sources
+    src/libremidi_sink.cpp
+    src/libremidi_input.cpp
+    src/timer.cpp
+)
+
+if(OMEGA_BUILD_WASM)
+    add_library(omega_core ${_omega_core_type} ${_omega_wasm_safe_sources})
+else()
+    add_library(omega_core ${_omega_core_type}
+        ${_omega_wasm_safe_sources}
+        ${_omega_host_sources}
+    )
+endif()
 add_library(omega::core ALIAS omega_core)
 
 set_target_properties(omega_core PROPERTIES
@@ -187,21 +222,58 @@ else()
     target_compile_definitions(omega_core PUBLIC OMEGA_STATIC_LIBRARY)
 endif()
 
-target_link_libraries(omega_core
-    PRIVATE
-        libremidi
-        midifile
-        Threads::Threads
-)
+if(OMEGA_BUILD_WASM)
+    # Expose OMEGA_NO_HOST_MIDI to all consumers so they know libremidi /
+    # OmegaTimer APIs are absent. Also propagates through omega.h includes.
+    target_compile_definitions(omega_core PUBLIC OMEGA_NO_HOST_MIDI)
+    target_link_libraries(omega_core PRIVATE midifile)
+else()
+    target_link_libraries(omega_core
+        PRIVATE
+            libremidi
+            midifile
+            Threads::Threads
+    )
+endif()
 
 target_include_directories(omega_core
     PRIVATE
         ${midifile_SOURCE_DIR}/include
 )
 
-if(OMEGA_WITH_LINK)
+if(OMEGA_WITH_LINK AND NOT OMEGA_BUILD_WASM)
     target_link_libraries(omega_core PRIVATE Ableton::Link)
     target_compile_definitions(omega_core PUBLIC OMEGA_WITH_LINK=1)
+endif()
+
+# ── WASM Embind target ────────────────────────────────────────────────────────
+# omega_wasm: the JavaScript-facing Embind module. Built only when Emscripten
+# is active. Consumers link omega::core + midifile; bindings live in wasm/.
+# kcs-web/CMakeLists.txt switches to this target and drops its hand-curated
+# source list (resolves W1).
+if(EMSCRIPTEN)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/wasm/bindings.cpp")
+        add_executable(omega_js wasm/bindings.cpp)
+        target_link_libraries(omega_js PRIVATE omega::core midifile)
+        target_compile_features(omega_js PRIVATE cxx_std_17)
+
+        set_target_properties(omega_js PROPERTIES
+            OUTPUT_NAME "omega"
+            SUFFIX ".js"
+        )
+
+        target_link_options(omega_js PRIVATE
+            -lembind
+            -sMODULARIZE=1
+            -sEXPORT_ES6=1
+            "-sEXPORT_NAME=createOmegaModule"
+            -sALLOW_MEMORY_GROWTH=1
+            -sFORCE_FILESYSTEM=1
+            -sNO_EXIT_RUNTIME=1
+            -sEXPORTED_RUNTIME_METHODS=FS
+            -O2
+        )
+    endif()
 endif()
 
 # ── C API target ──────────────────────────────────────────────────────────────

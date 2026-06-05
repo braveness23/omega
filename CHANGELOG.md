@@ -37,6 +37,41 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     `omega_clock_slave_input_create/destroy`. 24 new unit tests (test_clock_sync.cpp) +
     8 new C API integration tests (test_c_api_sync.cpp). Full suite: 516 unit +
     225 integration, all green.
+- **First-class WASM build target + DrainSink** (Omega Complete, item 3):
+  - **`OMEGA_BUILD_WASM` option**: guards out the three host-coupled sources
+    (`libremidi_sink.cpp`, `libremidi_input.cpp`, `timer.cpp`) and skips the libremidi
+    FetchContent + Threads dependency. Auto-enabled when CMake detects Emscripten. When
+    active, `OMEGA_NO_HOST_MIDI` is defined PUBLIC so consumers get a compile error (not a
+    link error) when they try to call the guarded APIs. This folds kcs-web's hand-curated
+    WASM source list into omega itself (resolves **W1**).
+  - **`DrainSink`** (`include/omega/drain_sink.h`, `src/drain_sink.cpp`): a lock-free
+    `OutputSink` backed by a 512-slot SPSC ring. The timing thread pushes events into it via
+    `send()` with no allocation or blocking; the consumer thread drains events via `pop()`.
+    Generalizes the test-only `CapturingSink` into a production primitive. Resolves
+    kcs-web friction **W6** (no drain API) and **W7** (event_callback fires from timing
+    thread — use DrainSink + consumer-side poll instead).
+  - **C API**: `omega_drain_sink_create()`, `omega_drain_pop()`, `omega_drain_size()`,
+    `omega_drain_dropped()`, `omega_drain_sink_destroy()`. 9 new unit tests +
+    4 new C API integration tests.
+  - **`omega_wasm` Embind target** emitted in omega's own `CMakeLists.txt` when
+    Emscripten is active and `wasm/bindings.cpp` is present. kcs-web no longer needs to
+    maintain its own source list; it links `omega::core` + `midifile` directly.
+- **Built-in modulation sources** (Omega Complete, item 2): backs the README claim that
+  "ModulationBus carries LFOs, envelopes, step modulators" with shipping code. Three
+  `EventSource` subclasses in `<omega/modulators.h>` write to a named `ModulationBus` channel
+  each `process()` cycle; register at `OMEGA_SOURCE_PRIORITY_MODULATOR` so playback sources
+  see updated values in the same cycle.
+  - **`LfoSource`** — four shapes (Sine, Triangle, Sawtooth, Square), rate in beats, depth,
+    DC offset. Params settable from the mutation thread while playing (atomic relaxed stores).
+  - **`EnvelopeSource`** — up to 64 linearly-interpolated breakpoints, optional looping with
+    period = last breakpoint tick. Values held outside the breakpoint range.
+  - **`StepModulatorSource`** — up to 64 steps, configurable step length in ticks, optional
+    looping. `set_step()` auto-extends the active step count.
+  - **C API**: `omega_lfo_create/set_shape/set_rate/set_depth/set_offset/destroy`;
+    `omega_envelope_create/add_point/clear/destroy`;
+    `omega_step_mod_create/set_step/set_count/destroy`. All create functions register the
+    source with the engine at `OMEGA_SOURCE_PRIORITY_MODULATOR`. 16 new unit tests +
+    7 new C API integration tests.
 - **SMF meta-event fidelity** (Omega Complete, item 1): SMF import/export now round-trips the
   text-class meta events that previously vanished, so a `.mid` survives an import→export with
   its descriptive metadata intact.

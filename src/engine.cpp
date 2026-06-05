@@ -323,7 +323,7 @@ uint64_t Engine::compute_timeline_loop_end() const noexcept
             if (ev.payload_tag == OMEGA_NOTE_ON)
             {
                 uint32_t dur = 0;
-                __builtin_memcpy(&dur, &ev.data[2], sizeof(dur));
+                std::memcpy(&dur, &ev.data[2], sizeof(dur));
                 end += dur;
             }
             if (end > result)
