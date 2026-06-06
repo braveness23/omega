@@ -7,9 +7,36 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [Unreleased]
+## [1.5.0] — 2026-06-04
 
 ### Added
+- **MIDI sync: clock master and slave** (Omega Complete, item 4): omega can now master
+  a MIDI clock (driving external gear) and slave to an external clock (following another
+  sequencer or drum machine).
+  - **Five new MIDI system real-time payload tags** (`OMEGA_MIDI_CLOCK` F8,
+    `OMEGA_MIDI_START` FA, `OMEGA_MIDI_CONTINUE` FB, `OMEGA_MIDI_STOP_RT` FC,
+    `OMEGA_MIDI_SPP` F2) usable in both InputBus events and OutputSink events.
+    `LibremidiSink` and `LibremidiInput`/`ClockSlaveInput` handle them transparently.
+  - **`ClockMasterSource`** (`<omega/clock_sync.h>`): EventSource that emits FA/SPP on
+    start, F8 every 20 ticks (PPQN/24), FB on continue, and FC (via engine event callback)
+    on stop. Routes MIDI clock directly to a downstream OutputSink (e.g. LibremidiSink)
+    bypassing the event dispatcher for minimal latency.
+  - **`ClockSlaveSource`**: EventSource that reads OMEGA_MIDI_* events from the InputBus
+    and calls the new timing-thread-safe Engine methods — FA→locate(0)+play, FC→stop,
+    F2→locate, F8→smoothed BPM estimation (4-pulse window) via `sync_external_tempo()`.
+  - **`ClockSlaveInput`**: EventInput that opens a MIDI port with `ignore_timing=false` and
+    delivers F8/FA/FB/FC/F2 as typed omega events to the InputBus. Pair with
+    ClockSlaveSource for complete slave setup.
+  - **Four new `Engine` methods** (timing-thread-callable, additive, no ABI break):
+    `sync_external_tempo(bpm_milli)` — atomic BPM override bypassing TempoMap;
+    `sync_external_play()` — start from current position;
+    `sync_external_stop()` — stop transport;
+    `sync_external_locate(tick)` — reposition without calling `on_locate()` on sources.
+  - **C API**: `omega_sync_external_tempo/play/stop/locate`;
+    `omega_clock_master_create/destroy`; `omega_clock_slave_create/destroy`;
+    `omega_clock_slave_input_create/destroy`. 24 new unit tests (test_clock_sync.cpp) +
+    8 new C API integration tests (test_c_api_sync.cpp). Full suite: 516 unit +
+    225 integration, all green.
 - **First-class WASM build target + DrainSink** (Omega Complete, item 3):
   - **`OMEGA_BUILD_WASM` option**: guards out the three host-coupled sources
     (`libremidi_sink.cpp`, `libremidi_input.cpp`, `timer.cpp`) and skips the libremidi
@@ -327,7 +354,9 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-[Unreleased]: https://github.com/braveness23/omega/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/braveness23/omega/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/braveness23/omega/compare/v1.1.0...v1.5.0
+[1.1.0]: https://github.com/braveness23/omega/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/braveness23/omega/compare/v0.6.0-beta...v1.0.0
 [0.5.0-alpha]: https://github.com/braveness23/omega/compare/v0.4.0...v0.5.0-alpha
 [0.4.0]: https://github.com/braveness23/omega/compare/v0.3.0...v0.4.0

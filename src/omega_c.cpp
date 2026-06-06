@@ -1,4 +1,5 @@
 #include <omega/anchor_point.h>
+#include <omega/clock_sync.h>
 #include <omega/commands.h>
 #include <omega/control_sink.h>
 #include <omega/drain_sink.h>
@@ -2639,6 +2640,149 @@ void omega_drain_sink_destroy(omega_engine_t* /*e*/, omega_drain_sink_t* ds)
 {
     // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
     delete ds;
+}
+
+// ── MIDI sync ─────────────────────────────────────────────────────────────────
+
+void omega_sync_external_tempo(omega_engine_t* e, uint32_t bpm_milli)
+{
+    if (e != nullptr)
+    {
+        e->engine.sync_external_tempo(bpm_milli);
+    }
+}
+
+void omega_sync_external_play(omega_engine_t* e)
+{
+    if (e != nullptr)
+    {
+        e->engine.sync_external_play();
+    }
+}
+
+void omega_sync_external_stop(omega_engine_t* e)
+{
+    if (e != nullptr)
+    {
+        e->engine.sync_external_stop();
+    }
+}
+
+void omega_sync_external_locate(omega_engine_t* e, omega_tick_t tick)
+{
+    if (e != nullptr)
+    {
+        e->engine.sync_external_locate(tick);
+    }
+}
+
+// ── Clock master ───────────────────────────────────────────────────────────────
+
+struct omega_clock_master_s  // NOLINT(readability-identifier-naming)
+{
+    omega::ClockMasterSource master;
+    explicit omega_clock_master_s(omega::Engine& eng, omega::OutputSink& out) noexcept
+        : master{eng, out}
+    {}
+};
+
+omega_clock_master_t* omega_clock_master_create(omega_engine_t* e, omega_sink_t* midi_out)
+{
+    if (e == nullptr || midi_out == nullptr)
+    {
+        return nullptr;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto& out = *reinterpret_cast<omega::OutputSink*>(midi_out);
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    auto* holder = new (std::nothrow) omega_clock_master_s{e->engine, out};
+    if (holder == nullptr)
+    {
+        return nullptr;
+    }
+    omega_status_t st = e->engine.add_source(&holder->master, OMEGA_SOURCE_PRIORITY_MODULATOR);
+    if (st != OMEGA_OK)
+    {
+        // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+        delete holder;
+        return nullptr;
+    }
+    return holder;
+}
+
+void omega_clock_master_destroy(omega_engine_t* e, omega_clock_master_t* master)
+{
+    if (master == nullptr)
+    {
+        return;
+    }
+    if (e != nullptr)
+    {
+        e->engine.remove_source(&master->master);
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    delete master;
+}
+
+// ── Clock slave ───────────────────────────────────────────────────────────────
+
+struct omega_clock_slave_input_s  // NOLINT(readability-identifier-naming)
+{
+    omega::ClockSlaveInput input;
+    explicit omega_clock_slave_input_s(const char* port) noexcept : input{port} {}
+};
+
+omega_clock_slave_input_t* omega_clock_slave_input_create(const char* port_name)
+{
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    return new (std::nothrow) omega_clock_slave_input_s{port_name};
+}
+
+void omega_clock_slave_input_destroy(omega_clock_slave_input_t* input)
+{
+    delete input;  // NOLINT(cppcoreguidelines-owning-memory)
+}
+
+struct omega_clock_slave_s  // NOLINT(readability-identifier-naming)
+{
+    omega::ClockSlaveSource slave;
+    explicit omega_clock_slave_s(omega::Engine& eng) noexcept : slave{eng} {}
+};
+
+omega_clock_slave_t* omega_clock_slave_create(omega_engine_t* e)
+{
+    if (e == nullptr)
+    {
+        return nullptr;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    auto* holder = new (std::nothrow) omega_clock_slave_s{e->engine};
+    if (holder == nullptr)
+    {
+        return nullptr;
+    }
+    omega_status_t st = e->engine.add_source(&holder->slave, OMEGA_SOURCE_PRIORITY_MODULATOR);
+    if (st != OMEGA_OK)
+    {
+        // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+        delete holder;
+        return nullptr;
+    }
+    return holder;
+}
+
+void omega_clock_slave_destroy(omega_engine_t* e, omega_clock_slave_t* slave)
+{
+    if (slave == nullptr)
+    {
+        return;
+    }
+    if (e != nullptr)
+    {
+        e->engine.remove_source(&slave->slave);
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    delete slave;
 }
 
 }  // extern "C"

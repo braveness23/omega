@@ -51,6 +51,29 @@ std::size_t event_to_midi_bytes(const Event& e, uint8_t* out) noexcept
             out[2] = e.data[1] & 0x7Fu;  // pressure
             return 3;
         default:
+            break;
+    }
+    /* MIDI system real-time — single-byte, no channel nibble. */
+    switch (e.payload_tag)
+    {
+        case OMEGA_MIDI_CLOCK:
+            out[0] = 0xF8u;
+            return 1;
+        case OMEGA_MIDI_START:
+            out[0] = 0xFAu;
+            return 1;
+        case OMEGA_MIDI_CONTINUE:
+            out[0] = 0xFBu;
+            return 1;
+        case OMEGA_MIDI_STOP_RT:
+            out[0] = 0xFCu;
+            return 1;
+        case OMEGA_MIDI_SPP:
+            out[0] = 0xF2u;
+            out[1] = e.data[0] & 0x7Fu;  // LSB
+            out[2] = e.data[1] & 0x7Fu;  // MSB
+            return 3;
+        default:
             return 0;
     }
 }

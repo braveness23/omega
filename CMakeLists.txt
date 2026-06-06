@@ -173,6 +173,7 @@ set(_omega_wasm_safe_sources
     src/session.cpp
     src/recorder.cpp
     src/control_sink.cpp
+    src/clock_sync.cpp
     src/engine.cpp
 )
 
