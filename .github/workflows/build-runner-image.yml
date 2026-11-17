@@ -5,6 +5,12 @@ on:
     branches: [main]
     paths:
       - '.github/runner-image/Dockerfile'
+  schedule:
+    # Weekly. The image is FROM actions-runner:latest, and ARC disables runner self-update,
+    # so the runner baked into it ages out: GitHub refuses runner versions that are too old,
+    # the runner pods fail on start, and the scale set goes "Outdated". A Dockerfile-only
+    # trigger lets that happen silently (it did, after ~5 months without a rebuild).
+    - cron: '17 6 * * 1'
   workflow_dispatch:
 
 permissions:
@@ -30,6 +36,7 @@ jobs:
         with:
           context: .github/runner-image
           push: true
+          pull: true   # always take the newest actions-runner base
           tags: |
             ghcr.io/${{ github.repository_owner }}/omega-ci-runner:latest
             ghcr.io/${{ github.repository_owner }}/omega-ci-runner:${{ github.sha }}
