@@ -320,3 +320,61 @@ TEST_CASE("omega_engine_position returns OMEGA_OK and fills struct")
 
     omega_engine_destroy(e);
 }
+
+// ── Stopped transport: commands still refresh the snapshot ────────────────────
+
+TEST_CASE("LOCATE while stopped updates the position snapshot on the next process")
+{
+    MockClock clock;
+    Engine e{&clock};
+    REQUIRE(e.timesig_set(0, 4, 4) == OMEGA_OK);
+
+    // Play one beat, then stop: snapshot = 480.
+    REQUIRE(e.enqueue(TransportCmd{TransportAction::PLAY, 0u}) == OMEGA_OK);
+    clock.advance_ticks(1);
+    e.process();
+    clock.advance_ticks(480);
+    e.process();
+    REQUIRE(e.enqueue(TransportCmd{TransportAction::STOP, 0u}) == OMEGA_OK);
+    e.process();
+    REQUIRE(e.position().tick == 480u);
+
+    // Locate back to 0 while stopped: a display/sync reader must see 0 at once,
+    // not the pre-locate position until playback resumes.
+    REQUIRE(e.enqueue(TransportCmd{TransportAction::LOCATE, 0u}) == OMEGA_OK);
+    e.process();
+    omega_position_t pos = e.position();
+    REQUIRE(pos.tick == 0u);
+    REQUIRE(pos.bar == 1u);
+    REQUIRE(pos.beat == 1u);
+
+    REQUIRE(e.enqueue(TransportCmd{TransportAction::LOCATE, 1920u}) == OMEGA_OK);
+    e.process();
+    pos = e.position();
+    REQUIRE(pos.tick == 1920u);
+    REQUIRE(pos.bar == 2u);
+}
+
+TEST_CASE("tempo at the stopped position is reported before playback starts")
+{
+    MockClock clock;
+    Engine e{&clock};
+    REQUIRE(e.tempo_set(0, 90'000) == OMEGA_OK);
+    REQUIRE(e.tempo_set(1920, 150'000) == OMEGA_OK);
+    e.process();
+    REQUIRE(e.position().bpm_milli == 90'000u);
+
+    REQUIRE(e.enqueue(TransportCmd{TransportAction::LOCATE, 1920u}) == OMEGA_OK);
+    e.process();
+    REQUIRE(e.position().bpm_milli == 150'000u);
+}
+
+TEST_CASE("idle process while stopped leaves the snapshot alone")
+{
+    MockClock clock;
+    Engine e{&clock};
+    e.process();
+    clock.advance_ticks(960);
+    e.process();
+    REQUIRE(e.position().tick == 0u);
+}

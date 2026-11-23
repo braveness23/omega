@@ -1299,6 +1299,9 @@ private:
     // (only modified/read inside process() and apply(SetLoopCmd)).
     uint64_t loop_count_{0};
 
+    // Writes the position snapshot below for tick `to_tick` (timing thread only).
+    void update_position_snapshot(uint64_t to_tick) noexcept;
+
     // Position snapshot — five individually-atomic fields written by the
     // timing thread at the end of each process() cycle. Any thread may read
     // them. Each field is lock-free on all target platforms. In rare cases,

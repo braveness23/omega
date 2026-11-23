@@ -7,6 +7,15 @@ Omega uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Fixed
+- **`Engine::position()` was stale while stopped.** `process()` returned before refreshing the
+  position snapshot whenever the transport was stopped, so a LOCATE or tempo change applied while
+  stopped (tick, bar/beat, `bpm_milli`) only became visible once playback resumed. The snapshot is
+  now refreshed after any drained command while stopped. Seen in kcs-omega as a stale MIDI Song
+  Position Pointer on PLAY after a reset and a count-in clocked at the default 120 BPM.
+
 ## [1.5.0] — 2026-06-04
 
 ### Added
