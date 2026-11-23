@@ -1621,6 +1621,13 @@ void Engine::process()
 
     if (state_.load(std::memory_order_acquire) != static_cast<uint8_t>(TransportState::PLAYING))
     {
+        // Stopped: nothing advances, but a drained LOCATE or tempo change must still reach
+        // position() readers now, not only once playback resumes.
+        if (any_drained)
+        {
+            update_position_snapshot(
+                tempo_map_.ns_to_ticks(last_position_ns_.load(std::memory_order_relaxed)));
+        }
         return;
     }
 
@@ -1722,6 +1729,11 @@ void Engine::process()
 
     last_position_ns_.store(position, std::memory_order_release);
 
+    update_position_snapshot(to_tick);
+}
+
+void Engine::update_position_snapshot(uint64_t to_tick) noexcept
+{
     // Update the position snapshot for any-thread readers (display, etc.).
     // MeterCursor::tick_to_beat_pos is safe here: the TimeSignatureMap was
     // already fully updated during the command-drain phase above, so no
